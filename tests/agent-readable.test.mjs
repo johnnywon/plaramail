@@ -118,3 +118,9 @@ test("SearchWindow suggestions and filter menu items name their parts with comma
 	const list = read("app/components/postal/ListPane.tsx");
 	assert.equal((list.match(/role="menuitemcheckbox" aria-checked=\{on\} aria-label=/g) ?? []).length, 2);
 });
+
+test("a list row's buttons say what they act on, so a bare Cancel isn't one of many (#41)", () => {
+	const list = read("app/components/postal/ListPane.tsx");
+	assert.match(list, /<button type="button" aria-label="Cancel scheduled send" onClick=\{\(\) => props\.onCancelScheduled\(sched\)\}>Cancel<\/button>/);
+	assert.doesNotMatch(list, /<button type="button" onClick=[^>]*>\w+<\/button>/, "a text-only row button without a name");
+});

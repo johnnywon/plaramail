@@ -12,6 +12,7 @@
  * the database; tests/search-compile.test.mjs checks every statement.
  */
 import { type DateValue, IN_VALUES, type Leaf, type SearchQuery, type Term } from "../../shared/search-query";
+import { foldLetters } from "../lib/search-fold";
 
 export interface Clause {
 	sql: string;
@@ -51,7 +52,7 @@ export function viewClause(view: string): Clause | null {
 }
 
 /** A quoted FTS5 phrase. Inside quotes FTS5 only tokenizes, so user text is never query syntax. */
-const phrase = (text: string, prefix: boolean) => `"${text.replace(/"/g, '""')}"${prefix ? "*" : ""}`;
+const phrase = (text: string, prefix: boolean) => `"${foldLetters(text).replace(/"/g, '""')}"${prefix ? "*" : ""}`;
 
 /** Each word as a prefix phrase, ANDed, in the given columns (all when empty). */
 function words(text: string, columns: string): string | null {
@@ -107,8 +108,9 @@ function compileLeaf(leaf: Leaf, now: number, tzOffset: number): Compiled {
 		case "cc": return sql(`instr(lower(COALESCE(m.cc, '')), ?) > 0`, value.replace(/^@/, ""));
 		case "list": return sql(`instr(lower(COALESCE(m.list_id, '')), ?) > 0`, value);
 		case "label": {
+			// The current name, spaces optionally written as hyphens. Not the id: it keeps the label's first name.
 			const v = value.toLowerCase();
-			return sql(`m.id IN (SELECT ml.message FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE l.id = ? OR lower(l.name) = ?)`, v, v);
+			return sql(`m.id IN (SELECT ml.message FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE lower(l.name) = ? OR replace(lower(l.name), ' ', '-') = ?)`, v, v);
 		}
 		case "in": {
 			const view = value === "draft" ? "drafts" : value;

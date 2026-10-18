@@ -2,6 +2,20 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## 0.9.2
+
+### Upgrading
+
+- D1 migration `0009_search_fold.sql` rebuilds the substring search tables (`messages_trigram`, `attachment_trigram`) from stored mail. It runs once, in one pass over every message.
+
+### Fixed
+
+- Sent rows show who the mail went to: "To" and the first recipient, with a count of the others, instead of your own address. `/api/v1/mail` rows carry `recipient`.
+- Search folds accents in substring matches too, so `sume` finds Résumé, and folds letters Unicode doesn't split into a letter and an accent (ø, æ, œ, ß, ł, đ, ð, þ, ı), so `unicode` finds ünïcødé. Word search already matched `cafe` with café. Mail stored before this version gets the letter folding in subjects, addresses, attachment names and attachment text, not in body words.
+- `label:` matches a label's current name. After a rename, the old name no longer matches. Spaces in a name can be written as hyphens (`label:tax-2026`). The API's `label=` parameter still takes ids.
+- The Cancel button on a scheduled draft's row is named "Cancel scheduled send" for screen readers and browser agents.
+- An agent reply no longer offers Open draft for a draft it sent later in the same turn.
+
 ## 0.9.1
 
 ### Added

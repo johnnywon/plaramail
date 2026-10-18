@@ -15,6 +15,7 @@ import { toSearch, VIEW_LABELS } from "~/lib/mail-filter";
 import { ADDRESS_FOLDERS, ALL_FOLDERS, AllAddressesIcon, InboxIcon, VIEW_ICONS } from "./NavIcons";
 import { Keys, useShortcuts } from "./shortcuts";
 import { marks, snippetMarkup } from "./search-window";
+import { rowSender } from "./row-sender";
 import { dayKey, dayLabel, filterCount, hasChip, labelOf, type MailAction, RESTORABLE, scoped, scopeOf, sendTimeLabel, timeLabel, toggleChip, withoutKinds } from "./model";
 
 export interface ListPaneProps {
@@ -413,7 +414,7 @@ export function ListPane(props: ListPaneProps) {
 											{row.also_in.length > 0 && <span className="pg-also">+{row.also_in.length}</span>}
 										</div>
 									)}
-									<div className="pg-row-sender">{row.state === "draft" ? "Draft" : row.sender_name || row.sender_addr}</div>
+									<RowSenderLine row={row} />
 									<div className="pg-row-subject">
 										<a
 											className="pg-row-link"
@@ -438,7 +439,7 @@ export function ListPane(props: ListPaneProps) {
 												<span className="pg-row-badge" data-error={!!sched.error || undefined} title={sched.error ?? undefined} onClick={(e) => e.stopPropagation()}>
 													<ClockIcon size={10} />
 													{sched.error ? "Send failed" : `Scheduled · ${sendTimeLabel(new Date(sched.sendAt))}`}
-													<button type="button" onClick={() => props.onCancelScheduled(sched)}>Cancel</button>
+													<button type="button" aria-label="Cancel scheduled send" onClick={() => props.onCancelScheduled(sched)}>Cancel</button>
 												</span>
 											)}
 										</div>
@@ -494,5 +495,17 @@ export function ListPane(props: ListPaneProps) {
 				)}
 			</div>
 		</section>
+	);
+}
+
+/** The sender, or for sent mail "To" and the first recipient. */
+function RowSenderLine({ row }: { row: Conversation }) {
+	const who = rowSender(row);
+	return (
+		<div className="pg-row-sender">
+			{who.to && <span className="pg-row-sender-to">To </span>}
+			{who.text}
+			{who.more ? <span className="pg-row-sender-more"> +{who.more}</span> : null}
+		</div>
 	);
 }

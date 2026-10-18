@@ -209,6 +209,8 @@ export interface Conversation {
 	date: string;
 	sender_addr: string;
 	sender_name: string;
+	/** The To line, for showing who sent mail went to. */
+	recipient: string;
 	subject: string;
 	snippet: string;
 	unread: boolean;
@@ -422,6 +424,7 @@ function toConversation(row: Record<string, unknown>): Conversation {
 		date: String(row.date),
 		sender_addr: String(row.sender_addr),
 		sender_name: String(row.sender_name),
+		recipient: String(row.recipient ?? ""),
 		subject: String(row.subject),
 		snippet: String(row.snippet),
 		unread: !!row.unread,
