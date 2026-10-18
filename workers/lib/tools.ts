@@ -155,13 +155,13 @@ export async function toolDraftReply(
 	const original = (await stub.getEmail(params.originalEmailId)) as EmailFull | null;
 	const threadId = original?.thread_id || params.originalEmailId;
 
-	// Append quoted original message
+	// Append quoted original message, its time in the reader's zone.
 	const quotedBlock = original
 		? buildQuotedReplyBlock({
 				date: original.date,
 				sender: original.sender || params.to,
 				body: original.body ?? undefined,
-			})
+			}, (await readPrefs(env)).prefs.timeZone)
 		: "";
 	const bodyHtml = processedBody + quotedBlock;
 
