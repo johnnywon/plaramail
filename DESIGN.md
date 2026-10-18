@@ -97,7 +97,7 @@ Every console page is built from `ConsoleUI.tsx` and its `.pg-ui-*` styles. A ne
 | `Table` | Data on a panel: mono headers, right-aligned numbers, dim zeros, rose for a limit reached, rows that open. |
 | `Name` | First cell of a row: name, icon, tags, second line. |
 | `List` + `Item` | Stacked rows: drafts, log entries, signatures. Badge, title, time or aside, meta line, quote. An `Item` with children opens in place. `busy` dims the rows while a new filter loads, so a click never blanks the list. |
-| `Split` + `Row` | A list column beside a detail column, like mail's list and reader. A row has an icon, title, tags, a mark on the right (a mode), a second line and a mono meta line. |
+| `Split` + `Row` | A list column beside a detail column, like mail's list and reader. A row has an icon, title, tags, a mark on the right (a mode), a second line and a mono meta line. `tools` puts small buttons beside a row, outside its main button: Your agents uses them for Move up and Move down, the keyboard's way to reorder. |
 | `Stats` + `Stat` | Numbers in tiles; a tile can open where its number comes from. |
 | `Fields` + `Field` | Settings rows. `inline` for a switch, segmented control or number; otherwise a label column and a control column. |
 | `Track` | Steps left to right: the current one filled, the ones before it checked, later ones numbered. New agent's head (Job, Addresses, Name) and an agent's Trust (Watch, Draft, Send). |

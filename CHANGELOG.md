@@ -2,6 +2,18 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## 0.9.2
+
+### Fixed
+
+- Your agents: each agent row has Move up and Move down buttons, so the order can be changed from the keyboard, a screen reader or a browser agent. They use the same `PUT /api/v1/agents/order` as dragging.
+- The Send rung and the "To move to Send" gates show 0.10, the release Send arrives in, instead of 0.9. The Console and the API read it from one constant, `SEND_VERSION` in `shared/agent.ts`.
+- A watched run's reason is plain text of the reply the agent would have sent, without HTML entities or the quoted original. Reasons stored before this version are unchanged.
+- Console > Activity logs a `discard_draft` entry with the reason when a run throws its draft away: no agent's job fits, Watch mode, an earlier draft from the same run, or newer mail in the thread. A run that ended skipped no longer leaves a successful draft as the last word.
+- Delete agent's confirm button reads "Yes, delete <name>", focus moves to Keep, and clicks in the first 400 ms are ignored, so a double-click no longer deletes the agent.
+
+No D1 migration.
+
 ## 0.9.1
 
 ### Added

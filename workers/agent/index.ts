@@ -14,6 +14,7 @@ import { HeaderValueSchema } from "../lib/schemas";
 import { verifyDraft } from "../lib/ai";
 import { agentModel } from "../lib/agent-model";
 import { mailStore, recordsSql } from "../store";
+import { logActivity } from "../lib/activity";
 import {
 	toolDeleteLabel,
 	toolRenameLabel,
@@ -47,7 +48,7 @@ import type { Env } from "../types";
 import { defineTool, logTools } from "./tool-def";
 import { getSystemPrompt } from "./prompt";
 import { autoDraftPrompt, createAutoDraftTools, prepareAutoDraft, saveTextDraft } from "./auto-draft";
-import { type AutoDraftTarget, type DraftOutcome, outcomeAfterError, settleDrafts } from "./runs";
+import { type AutoDraftTarget, type DraftOutcome, discardRunDrafts, outcomeAfterError, settleDrafts, watchedReason } from "./runs";
 import { type Agent, agentSendsToday, listAgents, matchAgents } from "../lib/agents";
 import { readPrefs } from "../lib/prefs";
 import type { Unmatched } from "../../shared/prefs";
@@ -522,7 +523,8 @@ export class EmailAgent extends AIChatAgent<any> {
 	private async settle(draftIds: string[], chosen: string | null, matched: Agent[], unmatched: Unmatched, target: AutoDraftTarget): Promise<DraftOutcome> {
 		const agent = chosen ? matched.find((a) => a.name === chosen) ?? null : null;
 		const settled = settleDrafts(draftIds, agent, matched.length, unmatched);
-		for (const id of settled.discard) await toolDiscardDraft(this.env as Env, target.mailboxId, id).catch(() => {});
+		const why = "outcome" in settled && settled.outcome.status === "skipped" ? settled.outcome.reason : "an earlier draft from this run";
+		await discardRunDrafts(recordsSql(this.env as Env), (m, id) => toolDiscardDraft(this.env as Env, m, id), target.mailboxId, settled.discard, why);
 		return "outcome" in settled ? settled.outcome : await this.actAs(agent!, settled.act, target);
 	}
 
@@ -535,11 +537,11 @@ export class EmailAgent extends AIChatAgent<any> {
 		const env = this.env as Env;
 		if (agent.mode === "watch") {
 			const draft = await mailStore(env).mailbox(target.mailboxId).getEmail(draftId);
-			const preview = String(draft?.body ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
 			// A draft that couldn't be discarded is still in Drafts: the run is not "watched".
 			const discarded = await toolDiscardDraft(env, target.mailboxId, draftId);
 			if ("error" in discarded && discarded.error !== "Draft not found") throw new Error(`Watch draft not discarded: ${String(discarded.error)}`);
-			return { status: "watched", agentId: agent.id, reason: preview ? `Would reply: ${preview}` : "Would reply" };
+			await logActivity(recordsSql(env), { actor: "auto-draft", tool: "discard_draft", mailboxId: target.mailboxId, target: draftId, summary: "discarded, Watch mode keeps a note instead", ok: true });
+			return { status: "watched", agentId: agent.id, reason: watchedReason(String(draft?.body ?? "")) };
 		}
 		if (agent.mode === "draft") return { status: "drafted", draftId, agentId: agent.id };
 		const sends = await agentSendsToday(recordsSql(env), agent.id, target.sender);
