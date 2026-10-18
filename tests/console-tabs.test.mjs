@@ -10,7 +10,16 @@ test("?console= names a tab", () => {
 	for (const tab of CONSOLE_TABS) assert.equal(from(`console=${tab}`), tab);
 	assert.equal(from(""), null);
 	assert.equal(from("console="), null);
-	assert.equal(from("console=nope"), null);
+});
+
+test("the page's own name and its usual words open Preferences (#49)", () => {
+	for (const name of ["preferences", "settings", "prefs", "Preferences"]) assert.equal(from(`console=${name}`), "general", name);
+	assert.equal(from("settings=preferences"), "general");
+});
+
+test("an unknown page opens Overview instead of closing the console (#49)", () => {
+	assert.equal(from("console=nope"), "home");
+	assert.equal(from("settings=nope"), "home");
 });
 
 test("old ?settings= links and 0.7 console tabs open the same place", () => {
@@ -28,7 +37,7 @@ test("old ?settings= links and 0.7 console tabs open the same place", () => {
 
 test("names of built-in object properties don't open an empty console (WON-245)", () => {
 	for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) {
-		assert.equal(from(`console=${name}`), null);
-		assert.equal(from(`settings=${name}`), null);
+		assert.equal(from(`console=${name}`), "home");
+		assert.equal(from(`settings=${name}`), "home");
 	}
 });

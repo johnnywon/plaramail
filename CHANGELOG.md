@@ -2,6 +2,16 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## 0.9.2
+
+### Fixed
+
+- `?console=preferences`, `settings` and `prefs` open Preferences. Any other page name the console doesn't know opens Overview instead of closing the console.
+- Writing a signature no longer turns on Add by default. A new signature starts off, as the guide says.
+- Sends per address on Overview, and Mail storage, show whole addresses (`hello@example.com`, not `hello@example`). A long one is cut with an ellipsis and shown in full on hover.
+
+No D1 migration.
+
 ## 0.9.1
 
 ### Added

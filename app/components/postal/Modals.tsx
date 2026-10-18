@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { hasText, withSignatureText } from "./signature-state";
 import { ArrowCounterClockwiseIcon, DesktopIcon, KeyboardIcon, MoonIcon, SignOutIcon, SunIcon, XIcon } from "@phosphor-icons/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -31,7 +32,6 @@ export { Head, Modal, Switch } from "./Dialog";
 import { Head, Modal, Switch } from "./Dialog";
 
 /** Whether signature HTML has any text in it. */
-const hasText = (html: string) => !!html.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
 
 /** A setting on one line: the console's inline `Field`. */
 function Setting({ title, sub, children }: { title: string; sub?: React.ReactNode; children: React.ReactNode }) {
@@ -70,8 +70,7 @@ export function ConsoleSettings({ tab, onTab, prefs, setPrefs, addresses, identi
 	const writeSigs = (to: string[], html: string) => setSigs((cur) => {
 		const next = { ...cur };
 		for (const a of to) {
-			const was = cur[a] ?? { html: "", enabled: false };
-			next[a] = { html, enabled: !hasText(html) ? false : !hasText(was.html) ? true : was.enabled };
+			next[a] = withSignatureText(cur[a] ?? { html: "", enabled: false }, html);
 		}
 		return next;
 	});
