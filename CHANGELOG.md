@@ -2,6 +2,20 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## 0.9.2
+
+### Upgrading
+
+- Add `"global_fetch_strictly_public"` to `compatibility_flags` in a deployment's own Wrangler config. `wrangler.jsonc` has it. It lets MCP clients sign in with a Client ID Metadata Document URL, and `npm run smoke` fails without it.
+
+### Fixed
+
+- `/authorize` with a Client ID Metadata Document URL as `client_id` returned 500, because the OAuth library needs the `global_fetch_strictly_public` flag for those documents. The flag is now set. Any error `/authorize` doesn't recognise shows the "Can't connect this app" page and is logged.
+- The protected resource metadata (`/.well-known/oauth-protected-resource/mcp`) lists both scopes, `mail` and `mail.send`, as the authorization server metadata does. A client that builds its request from it can now ask for `mail.send`. `mail` stays the only required scope. docs/mcp.md says which document to read.
+- `npm run smoke` checks that both OAuth documents list the same scopes and that client ID metadata documents are supported.
+
+No D1 migration.
+
 ## 0.9.1
 
 ### Added

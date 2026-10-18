@@ -60,7 +60,7 @@ Requirements: a domain on Cloudflare, R2, and Workers Paid for outbound email. T
    npx wrangler@latest email sending enable example.com
    ```
    This works for a subdomain too, for example `mail.example.com`.
-8. **Check it.** `npm run smoke` expects the app and its API to redirect to the Access login, `/mcp` to answer 401 with an OAuth challenge, the OAuth metadata under `/.well-known` to load, and `/authorize` to stay behind Access. It reads the hostname from `routes`; without one, run `SMOKE_URL=https://<your worker URL> npm run smoke`. Then send a message to one of your addresses. A configured address gets its mailbox on first delivery, so mail is kept even if nobody has opened the app yet.
+8. **Check it.** `npm run smoke` expects the app and its API to redirect to the Access login, `/mcp` to answer 401 with an OAuth challenge, the OAuth metadata under `/.well-known` to load with the same scopes in both documents and client ID metadata documents on, and `/authorize` to stay behind Access. It reads the hostname from `routes`; without one, run `SMOKE_URL=https://<your worker URL> npm run smoke`. Then send a message to one of your addresses. A configured address gets its mailbox on first delivery, so mail is kept even if nobody has opened the app yet.
 
 ### Troubleshooting Access
 
@@ -77,6 +77,7 @@ Requirements: a domain on Cloudflare, R2, and Workers Paid for outbound email. T
 | `ATTACHMENT_SEARCH` | `vars` | `true` makes attachment text searchable. Uses one Workers AI `toMarkdown` call per PDF, Word or Excel file. |
 | `MCP_SEND_ENABLED` | `vars` | `false` takes the send tools away from every MCP client, whatever it was granted |
 | `POLICY_AUD`, `TEAM_DOMAIN` | secrets | Cloudflare Access verification |
+| `global_fetch_strictly_public` | `compatibility_flags` | Lets MCP clients sign in with a Client ID Metadata Document URL as their `client_id`. Without it the OAuth metadata reports `client_id_metadata_document_supported: false` and such clients get "Can't connect this app". `wrangler.jsonc` sets it; a deployment with its own config adds it next to `nodejs_compat`. |
 
 To rebrand a deployment, set `APP_NAME` and replace the files listed in [`public/brand/README.md`](../public/brand/README.md).
 
