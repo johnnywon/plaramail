@@ -12,6 +12,7 @@ const read = (name) => readFileSync(new URL(name, DIR), "utf8");
 const CONSOLE_FILES = [
 	"Console.tsx", "ConsoleColophon.tsx", "ConsoleUI.tsx", "ConsoleSearch.tsx", "ConsoleMessage.tsx", "OverviewTab.tsx",
 	"LimitsTab.tsx", "ActivityTab.tsx", "StorageTab.tsx", "LabelsTab.tsx", "ShortcutsTab.tsx", "ModelTab.tsx", "McpTab.tsx",
+	"BlockedSenders.tsx",
 ];
 
 /** Primitives the whole app shares: controls, type, table, layout helpers, dialogs. */
@@ -19,7 +20,7 @@ const SHARED = new Set([
 	"pg-btn", "pg-btn-", "pg-btn-sm", "pg-btn-primary", "pg-btn-quiet", "pg-btn-danger", "pg-icon-btn",
 	"pg-input", "pg-textarea", "pg-select", "pg-kbd", "pg-mono", "pg-flex", "pg-ellipsis", "pg-table",
 	"pg-hide-sm", "pg-mobile-only", "pg-desktop-only", "pg-modal", "pg-modal-foot", "pg-drawer-scrim", "pg-rail-head",
-	"pg-caption", "pg-popover", "pg-menu-item", "pg-h", "pg-reveal", "pg-reveal-in"
+	"pg-caption", "pg-popover", "pg-menu-item", "pg-h", "pg-reveal", "pg-reveal-in", "pg-sr-only",
 ]);
 
 /** One-offs, by prefix, and why each pays off. */

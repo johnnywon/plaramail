@@ -274,6 +274,40 @@ export class D1Mailbox {
 		return pickSubjectThread(rows as unknown as SubjectRow[], subject, senderAddress);
 	}
 
+	// ── Blocked senders ────────────────────────────────────────────
+
+	/** Whether new mail from `address` goes straight to Trash. */
+	async isBlockedSender(address: string): Promise<boolean> {
+		const addr = address.trim().toLowerCase();
+		if (!addr) return false;
+		return !!(await this.sql.first(`SELECT 1 AS ok FROM blocked_senders WHERE mailbox_id = ? AND address = ?`, this.#id, addr));
+	}
+
+	/** Block a sender. Blocking one already blocked keeps the first date. */
+	async blockSender(address: string): Promise<{ address: string; createdAt: string }> {
+		const addr = address.trim().toLowerCase();
+		await this.sql.batch([
+			...ensureMailboxStatements(this.#id),
+			{ sql: `INSERT OR IGNORE INTO blocked_senders (mailbox_id, address, created_at) VALUES (?, ?, ?)`, params: [this.#id, addr, new Date().toISOString()] },
+		]);
+		const row = await this.sql.first(`SELECT created_at FROM blocked_senders WHERE mailbox_id = ? AND address = ?`, this.#id, addr);
+		return { address: addr, createdAt: String(row?.created_at ?? "") };
+	}
+
+	/** False when the sender was not blocked. */
+	async unblockSender(address: string): Promise<boolean> {
+		const rows = await this.sql.all(
+			`DELETE FROM blocked_senders WHERE mailbox_id = ? AND address = ? RETURNING address`,
+			this.#id, address.trim().toLowerCase(),
+		);
+		return rows.length > 0;
+	}
+
+	async listBlockedSenders(): Promise<{ address: string; createdAt: string }[]> {
+		return (await this.sql.all(`SELECT address, created_at FROM blocked_senders WHERE mailbox_id = ? ORDER BY address`, this.#id))
+			.map((r) => ({ address: String(r.address), createdAt: String(r.created_at) }));
+	}
+
 	// ── Folder import ──────────────────────────────────────────────
 
 	async folderImportCounts() {

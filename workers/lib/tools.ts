@@ -507,6 +507,22 @@ export async function toolLabelConversation(
 	return { status: "updated", emailId, changes: done };
 }
 
+// ── star_conversation ──────────────────────────────────────────────
+
+/**
+ * Star or unstar the conversation that holds an email, the way the app's star
+ * does: starring marks its latest message, unstarring clears every message.
+ */
+export async function toolStarConversation(env: Env, mailboxId: string, emailId: string, starred: boolean) {
+	const index = mailStore(env).all();
+	const threadKey = await index.threadKeyOf(mailboxId, emailId);
+	if (!threadKey) return { error: "Email not found", emailId };
+	const result = await index.bulk({ threadKeys: [threadKey], view: "all" }, { type: starred ? "star" : "unstar" });
+	const failure = "failed" in result ? result.failed?.[0] : undefined;
+	if (failure) return { error: failure.error };
+	return { status: starred ? "starred" : "unstarred", emailId };
+}
+
 // ── search_all_mail / label_matching ───────────────────────────────
 
 /** A search across every address, as the agent tools describe it. */

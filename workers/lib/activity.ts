@@ -41,11 +41,16 @@ export const TOOL_ACTIONS: Record<string, ActivityAction> = {
 	rename_label: "label",
 	label_conversation: "label",
 	label_matching: "label",
+	star_conversation: "label",
 	move_email: "move",
 	mark_email_read: "move",
 	set_shortcut: "settings",
 	reset_shortcuts: "settings",
 	redraft: "draft",
+	// People in the app (WON-217).
+	unsubscribe: "settings",
+	block_sender: "settings",
+	unblock_sender: "settings",
 };
 
 export interface ActivityEntry {

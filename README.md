@@ -10,7 +10,7 @@ Self-hosted webmail and MCP server for Cloudflare Email Routing. One Worker serv
 The interface is designed for the parts of email that still need a person: finding a verification code, opening a sign-in link, and working through what an agent has sorted and drafted.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/johnnywon/pluramail)
-[![Version 0.9.3](https://img.shields.io/badge/version-0.9.3-blue)](https://github.com/johnnywon/pluramail/releases)
+[![Version 0.9.4](https://img.shields.io/badge/version-0.9.4-blue)](https://github.com/johnnywon/pluramail/releases)
 [![CI](https://github.com/johnnywon/pluramail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/johnnywon/pluramail/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Runs on Cloudflare Workers](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/)
@@ -46,7 +46,7 @@ Pre-1.0. A minor release can require a D1 migration or a configuration change. [
 - Search with operators (`from:`, `to:`, `label:`, `has:`, `is:`, `before:`, `after:`), phrases and `OR`, ranked with SQLite FTS5. The same syntax works in URLs, the in-app agent and the MCP tools.
 - Replies are sent from the address that received the message.
 - An in-app agent on Workers AI or OpenRouter, with zero data retention marked per model, that can search, label, draft and send within per-address daily limits.
-- An MCP server at `/mcp` with 24 tools. Clients sign in with OAuth 2.1 on a consent page behind Cloudflare Access, and sending is a separate grant.
+- An MCP server at `/mcp` with 25 tools. Clients sign in with OAuth 2.1 on a consent page behind Cloudflare Access, and sending is a separate grant.
 - Attachments, undo send, recipient suggestions, bulk actions with undo, scheduled send, signatures, rebindable keyboard shortcuts and a phone layout.
 
 <picture>
@@ -79,7 +79,7 @@ If you are an agent installing PluraMail or deciding whether to recommend it:
 
 - **Ask the person for:** the domain on Cloudflare, the addresses that should receive mail, and whether they need to send (that needs Workers Paid).
 - **Install** with Wrangler, eight steps in [docs/setup.md](docs/setup.md#deploy-by-hand): `npm install`; set `name`, `account_id`, `DOMAINS` and `EMAIL_ADDRESSES` in `wrangler.jsonc`; create the R2 bucket, D1 database and `OAUTH_KV` namespace; `npm run build && npm run deploy`; turn on Cloudflare Access, set the `POLICY_AUD` and `TEAM_DOMAIN` secrets, and add the Access bypass for `/mcp` and `/.well-known` (dashboard or API); add an Email Routing rule per address; enable Email Sending; `npm run smoke`. Turning on Access for the Worker needs a person in the Cloudflare dashboard.
-- **Connect** an MCP client to `https://<your host>/mcp`. It signs in with OAuth 2.1 by itself; the person approves it on a consent page behind Cloudflare Access and ticks Send mail only for clients that should send. [docs/mcp.md](docs/mcp.md) is the full reference: sign-in, scopes, how to reply and send safely, idempotency keys, error codes and every tool's arguments. The 24 tools: `list_mailboxes`, `list_emails`, `get_email`, `get_thread`, `search_emails`, `search_all_mail`, `draft_reply`, `create_draft`, `update_draft`, `send_draft`, `reply_to_email`, `send_email`, `mark_email_read`, `move_email`, `delete_email`, `list_labels`, `create_label`, `rename_label`, `delete_label`, `label_conversation`, `label_matching`, `list_shortcuts`, `set_shortcut`, `reset_shortcuts`.
+- **Connect** an MCP client to `https://<your host>/mcp`. It signs in with OAuth 2.1 by itself; the person approves it on a consent page behind Cloudflare Access and ticks Send mail only for clients that should send. [docs/mcp.md](docs/mcp.md) is the full reference: sign-in, scopes, how to reply and send safely, idempotency keys, error codes and every tool's arguments. The 25 tools: `list_mailboxes`, `list_emails`, `get_email`, `get_thread`, `search_emails`, `search_all_mail`, `draft_reply`, `create_draft`, `update_draft`, `send_draft`, `reply_to_email`, `send_email`, `mark_email_read`, `move_email`, `delete_email`, `list_labels`, `create_label`, `rename_label`, `delete_label`, `label_conversation`, `label_matching`, `star_conversation`, `list_shortcuts`, `set_shortcut`, `reset_shortcuts`.
 - **Sending** over MCP needs the `mail.send` grant. Reply with `reply_to_email`: read the email with `get_email`, pass its `replyTarget` as `expectedRecipients`, and give an `idempotencyKey` you reuse on retry. Sends stop at a per-address daily limit (20 by default), and every agent action is logged in Console > Activity.
 - **Changing the code:** [AGENTS.md](AGENTS.md) for the writing voice, [CLAUDE.md](CLAUDE.md) for checks and repo rules, [DESIGN.md](DESIGN.md) for the UI.
 

@@ -5,7 +5,8 @@
 import { type Context, Hono } from "hono";
 import pkg from "../package.json";
 import { cors } from "hono/cors";
-import PostalMime from "postal-mime";
+import { parseMail } from "./lib/parse-mail";
+import { bounceLink } from "./lib/bounce";
 import { z } from "zod";
 import { generateText } from "ai";
 import { deleteAttachmentFiles, type StoredAttachment } from "./lib/attachments";
@@ -42,7 +43,8 @@ import { listRuns } from "./agent/runs";
 import { readAgentLimits, writeAgentLimits } from "./lib/agent-limits";
 import { agentOverview } from "./lib/agent-overview";
 import { getSystemPrompt } from "./agent/prompt";
-import { ACTIVITY_ACTORS, listActivity, logged, mcpUsage, TOOL_ACTIONS } from "./lib/activity";
+import { ACTIVITY_ACTORS, listActivity, logActivity, logged, mcpUsage, TOOL_ACTIONS } from "./lib/activity";
+import { unsubscribe, unsubscribeSummary } from "./lib/unsubscribe";
 import { verifyDraft } from "./lib/ai";
 import { AgentBody, agentStats, createAgent, deleteAgent, listAgentDrafts, listAgents, matchAgents, orderAgents, updateAgent } from "./lib/agents";
 import { redraft } from "./lib/redraft";
@@ -729,6 +731,61 @@ app.delete("/api/v1/mailboxes/:mailboxId/emails/:id", async (c: AppContext) => {
 	return c.json({ status: result.action });
 });
 
+// -- Unsubscribe and blocked senders (WON-217) ----------------------
+
+/**
+ * Unsubscribe from the list that sent this message, by its stored headers.
+ * One-click is a POST from here; for a link or a mailto the answer says what
+ * the app opens. Each is recorded in the Activity log.
+ */
+app.post("/api/v1/mailboxes/:mailboxId/emails/:id/unsubscribe", async (c: AppContext) => {
+	const mailboxId = c.req.param("mailboxId")!.toLowerCase();
+	const email = await c.var.mailbox.getEmail(c.req.param("id")!);
+	if (!email) return c.json({ error: "Email not found" }, 404);
+	const result = await unsubscribe(email.raw_headers);
+	if (result.method === null) return c.json({ error: result.error }, 400);
+	await logActivity(recordsSql(c.env), {
+		actor: "person", tool: "unsubscribe", mailboxId, target: email.id,
+		summary: unsubscribeSummary(email.sender ?? "", result), ok: result.ok,
+	});
+	if (!result.ok) return c.json({ error: result.error, method: result.method }, result.refused ? 400 : 502);
+	return c.json(result);
+});
+
+/** Block the sender of this message for this address: their new mail goes to Trash, marked read. */
+app.post("/api/v1/mailboxes/:mailboxId/emails/:id/block", async (c: AppContext) => {
+	const mailboxId = c.req.param("mailboxId")!.toLowerCase();
+	const email = await c.var.mailbox.getEmail(c.req.param("id")!);
+	if (!email) return c.json({ error: "Email not found" }, 404);
+	const address = (email.sender ?? "").trim().toLowerCase();
+	if (!address.includes("@")) return c.json({ error: "This message has no sender address" }, 400);
+	if (address === mailboxId || configuredAddresses(c.env).some((a) => a.toLowerCase() === address)) {
+		return c.json({ error: "Your own addresses can't be blocked" }, 400);
+	}
+	const blocked = await c.var.mailbox.blockSender(address);
+	await logActivity(recordsSql(c.env), { actor: "person", tool: "block_sender", mailboxId, target: email.id, summary: address, ok: true });
+	return c.json({ mailboxId, ...blocked });
+});
+
+app.get("/api/v1/mailboxes/:mailboxId/blocked-senders", async (c: AppContext) =>
+	c.json(await c.var.mailbox.listBlockedSenders()));
+
+app.delete("/api/v1/mailboxes/:mailboxId/blocked-senders/:address", async (c: AppContext) => {
+	const mailboxId = c.req.param("mailboxId")!.toLowerCase();
+	const address = c.req.param("address")!.toLowerCase();
+	if (!(await c.var.mailbox.unblockSender(address))) return c.json({ error: "Not found" }, 404);
+	await logActivity(recordsSql(c.env), { actor: "person", tool: "unblock_sender", mailboxId, target: null, summary: address, ok: true });
+	return c.json({ removed: true });
+});
+
+/** Blocked senders for every address, for Console > Addresses. */
+app.get("/api/v1/blocked-senders", async (c) => {
+	const store = mailStore(c.env);
+	const lists = await Promise.all((await mailboxIds(c.env)).map(async (mailboxId) =>
+		(await store.mailbox(mailboxId).listBlockedSenders()).map((b) => ({ mailboxId, ...b }))));
+	return c.json(lists.flat());
+});
+
 // -- Threads --------------------------------------------------------
 
 app.get("/api/v1/mailboxes/:mailboxId/threads/:threadId", async (c: AppContext) => {
@@ -801,7 +858,7 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 	}
 
 	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
-	const parsedEmail = await new PostalMime().parse(rawEmail);
+	const parsedEmail = await parseMail(rawEmail);
 	const extractMsgId = (s: string) => { const m = s.match(/<([^>]+)>/); return m ? m[1] : s.trim().split(/\s+/)[0]; };
 	const originalMessageId = parsedEmail.messageId ? extractMsgId(parsedEmail.messageId) : null;
 	const allRecipients = (parsedEmail.to || []).map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
@@ -844,16 +901,23 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 		}
 	}
 
-	const inReplyTo = parsedEmail.inReplyTo ? extractMsgId(parsedEmail.inReplyTo) : null;
+	// A bounce notice joins the conversation of the Sent message it is about (lib/bounce.ts).
+	const bounced = await bounceLink(recordsSql(env), mailboxId, parsedEmail).catch((e) => {
+		console.error("Bounce lookup failed:", (e as Error).message);
+		return null;
+	});
+	const inReplyTo = bounced?.link?.messageId ?? (parsedEmail.inReplyTo ? extractMsgId(parsedEmail.inReplyTo) : null);
 	const emailReferences = parsedEmail.references ? parsedEmail.references.split(/\s+/).filter(Boolean).map(extractMsgId) : [];
 	// Join a thread only through mail this mailbox already holds (lib/threading.ts).
-	const threadId = await withAttachmentCleanup(() => resolveThreadId(stub, {
+	const threadId = bounced?.link?.threadId ?? await withAttachmentCleanup(() => resolveThreadId(stub, {
 		messageId, inReplyTo, references: emailReferences,
 		subject: parsedEmail.subject || "", sender: (parsedEmail.from?.address || "").toLowerCase(),
 	}));
 
+	// A blocked sender's mail goes straight to Trash, marked read, and no agent sees it (WON-217).
+	const blocked = await withAttachmentCleanup(() => stub.isBlockedSender(parsedEmail.from?.address || ""));
 	const inbound = {
-		id: messageId, subject: parsedEmail.subject || "",
+		id: messageId, subject: parsedEmail.subject || "", read: blocked,
 		sender: (parsedEmail.from?.address || "").toLowerCase(), recipient: allRecipients.join(", ") || mailboxId,
 		cc: ccRecipients.join(", ") || null, bcc: bccRecipients.join(", ") || null,
 		date: new Date().toISOString(), // uses receive time, not the email's Date header
@@ -861,12 +925,13 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 		in_reply_to: inReplyTo, email_references: emailReferences.length > 0 ? JSON.stringify(emailReferences) : null,
 		thread_id: threadId, message_id: originalMessageId, raw_headers: JSON.stringify(parsedEmail.headers),
 	};
-	await withAttachmentCleanup(() => stub.createEmail(Folders.INBOX, inbound, attachmentData));
+	await withAttachmentCleanup(() => stub.createEmail(blocked ? Folders.TRASH : Folders.INBOX, inbound, attachmentData));
+	if (blocked) return;
 
 	// Nothing drafts every email. New mail goes to the agent only when an enabled agent's
 	// addresses and rules take it, or the owner chose that the PluraMail Agent drafts what
 	// no agent takes. Rules only: no model call for mail nobody wants.
-	const automated = automatedMailReason(JSON.stringify(parsedEmail.headers), parsedEmail.from?.address);
+	const automated = bounced ? "bounce notice" : automatedMailReason(JSON.stringify(parsedEmail.headers), parsedEmail.from?.address);
 	const wanted = automated ? false : await agentsWant(env, {
 		mailboxId, from: (parsedEmail.from?.address || "").toLowerCase(), subject: parsedEmail.subject || "",
 		body: parsedEmail.text || (parsedEmail.html ? stripHtmlToText(parsedEmail.html) : ""),

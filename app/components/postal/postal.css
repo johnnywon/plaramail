@@ -1570,6 +1570,7 @@ button.pg-model-row:hover { background: var(--pg-hover); }
 .pg-ui-clip { max-width: 320px; overflow: hidden; text-overflow: ellipsis; color: var(--pg-text-6) !important; }
 .pg-ui-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--pg-text-1); }
 .pg-ui-name-sub { display: block; margin-top: 2px; max-width: 60ch; font-size: var(--pg-t-12); font-weight: 400; color: var(--pg-text-6); white-space: normal; }
+.pg-ui-break { overflow-wrap: anywhere; }
 
 .pg-ui-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
 .pg-ui-item { border-bottom: 1px solid var(--pg-line-soft); }

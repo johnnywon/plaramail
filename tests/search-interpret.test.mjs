@@ -87,3 +87,46 @@ test("the prompt quotes the request and gives the date, labels and addresses", a
 	await run(long, async (p) => ((sent = p), "{}"));
 	assert.ok(sent.split("<<<\n")[1].split("\n>>>")[0].length <= si.MAX_REQUEST_LENGTH);
 });
+
+test("an explanation that names a date the query doesn't filter on is rebuilt from the query", async () => {
+	const terms = [{ field: "from", value: "alice@example.com" }, { field: "has", value: "attachment" }, { field: "in", value: "anywhere" }];
+	const built = "Mail from alice@example.com, with an attachment, in any folder";
+	const cases = [
+		{ explanation: "Mail from alice today with attachment", want: built },
+		{ explanation: "Mail from alice this week with an attachment", want: built },
+		{ explanation: "Attachments from alice since Monday", want: built },
+		{ explanation: "Alice's attachments from yesterday", want: built },
+		{ explanation: "Mail from alice in the last 7 days", want: built },
+		{ explanation: "Recent attachments from alice", want: built },
+		{ explanation: "Attachments alice sent in September", want: built },
+		{ explanation: "Mail from alice with an attachment", want: "Mail from alice with an attachment" },
+		{ explanation: "", want: built },
+	];
+	for (const { explanation, want } of cases) {
+		const out = await run("QA test mail from alice today with an attachment", answer({ terms, explanation }));
+		assert.deepEqual(out, { query: "from:alice@example.com has:attachment in:anywhere", explanation: want }, explanation || "empty");
+	}
+});
+
+test("a date in the explanation stays when the query has a date filter", async () => {
+	const cases = [
+		{ terms: [{ field: "from", value: "alice@example.com" }, { field: "after", value: "2026-10-11" }], explanation: "Mail from alice today" },
+		{ terms: [{ field: "is", value: "unread" }, { field: "newer", value: "7d" }], explanation: "Unread mail this week" },
+		{ terms: [{ field: "after", value: "2026-09-01" }, { field: "before", value: "2026-10-01" }], explanation: "Mail from last month" },
+	];
+	for (const { terms, explanation } of cases) {
+		assert.equal((await run("x", answer({ terms, explanation }))).explanation, explanation);
+	}
+});
+
+test("explanations built from the search text", () => {
+	const cases = [
+		["is:unread from:ann", "Unread mail from ann"],
+		[`lease "wire transfer" -from:example.net label:"Tax 2026"`, `Mail containing lease and "wire transfer", not from example.net, labeled Tax 2026`],
+		["has:pdf OR has:image after:2026-09-01 before:2026-10-01", "Mail with a PDF or with an image, on or after 2026-09-01, before 2026-10-01"],
+		["newer:7d in:sent -has:attachment", "Mail newer than 7d, in Sent, without an attachment"],
+		["larger:5mb subject:invoice -is:read -lease sort:date", "Mail larger than 5mb, with invoice in the subject, not read, without lease"],
+		["has:unsubscribe", "Mail from a mailing list"],
+	];
+	for (const [query, want] of cases) assert.equal(si.describeSearch(query), want, query);
+});
