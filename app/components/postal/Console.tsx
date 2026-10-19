@@ -10,7 +10,7 @@ import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tan
 import { Fragment, type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 import { SEND_VERSION } from "shared/agent";
 import type { Unmatched } from "shared/prefs";
-import { moveInOrder } from "./agent-order";
+import { afterMove, moveInOrder } from "./agent-order";
 import { confirmReady } from "./confirm-guard";
 import api, { type Agent, type AgentDraft, type AgentMode, type AgentRule, type AgentStats, type AutoDraftRun } from "~/services/api";
 import { RunBadge, when } from "./ActivityTab";
@@ -274,6 +274,10 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 		queryClient.setQueryData(["agents"], { ...data, agents: ids.map((id) => data.agents.find((a) => a.id === id)!) });
 		order.mutate(ids);
 	};
+	// Reordering moves the row's DOM node, which drops focus, so focus goes back to the arrow after render (#63).
+	const arrows = useRef(new Map<string, HTMLButtonElement>());
+	const [moved, setMoved] = useState<{ id: string; focus: -1 | 1 } | null>(null);
+	const [announce, setAnnounce] = useState("");
 	// The keyboard's and screen reader's way to reorder: the same order API as dragging.
 	const move = (id: string, by: -1 | 1) => {
 		if (!data) return;
@@ -281,6 +285,19 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 		if (!ids) return;
 		queryClient.setQueryData(["agents"], { ...data, agents: ids.map((i) => data.agents.find((a) => a.id === i)!) });
 		order.mutate(ids);
+		const after = afterMove(ids, id, by, data.agents.find((a) => a.id === id)?.name ?? "agent");
+		if (!after) return;
+		setMoved({ id, focus: after.focus });
+		setAnnounce(after.message);
+	};
+	useEffect(() => {
+		if (!moved) return;
+		arrows.current.get(`${moved.id}:${moved.focus}`)?.focus();
+		setMoved(null);
+	}, [moved, data]);
+	const arrowRef = (key: string) => (el: HTMLButtonElement | null) => {
+		if (el) arrows.current.set(key, el);
+		else arrows.current.delete(key);
 	};
 	// With nothing picked, the detail shows the PluraMail Agent; on a phone the list shows instead.
 	const picked = tab === "mailroom" || !!agentId;
@@ -288,6 +305,7 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 
 	return (
 		<>
+			<span className="pg-sr-only" role="status" aria-live="polite">{announce}</span>
 			<Split
 				label={CONSOLE_LABELS.agents}
 				title={CONSOLE_LABELS.agents}
@@ -318,8 +336,8 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 							off={!a.enabled}
 							onClick={() => onAgent(a.id)}
 							tools={all.length > 1 && <>
-								<button type="button" className="pg-icon-btn" aria-label={`Move ${a.name} up`} title="Move up" disabled={i === 0} onClick={() => move(a.id, -1)}><ArrowUpIcon size={12} /></button>
-								<button type="button" className="pg-icon-btn" aria-label={`Move ${a.name} down`} title="Move down" disabled={i === all.length - 1} onClick={() => move(a.id, 1)}><ArrowDownIcon size={12} /></button>
+								<button type="button" ref={arrowRef(`${a.id}:-1`)} className="pg-icon-btn" aria-label={`Move ${a.name} up`} title="Move up" disabled={i === 0} onClick={() => move(a.id, -1)}><ArrowUpIcon size={12} /></button>
+								<button type="button" ref={arrowRef(`${a.id}:1`)} className="pg-icon-btn" aria-label={`Move ${a.name} down`} title="Move down" disabled={i === all.length - 1} onClick={() => move(a.id, 1)}><ArrowDownIcon size={12} /></button>
 							</>}
 							liProps={{
 								"data-dragging": dragging === a.id || undefined,
