@@ -47,7 +47,7 @@ Pre-1.0. A minor release can require a D1 migration or a configuration change. [
 - Replies are sent from the address that received the message.
 - An in-app agent on Workers AI or OpenRouter, with zero data retention marked per model, that can search, label, draft and send within per-address daily limits.
 - An MCP server at `/mcp` with 24 tools. Clients sign in with OAuth 2.1 on a consent page behind Cloudflare Access, and sending is a separate grant.
-- Attachments, bulk actions with undo, scheduled send, signatures, rebindable keyboard shortcuts and a phone layout.
+- Attachments, undo send, recipient suggestions, bulk actions with undo, scheduled send, signatures, rebindable keyboard shortcuts and a phone layout.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/search-light.jpg">
@@ -112,7 +112,7 @@ A plain-text summary for language models is in [llms.txt](llms.txt).
                                   data retention)
 ```
 
-A single Worker handles inbound mail (`email()`), the HTTP API and UI, the MCP endpoint and a cron trigger for scheduled sends and attachment text. Mail metadata and search indexes are in one D1 database for all addresses; attachments and large bodies are in R2. The agent runs in a Durable Object. Details are in [docs/architecture.md](docs/architecture.md).
+A single Worker handles inbound mail (`email()`), the HTTP API and UI, the MCP endpoint and a cron trigger for scheduled sends, attachment text and, when set, Trash and Spam retention. Mail metadata and search indexes are in one D1 database for all addresses; attachments and large bodies are in R2. The agent runs in a Durable Object. Details are in [docs/architecture.md](docs/architecture.md).
 
 ## Security and data
 

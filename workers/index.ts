@@ -520,7 +520,7 @@ app.get("/api/v1/search/suggest", async (c) => {
 app.get("/api/v1/contacts", async (c) => {
 	const q = (new URL(c.req.url).searchParams.get("q") ?? "").slice(0, 100);
 	const store = mailStore(c.env);
-	const own = (await store.mailboxes.list()).map((m) => m.id);
+	const own = [...configuredAddresses(c.env), ...(await store.mailboxes.list()).map((m) => m.id)];
 	return c.json({ contacts: await store.all().contacts(q, own) });
 });
 

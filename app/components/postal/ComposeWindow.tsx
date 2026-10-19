@@ -450,9 +450,10 @@ export function Composer(props: ComposerProps) {
 				data-state={dataState}
 				data-dropping={dropping || undefined}
 				onPasteCapture={(e) => {
-					// A pasted file is attached. Pasted text and images from a page stay with the editor.
+					// A pasted file or screenshot is attached. A copy from a page (it carries HTML) stays with the editor;
+					// a file copied in Finder can carry its name as plain text, so plain text alone doesn't count.
 					const files = Array.from(e.clipboardData.files);
-					if (!files.length || e.clipboardData.getData("text/html") || e.clipboardData.getData("text/plain")) return;
+					if (!files.length || e.clipboardData.getData("text/html")) return;
 					e.preventDefault();
 					e.stopPropagation();
 					addFiles(files);

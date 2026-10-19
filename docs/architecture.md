@@ -27,7 +27,7 @@ How the Worker is put together, what happens when mail arrives and when you send
                                   data retention)
 ```
 
-Everything runs in one Worker on your account. Mail is stored in D1, one database for every address, with attachments and bodies over 512 KB in R2. A one-minute cron sends scheduled mail and, with `ATTACHMENT_SEARCH` on, makes attachment text searchable. Before 0.5, mail was stored in a Durable Object per address with a combined index; 0.6 removed that store ([Upgrading from Durable Object storage](setup.md#upgrading-from-durable-object-storage)).
+Everything runs in one Worker on your account. Mail is stored in D1, one database for every address, with attachments and bodies over 512 KB in R2. A one-minute cron sends scheduled mail and, with `ATTACHMENT_SEARCH` on, makes attachment text searchable. Once an hour it prunes the activity log and, when Keep Trash and Spam is set, deletes mail that has been in Trash or Spam longer than that. Before 0.5, mail was stored in a Durable Object per address with a combined index; 0.6 removed that store ([Upgrading from Durable Object storage](setup.md#upgrading-from-durable-object-storage)).
 
 What happens when a message arrives:
 

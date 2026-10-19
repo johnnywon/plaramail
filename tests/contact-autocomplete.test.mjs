@@ -37,4 +37,5 @@ test("the recipient field is a combobox over GET /api/v1/contacts", () => {
 	assert.doesNotMatch(win, /TODO\(roadmap\): contact autocomplete/);
 	const worker = readFileSync(new URL("../workers/index.ts", import.meta.url), "utf8");
 	assert.match(worker, /app\.get\("\/api\/v1\/contacts"/);
+	assert.match(worker, /const own = \[\.\.\.configuredAddresses\(c\.env\), /, "configured addresses with no mailbox yet are yours too");
 });

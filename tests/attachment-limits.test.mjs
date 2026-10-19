@@ -49,6 +49,7 @@ test("the composer checks size before sending and on every way files come in", (
 	assert.match(compose, /const tooLarge = composeSizeError\(state\.files, html\);\n\t\t\tif \(tooLarge\) throw new ComposeError\(tooLarge\);/);
 	const win = readFileSync(new URL("../app/components/postal/ComposeWindow.tsx", import.meta.url), "utf8");
 	assert.match(win, /onPasteCapture=/);
+	assert.match(win, /if \(!files\.length \|\| e\.clipboardData\.getData\("text\/html"\)\) return;/, "a Finder copy with its name as plain text still attaches");
 	assert.match(win, /onDropCapture=/);
 	assert.match(win, /const addFiles = async/);
 	assert.equal((win.match(/addFiles\(/g) ?? []).length, 3); // the picker, paste and drop

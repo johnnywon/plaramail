@@ -460,6 +460,8 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 		...sender,
 		send: async (state: ComposeState): Promise<boolean> => {
 			sender.check(state);
+			// The draft being sent leaves the reader, as it did before the hold. Undo reopens it in the composer.
+			if (state.draftId && open?.emailId === state.draftId) closeConversation();
 			const hold = holdSend(() => sender.send(state).then(() => undefined));
 			showToast({
 				text: "Sending",
