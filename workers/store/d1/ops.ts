@@ -78,16 +78,17 @@ async function labelsOp(sql: Sql, op: Extract<BulkOp, { kind: "labels" }>): Prom
 
 async function purgeOp(sql: Sql, op: Extract<BulkOp, { kind: "purge" }>, purged: string[]): Promise<number> {
 	const json = ids(op.emailIds);
+	const folder = op.folderId ?? Folders.TRASH;
 	const [files, deleted] = await sql.batch([
 		{
 			sql: `SELECT 'attachments/' || a.email_id || '/' || a.id || '/' || a.filename AS key FROM attachments a
 				JOIN messages m ON m.email_id = a.email_id WHERE m.mailbox_id = ? AND m.folder_id = ? AND m.${IN_IDS}
 				UNION ALL SELECT body_key FROM messages WHERE mailbox_id = ? AND folder_id = ? AND ${IN_IDS} AND body_key IS NOT NULL`,
-			params: [op.mailboxId, Folders.TRASH, json, op.mailboxId, Folders.TRASH, json],
+			params: [op.mailboxId, folder, json, op.mailboxId, folder, json],
 		},
 		{
 			sql: `DELETE FROM messages WHERE mailbox_id = ? AND folder_id = ? AND ${IN_IDS} RETURNING email_id`,
-			params: [op.mailboxId, Folders.TRASH, json],
+			params: [op.mailboxId, folder, json],
 		},
 	]);
 	purged.push(...files.map((r) => String(r.key)));

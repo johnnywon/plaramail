@@ -10,12 +10,15 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 - To, Cc and Bcc suggest people you wrote to and people who wrote to you as you type. `GET /api/v1/contacts?q=` returns them.
 - Files can be pasted or dropped on the compose window.
 - The tab title and icon show the number of unread conversations.
+- Keep Trash and Spam: Forever (the default), 30, 60 or 90 days, in Console > Preferences. With a number set, the hourly cron deletes mail that has been in Trash or Spam that long, with its files in R2, 500 messages a run. The days count from when the message moved there; mail that arrived in Spam counts from its date. Prefs carry it as `trashDays`.
+- Console > Addresses shows, for an address that has received nothing yet, how to route mail to the Worker with a catch-all rule in Email Routing and the command that enables sending. It goes once mail arrives.
+- SECURITY.md (private reporting through GitHub, supported versions) and CONTRIBUTING.md, which takes over the README's Contributing section.
 
 ### Fixed
 
 - The 5 MiB message limit is enforced. The compose window refuses files that would take a message over it, counted with the files base64 encoded, and `sendMail` refuses a larger message before it spends any send budget. docs/mcp.md says how many files fit.
 
-No D1 migration.
+D1 migration: `0010_folder_changed_at.sql` (when a message last changed folder, for the Trash and Spam retention). Mail already in Trash or Spam counts from the migration. `npm run deploy` applies it.
 
 ## 0.9.2
 

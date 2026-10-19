@@ -21,7 +21,7 @@ function fakeBucket() {
 }
 
 test("cleanPrefs keeps valid fields, takes the rest from base and drops unknown ones", () => {
-	assert.deepEqual(cleanPrefs({ theme: "light", keys: false, markRead: false, images: "never", replyFrom: false }), { theme: "light", keys: false, markRead: false, images: "never", replyFrom: false, shortcuts: {}, activityDays: 90, unmatched: "leave", timeZone: "" });
+	assert.deepEqual(cleanPrefs({ theme: "light", keys: false, markRead: false, images: "never", replyFrom: false }), { theme: "light", keys: false, markRead: false, images: "never", replyFrom: false, shortcuts: {}, activityDays: 90, unmatched: "leave", trashDays: 0, timeZone: "" });
 	assert.equal(cleanPrefs({ unmatched: "leave" }).unmatched, "leave");
 	assert.equal(cleanPrefs({ unmatched: "send" }).unmatched, "leave");
 	assert.equal(cleanPrefs({ activityDays: 180 }).activityDays, 180);
@@ -32,6 +32,14 @@ test("cleanPrefs keeps valid fields, takes the rest from base and drops unknown 
 	assert.deepEqual(cleanPrefs({ images: "always" }, { ...DEFAULT_PREFS, theme: "system" }), { ...DEFAULT_PREFS, theme: "system", images: "always" });
 	assert.ok(samePrefs(cleanPrefs({}), DEFAULT_PREFS));
 	assert.ok(!samePrefs({ ...DEFAULT_PREFS, keys: true }, DEFAULT_PREFS));
+});
+
+test("Trash and Spam retention is off unless set to 30, 60 or 90 days (WON-212)", () => {
+	assert.equal(DEFAULT_PREFS.trashDays, 0);
+	assert.equal(cleanPrefs({ trashDays: 30 }).trashDays, 30);
+	assert.equal(cleanPrefs({ trashDays: 7 }).trashDays, 0);
+	assert.equal(cleanPrefs({ trashDays: "90" }).trashDays, 0);
+	assert.ok(!samePrefs({ ...DEFAULT_PREFS, trashDays: 60 }, DEFAULT_PREFS));
 });
 
 test("cleanPrefs keeps a time zone Intl knows and drops anything else (#33)", () => {

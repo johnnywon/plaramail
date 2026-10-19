@@ -68,6 +68,10 @@ When the text reads like a request ("unread newsletters from this week"), the wi
 
 **Unread count.** The tab title and icon show how many conversations are unread.
 
+## Trash and Spam
+
+Empty Trash deletes everything in Trash at once. Console > Preferences > Keep Trash and Spam deletes it on a schedule instead: Forever by default, or 30, 60 or 90 days. The hourly cron deletes mail that has been in Trash or Spam that long, attachments and stored bodies included, up to 500 messages a run. The days count from when a message moved there; mail delivered straight to Spam counts from its date. Deleted mail can't be brought back.
+
 ## Scheduled send
 
 Choose a time from the arrow next to Send in the compose window. The message is saved to Drafts with a "Scheduled" badge, and a one-minute cron sends it through the normal sending path, up to a minute after its time. Cancel removes the schedule and keeps the draft. Editing or deleting the draft before the send time cancels it. A send that fails is retried every 15 minutes, up to three attempts; after that the draft stays in Drafts marked "Send failed". Attachments count toward a 1.5 MB limit per scheduled message.

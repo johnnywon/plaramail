@@ -159,7 +159,7 @@ Details are in [docs/roadmap.md](docs/roadmap.md). Use [issues](https://github.c
 
 ## Contributing
 
-Run `npm test`, `npm run typecheck` and `npm run build` before opening a pull request, and use `example.com`, `example.org` and `example.net` in config, docs and tests. See [docs/development.md](docs/development.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report security issues privately, as [SECURITY.md](SECURITY.md) describes.
 
 ## Credits and license
 

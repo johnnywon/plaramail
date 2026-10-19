@@ -72,6 +72,7 @@ export type AllMailStore = Pick<
 	| "undo"
 	| "trashCount"
 	| "emptyTrash"
+	| "purgeRetention"
 	| "listLabels"
 	| "createLabel"
 	| "updateLabel"

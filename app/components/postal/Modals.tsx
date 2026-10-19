@@ -4,7 +4,7 @@
 
 import { hasText, withSignatureText } from "./signature-state";
 import { ArrowCounterClockwiseIcon, DesktopIcon, KeyboardIcon, MoonIcon, SignOutIcon, SunIcon, XIcon } from "@phosphor-icons/react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { queryKeys } from "~/queries/keys";
 import api from "~/services/api";
@@ -20,9 +20,10 @@ import { useDemo } from "~/lib/demo";
 import { LimitsTab, useAgentLimitsDraft } from "./LimitsTab";
 import { ActivityTab } from "./ActivityTab";
 import { StorageTab } from "./StorageTab";
+import { receivedCount, ROUTING_URL } from "./routing-guide";
 import type { Prefs } from "./prefs";
 import { ShortcutMap } from "./ShortcutMap";
-import { samePrefs } from "shared/prefs";
+import { samePrefs, TRASH_DAYS, type TrashDays } from "shared/prefs";
 import { Keys } from "./shortcuts";
 import { ShortcutsPage } from "./ShortcutsTab";
 import { Badge, Button, CopyField, Field, Fields, Item, List, Note, SaveBar, Section, Summary, SummaryRow, Table } from "./ConsoleUI";
@@ -78,6 +79,8 @@ export function ConsoleSettings({ tab, onTab, prefs, setPrefs, addresses, identi
 	const [draft, setDraft] = useState<Prefs>(prefs);
 	const [initialNames, setInitialNames] = useState(() => Object.fromEntries(addresses.map((a) => [a, info.get(a)?.mailbox?.settings?.fromName ?? info.get(a)?.name ?? ""])));
 	const [names, setNames] = useState<Record<string, string>>(initialNames);
+	// The same counts as Mail storage; an address with nothing received shows how to route mail to it (WON-228).
+	const storage = useQuery({ queryKey: ["storage-status"], queryFn: () => api.getStorageStatus(), enabled: tab === "addresses" });
 	const [initialPrompts, setInitialPrompts] = useState(() => Object.fromEntries(addresses.map((a) => [a, info.get(a)?.mailbox?.settings?.agentSystemPrompt ?? ""])));
 	const [prompts, setPrompts] = useState<Record<string, string>>(initialPrompts);
 	const promptChanged = (a: string) => (prompts[a] ?? "").trim() !== (initialPrompts[a] ?? "").trim();
@@ -231,6 +234,14 @@ export function ConsoleSettings({ tab, onTab, prefs, setPrefs, addresses, identi
 							<Setting title="Reply from receiving address">
 								<Switch label="Reply from receiving address" on={draft.replyFrom} onChange={(replyFrom) => setDraft({ ...draft, replyFrom })} />
 							</Setting>
+							<Setting title="Keep Trash and Spam">
+								<Segmented
+									label="Keep Trash and Spam"
+									value={String(draft.trashDays)}
+									onChange={(v) => setDraft({ ...draft, trashDays: Number(v) as TrashDays })}
+									options={TRASH_DAYS.map((d) => ({ value: String(d), label: d ? `${d} days` : "Forever" }))}
+								/>
+							</Setting>
 						</>
 					)}
 					{tab === "addresses" && (
@@ -243,6 +254,7 @@ export function ConsoleSettings({ tab, onTab, prefs, setPrefs, addresses, identi
 										<h3 className="pg-ui-addr-domain"><Swatch identity={identity} />{identity.domain}</h3>
 										{list.map((a) => {
 											const loaded = !!info.get(a)?.mailbox;
+											const silent = receivedCount(storage.data, a) === 0;
 											const name = (names[a] ?? "").trim();
 											const edited = name !== (initialNames[a] ?? "").trim();
 											return (
@@ -257,6 +269,11 @@ export function ConsoleSettings({ tab, onTab, prefs, setPrefs, addresses, identi
 															<b>{name || handleOf(a)}</b> &lt;{a}&gt;
 														</span>
 													</div>
+													{silent && (
+														<Note tone="warn">
+															No mail yet. In <a href={ROUTING_URL} target="_blank" rel="noreferrer">Email Routing</a> for {identity.domain}, send mail to this Worker with a catch-all rule: it covers every address on the domain, and the Worker turns away any not in <span className="pg-mono">EMAIL_ADDRESSES</span>. To reply, run <span className="pg-mono">npx wrangler email sending enable {identity.domain}</span>.
+														</Note>
+													)}
 												</Field>
 											);
 										})}

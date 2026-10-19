@@ -24,7 +24,8 @@ export type BulkOp =
 	| { mailboxId: string; kind: "move"; emailIds: string[]; to: string; from: string }
 	| { mailboxId: string; kind: "flags"; emailIds: string[]; patch: { read?: boolean; starred?: boolean } }
 	| { mailboxId: string; kind: "labels"; emailIds: string[]; add: string[]; remove: string[] }
-	| { mailboxId: string; kind: "purge"; emailIds: string[] };
+	/** Deletes from Trash, or from `folderId` (Spam, for retention). */
+	| { mailboxId: string; kind: "purge"; emailIds: string[]; folderId?: string };
 
 /** What a bulk job runs: a user bulk action, or Empty Trash. */
 export type JobAction = BulkAction | { type: "empty_trash" };
@@ -243,6 +244,26 @@ export function* planEmptyTrashQuery(expectedCount: number): Query<BulkOp[]> {
 		.map((r) => ({ mailbox_id: String(r.mailbox_id), email_id: String(r.email_id), key: "" }));
 	if (rows.length !== expectedCount) throw new BulkConflictError(rows.length);
 	return groupOps((mailboxId, emailIds) => ({ mailboxId, kind: "purge" as const, emailIds }), rows);
+}
+
+// ── Trash and Spam retention (WON-212) ────────────────────────────
+
+/** Messages purged per cron run, so a first run over a large Trash stays within the Worker's limits. */
+export const RETENTION_BATCH = 500;
+
+/**
+ * Purge ops for messages that have been in Trash or Spam for more than `days`
+ * days, counted from when they moved there (migration 0010) or, for mail that
+ * arrived in Spam, from their date.
+ */
+export function* planRetentionPurgeQuery(days: number, now = Date.now()): Query<BulkOp[]> {
+	const before = new Date(now - days * 86_400_000).toISOString();
+	const rows = (yield sqlStep(
+		`SELECT mailbox_id, email_id, folder_id FROM messages WHERE state IN ('trash', 'spam') AND deleted = 0
+		AND COALESCE(folder_changed_at, date) < ? ORDER BY mailbox_id, folder_id, email_id LIMIT ?`,
+		before, RETENTION_BATCH,
+	)).map((r) => ({ mailbox_id: String(r.mailbox_id), email_id: String(r.email_id), key: String(r.folder_id) }));
+	return groupOps((mailboxId, emailIds, folderId) => ({ mailboxId, kind: "purge" as const, emailIds, folderId }), rows);
 }
 
 export function opSize(ops: BulkOp[]): number {
