@@ -29,16 +29,18 @@ export const CONSOLE_RAIL: { group: string | null; tabs: ConsoleTab[] }[] = [
 
 export const isSettingsTab = (tab: ConsoleTab): tab is SettingsTab => (SETTINGS_TABS as readonly string[]).includes(tab);
 
-/** Names from before: 0.7's console tabs, ?settings=agent, ?settings=index and the MCP dialog. */
+/** Names from before (0.7's console tabs, ?settings=agent, ?settings=index, the MCP dialog) and other words for a page. */
 const RENAMED: Record<string, ConsoleTab> = {
 	overview: "home", activity: "logs", limits: "mailroom", drafting: "mailroom", model: "models", connections: "mcp",
-	agent: "mailroom", index: "storage", tools: "mcp",
+	agent: "mailroom", index: "storage", tools: "mcp", preferences: "general", settings: "general", prefs: "general",
 };
 
-function tabNamed(value: string | null): ConsoleTab | null {
+/** A page by its slug or another name for it. Any other non-empty name opens Overview, so the console never closes on a typo. */
+function tabNamed(raw: string | null): ConsoleTab | null {
+	const value = raw?.trim().toLowerCase();
 	if (!value) return null;
 	if (Object.hasOwn(RENAMED, value)) return RENAMED[value];
-	return (CONSOLE_TABS as readonly string[]).includes(value) ? (value as ConsoleTab) : null;
+	return (CONSOLE_TABS as readonly string[]).includes(value) ? (value as ConsoleTab) : "home";
 }
 
 /** The page named by ?console=, or by the older ?settings=. Null when the console is closed. */

@@ -70,3 +70,11 @@ test("every one-off is still used, so the list stays honest", () => {
 test("no inline styles in console files", () => {
 	for (const file of CONSOLE_FILES) assert.ok(!/style=\{\{/.test(read(file)), `${file} has an inline style; use a ConsoleUI element`);
 });
+
+test("tables with a row per address show the whole address, clipped with the full one in a title (#51)", () => {
+	for (const file of ["OverviewTab.tsx", "StorageTab.tsx"]) {
+		const column = read(file).match(/\{ key: "address"[^\n]*/)[0];
+		assert.doesNotMatch(column, /\bshort\b/, `${file}: hello@example and hello@example.org would read the same`);
+		assert.match(column, /clip: \((\w)\) => \1\.mailboxId/, file);
+	}
+});

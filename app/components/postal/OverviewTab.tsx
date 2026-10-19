@@ -44,7 +44,7 @@ export function OverviewTab({ identities, autoDraft, onTab, agents }: { identiti
 					rows={data.addresses}
 					rowKey={(a) => a.mailboxId}
 					columns={[
-						{ key: "address", label: "Address", head: true, cell: (a) => <AddressText address={a.mailboxId} identity={identities.of(a.mailboxId)} short /> },
+						{ key: "address", label: "Address", head: true, clip: (a) => a.mailboxId, cell: (a) => <AddressText address={a.mailboxId} identity={identities.of(a.mailboxId)} /> },
 						col("hour", "This hour", (a) => [a.hour, SEND_LIMITS.hour]),
 						col("day", "Today", (a) => [a.day, SEND_LIMITS.day]),
 						col("agents", "By agents", (a) => [a.agentDay, data.limits.agentDay]),

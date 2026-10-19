@@ -46,6 +46,12 @@ No D1 migration.
 - Console > Activity logs a `discard_draft` entry with the reason when a run throws its draft away: no agent's job fits, Watch mode, an earlier draft from the same run, or newer mail in the thread. A run that ended skipped no longer leaves a successful draft as the last word.
 - Delete agent's confirm button reads "Yes, delete <name>", focus moves to Keep, and clicks in the first 400 ms are ignored, so a double-click no longer deletes the agent.
 
+### Fixed
+
+- `?console=preferences`, `settings` and `prefs` open Preferences. Any other page name the console doesn't know opens Overview instead of closing the console.
+- Writing a signature no longer turns on Add by default. A new signature starts off, as the guide says.
+- Sends per address on Overview, and Mail storage, show whole addresses (`hello@example.com`, not `hello@example`). A long one is cut with an ellipsis and shown in full on hover.
+
 No D1 migration.
 
 ## 0.9.1
