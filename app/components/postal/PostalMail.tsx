@@ -19,16 +19,18 @@ import type { Email } from "~/types";
 import { AgentPanel, AgentRail, useDraftWithAgent } from "./Agent";
 import { DemoContext } from "~/lib/demo";
 import { markLayoutMoving } from "~/lib/layout-motion";
+import { useUnreadTab } from "~/lib/unread-tab";
 import { useEmail } from "~/queries/emails";
 import {
 	type ComposeMode, type ComposeState, composeFor, composeFromDraft, emptyCompose, handOff, HANDOFF_KEY, useAddressInfo,
-	useMailSender,
+	sentText, useMailSender,
 } from "./compose";
 import { ComposePopout, Composer } from "./ComposeWindow";
 import { buildIdentities } from "./identity";
 import { ListPane } from "./ListPane";
 import { LogoutModal, ShortcutsModal, Toast, type ToastState } from "./Modals";
 import { ConsolePage } from "./Console";
+import { holdSend, warnBeforeUnload } from "./send-hold";
 import type { ConsoleSearchHandle } from "./ConsoleSearch";
 import { type ConsoleTab, consoleTabFrom } from "./console-tabs";
 import { conversations, HOME, labelOf, type MailAction, parsePostalFilter, RESTORABLE, scoped, scopeOf, searchErrors, searchTerms, withSearch } from "./model";
@@ -142,6 +144,7 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 	// The store ranks searches (D1), or the search asks for date order.
 	const rankable = pages[0]?.order === "relevance" || !!pages[0]?.rankSkipped || /(^|\s)sort:date\b/i.test(debounced);
 	const counts = useViewCounts();
+	useUnreadTab(counts.unread);
 	const unreadFacets = useMailFacets({ view: "inbox", chips: [{ kind: "is", value: "unread" }], sort: "date", dir: "desc" }, true);
 	const unreadByAddress = useMemo(() => new Map((unreadFacets.data?.address ?? []).map((f) => [f.value.toLowerCase(), f.count])), [unreadFacets.data]);
 	const [facetsWanted, setFacetsWanted] = useState(false);
@@ -451,6 +454,33 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 		if (cw && !initial) return; // already open; the window keeps its draft
 		setCw({ key: Date.now(), initial: initial ?? emptyCompose(defaultFrom()), max });
 	};
+
+	// Undo send (WON-213): Send holds the message for a few seconds with Undo in the toast. Undo reopens it.
+	const heldSender = {
+		...sender,
+		send: async (state: ComposeState): Promise<boolean> => {
+			sender.check(state);
+			const hold = holdSend(() => sender.send(state).then(() => undefined));
+			showToast({
+				text: "Sending",
+				icon: <PaperPlaneTiltIcon size={ICON} />,
+				onUndo: () => {
+					if (!hold.undo()) return;
+					setToast(null);
+					openCompose(state);
+				},
+			});
+			hold.done.then(
+				(how) => how === "sent" && showToast({ text: sentText(state), icon: <PaperPlaneTiltIcon size={ICON} /> }),
+				(e) => showToast({ text: `Could not send. ${(e as Error).message || ""} It is in Drafts.`.replace(/\s+/g, " "), icon: <WarningIcon size={ICON} /> }),
+			);
+			return true;
+		},
+	};
+	useEffect(() => {
+		window.addEventListener("beforeunload", warnBeforeUnload);
+		return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+	}, []);
 
 	const startReply = (mode: Exclude<ComposeMode, "new">, original: Email, keep?: ComposeState, askAgent?: boolean) => {
 		if (!open) return;
@@ -831,7 +861,7 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 										if (message) showToast({ text: message, icon: message.startsWith("Draft") ? <FileIcon size={ICON} /> : message.startsWith("Scheduled") ? <ClockIcon size={ICON} /> : <PaperPlaneTiltIcon size={ICON} /> });
 									}}
 									startReply={startReply}
-									sender={sender}
+									sender={heldSender}
 									onPopOut={(state) => {
 										popOut(state, () => openCompose(state));
 										setInline(null);
@@ -874,7 +904,7 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 						addresses={addresses}
 						identities={identities}
 						info={info}
-						sender={sender}
+						sender={heldSender}
 						draftWithAgent={draftWithAgent}
 						onClosed={(message) => {
 							// The open draft is gone once it is sent, scheduled anew or discarded.

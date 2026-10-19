@@ -9,14 +9,14 @@ import {
 } from "@phosphor-icons/react";
 import { AgentIcon } from "./AgentIcon";
 import type { Editor as TipTap } from "@tiptap/react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useId, useRef, useState } from "react";
 import EmailIframe from "~/components/EmailIframe";
 import { DRAFT_ORIGIN_LABELS, REDRAFT_INSTRUCTION_MAX } from "shared/draft-notes";
 import api from "~/services/api";
 import { type DraftResult, useDraftWithAgent } from "./Agent";
 import {
-	type AddressInfo, type ComposeMode, type ComposeState, emptyCompose, isValidAddress, parseRecipient, readFiles, type Recipient, takeHandoff,
+	type AddressInfo, type ComposeMode, type ComposeState, composeSizeError, emptyCompose, sentText, isValidAddress, parseRecipient, readFiles, type Recipient, takeHandoff,
 	textToParagraphs, useAddressInfo, useMailSender, usesSignature,
 } from "./compose";
 import { Editor, FormatBar } from "./Editor";
@@ -74,7 +74,29 @@ export function RecipientField({ label, list, onChange, inputRef, autoFocus, ext
 		if (!r || list.some((x) => x.addr.toLowerCase() === r.addr.toLowerCase())) return;
 		onChange([...list, r]);
 	};
-	// TODO(roadmap): contact autocomplete (suggestions from past correspondents) under this field.
+	// Suggestions from people you wrote to and who wrote to you (WON-216), a moment after typing stops.
+	const [query, setQuery] = useState("");
+	const [focused, setFocused] = useState(false);
+	const [at, setAt] = useState(0);
+	useEffect(() => {
+		const t = setTimeout(() => setQuery(text.trim()), 120);
+		return () => clearTimeout(t);
+	}, [text]);
+	const found = useQuery({
+		queryKey: ["contacts", query],
+		queryFn: ({ signal }) => api.contacts(query, { signal }),
+		enabled: /[\p{L}\p{N}]/u.test(query),
+		staleTime: 60_000,
+	});
+	const taken = new Set(list.map((r) => r.addr.toLowerCase()));
+	const options = text.trim() && query === text.trim() ? (found.data?.contacts ?? []).filter((c) => !taken.has(c.value)) : [];
+	const shown = focused && options.length > 0;
+	const listId = useId();
+	const pick = (c: { value: string; name?: string }) => {
+		setText("");
+		setAt(0);
+		onChange([...list, { addr: c.value, name: c.name }]);
+	};
 	return (
 		<div className="pg-cw-row is-wrap">
 			<span className="pg-field-label">{label}</span>
@@ -96,10 +118,16 @@ export function RecipientField({ label, list, onChange, inputRef, autoFocus, ext
 					value={text}
 					autoFocus={autoFocus}
 					aria-label={label}
+					role="combobox"
+					aria-expanded={shown}
+					aria-controls={listId}
+					aria-autocomplete="list"
+					aria-activedescendant={shown && options[at] ? `${listId}-${at}` : undefined}
 					spellCheck={false}
 					autoComplete="off"
-					onChange={(e) => setText(e.target.value)}
-					onBlur={() => text.includes("@") && add(text)}
+					onChange={(e) => { setText(e.target.value); setAt(0); }}
+					onFocus={() => setFocused(true)}
+					onBlur={() => { setFocused(false); if (text.includes("@")) add(text); }}
 					onPaste={(e) => {
 						const pasted = e.clipboardData.getData("text");
 						if (/[,;\s]/.test(pasted.trim())) {
@@ -109,7 +137,17 @@ export function RecipientField({ label, list, onChange, inputRef, autoFocus, ext
 						}
 					}}
 					onKeyDown={(e) => {
-						if ((e.key === "Enter" || e.key === "Tab") && text.trim()) {
+						if (shown && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+							e.preventDefault();
+							setAt((i) => (i + (e.key === "ArrowDown" ? 1 : options.length - 1)) % options.length);
+						} else if (shown && (e.key === "Enter" || e.key === "Tab") && options[at]) {
+							e.preventDefault();
+							pick(options[at]);
+						} else if (shown && e.key === "Escape") {
+							e.preventDefault();
+							e.stopPropagation();
+							setText("");
+						} else if ((e.key === "Enter" || e.key === "Tab") && text.trim()) {
 							e.preventDefault();
 							add(text);
 						} else if ((e.key === "," || e.key === ";" || e.key === " ") && text.includes("@")) {
@@ -121,6 +159,16 @@ export function RecipientField({ label, list, onChange, inputRef, autoFocus, ext
 					}}
 				/>
 			</div>
+			{shown && (
+				<div className="pg-popover pg-contacts" id={listId} role="listbox" aria-label={`Suggestions for ${label}`} onMouseDown={(e) => e.preventDefault()}>
+					{options.map((c, i) => (
+						<button key={c.value} id={`${listId}-${i}`} type="button" role="option" aria-selected={i === at} className="pg-menu-item" data-active={i === at} onMouseEnter={() => setAt(i)} onClick={() => pick(c)}>
+							{c.name && <span className="pg-contact-name pg-ellipsis">{c.name}</span>}
+							<span className="pg-contact-addr pg-ellipsis">{c.value}</span>
+						</button>
+					))}
+				</div>
+			)}
 			{extra}
 		</div>
 	);
@@ -208,6 +256,21 @@ export function Composer(props: ComposerProps) {
 		}
 	};
 
+	// Picked, pasted and dropped files all come in here. Files that would take the message over 5 MiB stay out (WON-215).
+	const addFiles = async (list: FileList | File[]) => {
+		if (!list.length) return;
+		const added = await readFiles(list);
+		const s = stateRef.current;
+		const tooLarge = composeSizeError([...s.files, ...added], `${s.html}${s.quoteHtml ?? ""}`);
+		if (tooLarge) {
+			setError(tooLarge);
+			return;
+		}
+		patch({ files: [...s.files, ...added] });
+	};
+	const [dropping, setDropping] = useState(false);
+	const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes("Files");
+
 	const hasContent = (s: ComposeState) => !!(s.to.length || s.cc.length || s.bcc.length || s.html.replace(/<[^>]+>/g, "").trim() || (s.mode === "new" && s.subject.trim()));
 
 	const saveNow = () => {
@@ -245,7 +308,7 @@ export function Composer(props: ComposerProps) {
 		props.onClosed(message);
 	};
 
-	// TODO(roadmap): undo send (a short hold before delivery). Sending is final for now.
+	// The mail view's sender holds the send for Undo (send-hold.ts) and says when it went; the pop-out window's sends now.
 	const send = async (force = false) => {
 		if (busy) return;
 		if (!state.to.length && !state.cc.length && !state.bcc.length) {
@@ -260,9 +323,8 @@ export function Composer(props: ComposerProps) {
 		try {
 			await saving.current;
 			done.current = true;
-			await sender.send(stateRef.current);
-			const what = { new: "Message sent", reply: "Reply sent", "reply-all": "Reply sent to all", forward: "Forwarded" }[state.mode];
-			props.onClosed(`${what} from ${state.from}`);
+			const held = await sender.send(stateRef.current);
+			props.onClosed(held ? null : sentText(stateRef.current));
 		} catch (e) {
 			done.current = false;
 			setError((e as Error).message || "Could not send.");
@@ -386,6 +448,30 @@ export function Composer(props: ComposerProps) {
 				role={inline ? "group" : "dialog"}
 				aria-label={inline ? title : "New message"}
 				data-state={dataState}
+				data-dropping={dropping || undefined}
+				onPasteCapture={(e) => {
+					// A pasted file is attached. Pasted text and images from a page stay with the editor.
+					const files = Array.from(e.clipboardData.files);
+					if (!files.length || e.clipboardData.getData("text/html") || e.clipboardData.getData("text/plain")) return;
+					e.preventDefault();
+					e.stopPropagation();
+					addFiles(files);
+				}}
+				onDragOver={(e) => {
+					if (!hasFiles(e)) return;
+					e.preventDefault();
+					setDropping(true);
+				}}
+				onDragLeave={(e) => {
+					if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false);
+				}}
+				onDropCapture={(e) => {
+					if (!hasFiles(e)) return;
+					e.preventDefault();
+					e.stopPropagation();
+					setDropping(false);
+					addFiles(e.dataTransfer.files);
+				}}
 				onKeyDown={(e) => {
 					if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
 						e.preventDefault();
@@ -601,10 +687,7 @@ export function Composer(props: ComposerProps) {
 							hidden
 							onChange={async (e) => {
 								const list = e.target.files;
-								if (list?.length) {
-									const files = await readFiles(list);
-									patch({ files: [...stateRef.current.files, ...files] });
-								}
+								if (list?.length) await addFiles(Array.from(list));
 								e.target.value = "";
 							}}
 						/>

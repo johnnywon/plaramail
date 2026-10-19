@@ -7,6 +7,7 @@ import DOMPurify from "dompurify";
 import { useCallback, useMemo } from "react";
 import { extractReplyQuote, getReplyAddresses } from "~/lib/reply";
 import { escapeHtml, getSignatureBlock, htmlToPlainText, splitEmailList } from "~/lib/utils";
+import { messageBytes, messageSizeError } from "../../../shared/message-size";
 import { queryKeys } from "~/queries/keys";
 import api from "~/services/api";
 import type { DraftNotes } from "shared/draft-notes";
@@ -29,6 +30,11 @@ export interface ComposeFile {
 	content: string;
 	/** A file of the forwarded original, which the Worker copies when it sends. */
 	attachmentId?: string;
+}
+
+/** Why these files and this body are too large to send (WON-215), or null when they fit. */
+export function composeSizeError(files: ComposeFile[], html: string): string | null {
+	return messageSizeError(messageBytes({ html, text: htmlToPlainText(html), fileBytes: files.map((f) => f.size) }));
 }
 
 /** Files as the send request carries them: new files by content, the forwarded original's by id. */
@@ -255,6 +261,12 @@ function listValue(list: Recipient[]): string | string[] | undefined {
 
 export class ComposeError extends Error {}
 
+/** What the toast says once a message is sent. */
+export function sentText(state: ComposeState): string {
+	const what = { new: "Message sent", reply: "Reply sent", "reply-all": "Reply sent to all", forward: "Forwarded" }[state.mode];
+	return `${what} from ${state.from}`;
+}
+
 /** Whether this message carries its From address's signature. */
 export function usesSignature(state: ComposeState, info: ReadonlyMap<string, AddressInfo>): boolean {
 	const sig = info.get(state.from);
@@ -281,6 +293,8 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 			const sender = info.get(state.from);
 			const name = sender?.name;
 			const html = `${state.html || "<p></p>"}${usesSignature(state, info) ? sender?.signatureHtml ?? "" : ""}${state.quoteHtml ?? ""}`;
+			const tooLarge = composeSizeError(state.files, html);
+			if (tooLarge) throw new ComposeError(tooLarge);
 			return {
 				to,
 				cc: listValue(state.cc),
@@ -295,8 +309,12 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 		[info],
 	);
 
+	/** Throws the ComposeError a send would, without sending. */
+	const check = useCallback((state: ComposeState) => void payload(state), [payload]);
+
+	/** Sends now. Resolves false: the message is sent, not held (see send-hold.ts). */
 	const send = useCallback(
-		async (state: ComposeState) => {
+		async (state: ComposeState): Promise<boolean> => {
 			const email = payload(state);
 			const replying = (state.mode === "reply" || state.mode === "reply-all") && state.originalId;
 			const key = state.sendKey ?? (state.draftId ? `draft:${state.draftId}` : undefined);
@@ -305,6 +323,7 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 			else await api.sendEmail(state.from, email, key);
 			if (state.draftId) await api.deleteEmail(state.from, state.draftId).catch(() => {});
 			refresh(state.from);
+			return false;
 		},
 		[payload, refresh],
 	);
@@ -350,7 +369,7 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 		[payload, refresh],
 	);
 
-	return { send, save, discard, schedule };
+	return { check, send, save, discard, schedule };
 }
 
 export async function readFiles(list: FileList | File[]): Promise<ComposeFile[]> {

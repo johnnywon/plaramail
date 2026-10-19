@@ -2,6 +2,21 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## 0.9.3
+
+### Added
+
+- Undo send. Send holds the message for 5 seconds with Undo in the toast; Undo reopens it. The browser asks before a tab closes during the hold, and the message stays in Drafts if it does. The pop-out compose window sends at once.
+- To, Cc and Bcc suggest people you wrote to and people who wrote to you as you type. `GET /api/v1/contacts?q=` returns them.
+- Files can be pasted or dropped on the compose window.
+- The tab title and icon show the number of unread conversations.
+
+### Fixed
+
+- The 5 MiB message limit is enforced. The compose window refuses files that would take a message over it, counted with the files base64 encoded, and `sendMail` refuses a larger message before it spends any send budget. docs/mcp.md says how many files fit.
+
+No D1 migration.
+
 ## 0.9.2
 
 ### Added

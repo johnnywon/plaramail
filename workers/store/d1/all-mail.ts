@@ -36,6 +36,7 @@ import {
 import { type MailFilter, type Query, folderViewsQuery, runAsync } from "../../lib/mail-index-sql";
 import { d1FacetsQuery, d1MailQuery, withSubstrings } from "../../lib/search-engine-sql";
 import {
+	contactsQuery,
 	createSavedSearchQuery,
 	deleteSavedSearchQuery,
 	listSavedSearchesQuery,
@@ -84,6 +85,10 @@ export class D1AllMail {
 
 	async suggest(filter: MailFilter, text: string, at: number) {
 		return this.#run(suggestQuery(filter, text, at));
+	}
+
+	async contacts(partial: string, exclude: string[]) {
+		return this.#run(contactsQuery(partial, exclude));
 	}
 
 	async listSavedSearches(counts?: { tzOffset: number }) {

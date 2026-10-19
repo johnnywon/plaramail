@@ -98,7 +98,7 @@ The reply is refused, and nothing is sent, when:
 | `code: "key_conflict"` | This key was used for a different message. Use a new key. |
 | `code: "in_progress"` | A send with this key started and didn't finish. Check Sent before trying again. |
 
-**Attachments.** Up to 10 files, 5 MB together, as `{ filename, contentType, contentBase64 }`.
+**Attachments.** Up to 10 files, 5 MB together, as `{ filename, contentType, contentBase64 }`. Email Sending takes messages up to 5 MiB with the files base64 encoded, so about 3.7 MB of files fit; a larger message is refused before it is sent.
 
 **Limits.** Sends from MCP count against the agent limits in Console > Limits: by default 20 sends a day per address, shared with the in-app agent, and 10 recipients per message. Every address also has a fixed 20 an hour and 100 a day. Over a limit the result has `code: "send_limit"`; wait, don't retry in a loop.
 

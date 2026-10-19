@@ -116,6 +116,52 @@ function* recipientCompletions(partial: string): Query<SuggestPerson[]> {
 		.slice(0, MAX_COMPLETIONS);
 }
 
+/**
+ * Compose suggestions (WON-216): people you wrote to and people who wrote to
+ * you, by prefix of name or address. A sent message counts twice a received
+ * conversation, so the people you write to come first. Spam and Trash are left
+ * out, and so are `exclude` (your own addresses).
+ */
+export function* contactsQuery(partial: string, exclude: string[] = []): Query<SuggestPerson[]> {
+	const p = partial.trim().toLowerCase();
+	if (!WORD.test(p)) return [];
+	const skip = new Set(exclude.map((a) => a.toLowerCase()));
+	const people = new Map<string, SuggestPerson>();
+	const add = (value: string, count: number, name?: string) => {
+		const addr = value.toLowerCase();
+		if (!addr.includes("@") || skip.has(addr)) return;
+		const had = people.get(addr);
+		people.set(addr, { value: addr, ...((name || had?.name) ? { name: name || had?.name } : {}), count: (had?.count ?? 0) + count });
+	};
+	const senders = prefixMatch("{sender_name sender_addr}", p);
+	if (senders) {
+		const rows = yield sqlStep(
+			`SELECT m.sender_addr AS value, MAX(m.sender_name) AS name, COUNT(DISTINCT m.thread_key) AS count FROM messages m
+			WHERE m.deleted = 0 AND m.sender_addr != '' AND m.state NOT IN ('sent', 'draft', 'trash', 'spam')
+			AND m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)
+			GROUP BY m.sender_addr ORDER BY count DESC, value ASC LIMIT ?`,
+			senders, MAX_COMPLETIONS * 2,
+		);
+		for (const r of rows) add(String(r.value), Number(r.count), r.name ? String(r.name) : undefined);
+	}
+	const recipients = prefixMatch("recipients", p);
+	if (recipients) {
+		const rows = yield sqlStep(
+			`SELECT m.recipients AS r FROM messages m
+			WHERE m.deleted = 0 AND m.state = 'sent' AND m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?) ORDER BY m.date DESC LIMIT ?`,
+			recipients, RECIPIENT_SCAN,
+		);
+		const starts = new RegExp(`(?:^|[@.])${p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+		for (const row of rows) {
+			for (const address of String(row.r ?? "").split(/[\s,;<>]+/)) if (address.includes("@") && starts.test(address.toLowerCase())) add(address, 2);
+		}
+	}
+	return [...people.values()]
+		.filter((c) => c.value.startsWith(p) || c.value.includes(`@${p}`) || c.value.includes(`.${p}`) || (c.name ?? "").toLowerCase().split(/\s+/).some((w) => w.startsWith(p)))
+		.sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+		.slice(0, MAX_COMPLETIONS);
+}
+
 /** Conversations a filter matches, or null when its search doesn't compile. */
 function* countOf(filter: MailFilter, now: number): Query<number | null> {
 	let w: { sql: string; params: unknown[] };

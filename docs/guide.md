@@ -58,6 +58,16 @@ When the text reads like a request ("unread newsletters from this week"), the wi
 
 `⌘S` or Save search in the window saves the search in the box. Saved searches appear in the window and the sidebar with the number of conversations each matches in All mail. The window's server side is `GET /api/v1/search/suggest` and `/api/v1/saved-searches`.
 
+## Compose
+
+**Recipients.** Typing in To, Cc or Bcc suggests people you wrote to and people who wrote to you, by name or address, the people you write to first. Arrow keys move through the list and Enter or Tab picks one. Spam, Trash and your own addresses are left out. The server side is `GET /api/v1/contacts?q=`.
+
+**Attachments.** Attach files with the paperclip, by pasting them, or by dropping them on the compose window. Email Sending takes messages up to 5 MiB, counted with the files base64 encoded, so about 3.7 MB of files fit. The window refuses files that would go over, and the Worker refuses a larger message before it is sent.
+
+**Undo send.** Send holds the message for 5 seconds, with Undo in the toast and on the undo key. Undo reopens the message. The draft is deleted only once the message is sent, so a tab closed during the hold leaves it in Drafts, and the browser asks before the tab closes. The pop-out compose window sends at once.
+
+**Unread count.** The tab title and icon show how many conversations are unread.
+
 ## Scheduled send
 
 Choose a time from the arrow next to Send in the compose window. The message is saved to Drafts with a "Scheduled" badge, and a one-minute cron sends it through the normal sending path, up to a minute after its time. Cancel removes the schedule and keeps the draft. Editing or deleting the draft before the send time cancels it. A send that fails is retried every 15 minutes, up to three attempts; after that the draft stays in Drafts marked "Send failed". Attachments count toward a 1.5 MB limit per scheduled message.

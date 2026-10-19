@@ -78,6 +78,7 @@ export type AllMailStore = Pick<
 	| "markLabelsAuto"
 	| "deleteLabel"
 	| "suggest"
+	| "contacts"
 	| "listSavedSearches"
 	| "createSavedSearch"
 	| "updateSavedSearch"

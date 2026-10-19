@@ -10,7 +10,7 @@ Self-hosted webmail and MCP server for Cloudflare Email Routing. One Worker serv
 The interface is designed for the parts of email that still need a person: finding a verification code, opening a sign-in link, and working through what an agent has sorted and drafted.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/johnnywon/pluramail)
-[![Version 0.9.2](https://img.shields.io/badge/version-0.9.2-blue)](https://github.com/johnnywon/pluramail/releases)
+[![Version 0.9.3](https://img.shields.io/badge/version-0.9.3-blue)](https://github.com/johnnywon/pluramail/releases)
 [![CI](https://github.com/johnnywon/pluramail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/johnnywon/pluramail/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Runs on Cloudflare Workers](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/)

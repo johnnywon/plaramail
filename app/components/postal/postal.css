@@ -781,6 +781,8 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .postal[data-theme="light"] .pg-cw { box-shadow: var(--pg-shadow-modal); }
 .postal .pg-cw:not([data-state="max"]) { border-radius: 6px 6px 0 0 !important; }
 .pg-cw[data-state="min"] { width: 320px; height: 40px; }
+/* A file dragged over the composer: a mail-orange ring all round, where dropping it attaches it (WON-215). */
+.pg-cw[data-dropping] { border-color: var(--pg-mail); box-shadow: 0 0 0 1px var(--pg-mail), 0 24px 64px rgba(0, 0, 0, .6); }
 .pg-cw[data-state="max"] { right: auto; bottom: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(980px, 94vw); height: 88vh; animation: none; }
 /* Inline reply: the same composer, in the flow of the conversation. */
 .pg-cw[data-state="inline"] { position: relative; inset: auto; right: auto; bottom: auto; z-index: auto; width: 100%; height: auto; margin-top: 24px; border-color: var(--pg-line-4); box-shadow: none; animation: none; overflow: visible; }
@@ -808,6 +810,11 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-cw-from:disabled { opacity: 1 !important; cursor: default; }
 .pg-cw-from .pg-name { font-size: 13px; color: var(--pg-text-2); white-space: nowrap; }
 .pg-cw-from .pg-addr { font-size: 12px; }
+/* Recipient suggestions under a To, Cc or Bcc field (WON-216). */
+.pg-contacts { left: 70px; top: calc(100% - 2px); width: min(380px, calc(100% - 78px)); padding: 4px; max-height: 300px; overflow-y: auto; z-index: 6; }
+.pg-contacts .pg-menu-item { height: 34px; gap: 8px; }
+.pg-contact-name { flex: none; max-width: 50%; font-size: 13px; color: var(--pg-text-2); }
+.pg-contact-addr { min-width: 0; font: 12px var(--pg-mono); color: var(--pg-text-6); }
 .pg-from-menu { left: 70px; top: 36px; width: min(380px, calc(100% - 78px)); padding: 4px; max-height: 320px; overflow-y: auto; }
 .pg-from-menu .pg-menu-item { height: 34px; }
 .pg-from-menu .pg-name { font-size: 12px; color: var(--pg-text-6); white-space: nowrap; }

@@ -18,6 +18,7 @@ import {
 	validateSender,
 } from "./email-helpers";
 import { hasHeaderLineBreaks } from "./schemas";
+import { base64Bytes, messageBytes, messageSizeError } from "../../shared/message-size";
 import type { EmailFull, SendEmailRequestSchema } from "./schemas";
 import { readAgentLimits } from "./agent-limits";
 import { countRecipients, isAgent, recipientLimitError, type SendActor } from "./send-budget";
@@ -186,6 +187,8 @@ async function sendOnce(
 	if (hasHeaderLineBreaks(subject, inReplyTo, ...references)) {
 		return { ok: false, status: 400, error: "Email headers must not contain line breaks" };
 	}
+	const tooLarge = messageSizeError(messageBytes({ html, text, fileBytes: (attachments ?? []).map((a) => base64Bytes(a.content)) }));
+	if (tooLarge) return { ok: false, status: 400, error: tooLarge };
 
 	let toStr: string, fromEmail: string, fromDomain: string;
 	try {
