@@ -27,4 +27,4 @@ Shipped: one list for every address, one search language with ranked results, th
 - [ ] **Search by meaning.** Opt-in Vectorize search alongside full-text, for "the email where they offered a discount".
 - [ ] **Notifications and offline.** Web push for new mail and an installable app that reads cached mail offline.
 
-Underneath: D1 becomes the only store, so there is one storage model to learn and upgrade, and CI gains a browser check against a seeded dev server.
+Underneath: D1 becomes the only store, so there is one storage model to learn and upgrade.

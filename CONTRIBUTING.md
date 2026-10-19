@@ -10,7 +10,7 @@ npm run typecheck
 npm run build
 ```
 
-`npm run test:build` also checks the demo build. Local setup, the sample inbox and browser checks are in [docs/development.md](docs/development.md).
+`npm run test:build` also checks the demo build, and `npm run test:browser` opens the mail view in a browser. Local setup, the sample inbox and browser checks are in [docs/development.md](docs/development.md).
 
 ## Rules
 

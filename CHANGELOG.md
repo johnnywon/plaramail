@@ -2,6 +2,28 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## 0.9.5
+
+### Added
+
+- `GET /health` checks D1 and R2 and answers `{"ok":true,"d1":"ok","r2":"ok"}`, or 503 naming the store that failed. The Worker answers it before the Access check. Add `/health` to the Access bypass next to `/mcp` and `/.well-known` (docs/setup.md, step 5); `npm run smoke` checks it and fails until it's there.
+- Error alerts. Requests that throw, inbound mail the Worker can't store and failed cron steps are recorded. With `ALERT_TO` set in `vars`, the hourly cron mails that address the errors since the last alert, and a failed health check, from the first address in `EMAIL_ADDRESSES`. Unset sends nothing. Recorded errors are kept 30 days.
+- `npm run test:browser` opens the mail view in Chromium at desktop width and at 375px against a dev server with local bindings and the sample inbox. CI runs it as the `browser` job.
+
+### Changed
+
+- Every source file carries the license header, and `tests/public-scrub.test.mjs` keeps it so. Tests use example hosts for Cloudflare Access, and the search prompt names no real company.
+
+### Fixed
+
+- Enter in search opens the first result only once the results for what you typed have arrived. Before, a quick Enter opened the first conversation of the list you were on, which at phone width covered the results.
+
+### Upgrading
+
+- Add `/health` to the deployment's Access bypass application, or `npm run smoke` fails on it.
+
+D1 migration: `0012_error_log.sql`. `npm run deploy` applies it.
+
 ## 0.9.4
 
 ### Added

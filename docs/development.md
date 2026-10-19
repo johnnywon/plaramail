@@ -60,6 +60,9 @@ curl -X POST 'http://localhost:5173/cdn-cgi/handler/email?from=sender@example.ne
 npm test
 npm run typecheck
 npm run build
+npm run test:browser
 ```
+
+`npm run test:browser` opens the mail view in Chromium at desktop width and at 375px (`tests/browser/`). It starts a dev server on port 5199 with `tests/browser/wrangler.ci.jsonc`, which has local bindings only, so it needs no Cloudflare account; the sample inbox fills it. Install the browser once with `npx playwright install --only-shell chromium`. CI runs it as the `browser` job.
 
 Design rules live in [`DESIGN.md`](../DESIGN.md). `tests/design-rules.test.mjs` enforces the ones that can be checked.
