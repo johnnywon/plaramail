@@ -29,8 +29,8 @@ Console > MCP lists every app you connected, what each may do, and revokes it. A
 For client authors and for debugging. A client that supports MCP authorization does all of this itself.
 
 1. A request to `/mcp` without a token gets `401` with `WWW-Authenticate: Bearer resource_metadata="https://<host>/.well-known/oauth-protected-resource/mcp", scope="mail"`.
-2. That document names the authorization server, the same origin. Its metadata is at `/.well-known/oauth-authorization-server`.
-3. The client registers at `/mcp/oauth/register` (dynamic client registration, RFC 7591), or presents a Client ID Metadata Document URL as its `client_id`.
+2. That document (RFC 9728) names the authorization server, the same origin, and lists the scopes a client can ask for: `mail` and `mail.send`. Build the scope request from it. The authorization server's metadata at `/.well-known/oauth-authorization-server` lists the same scopes. The challenge's `scope="mail"` is the scope every token needs, not all there is.
+3. The client registers at `/mcp/oauth/register` (dynamic client registration, RFC 7591), or presents a Client ID Metadata Document URL as its `client_id`. The Worker fetches that document, which needs the `global_fetch_strictly_public` compatibility flag ([setup](setup.md#configuration)). If the document can't be loaded, `/authorize` shows "Can't connect this app".
 4. It sends the user to `/authorize` with PKCE (`S256` only) and `resource=https://<host>/mcp`.
 5. It exchanges the code at `/mcp/oauth/token` and calls `/mcp` with `Authorization: Bearer <token>`.
 

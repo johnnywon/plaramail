@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
@@ -9,6 +10,11 @@ import { D1_SCHEMA } from "./helpers/d1-schema.mjs";
 
 // End to end in local workerd: an MCP SDK client gets an OAuth token through the consent
 // page, then talks to EmailMCP over Streamable HTTP with it.
+
+/** The Worker's compatibility flags from wrangler.jsonc, so the test runs with what a deployment gets. */
+const COMPATIBILITY_FLAGS = JSON.parse(
+	readFileSync("wrangler.jsonc", "utf8").split("\n").map((line) => line.replace(/^(\s*)\/\/.*$/, "$1")).join("\n").replace(/,(\s*[\]}])/g, "$1"),
+).compatibility_flags;
 
 const MAILBOX = "a@example.com";
 const ORIGIN = "http://localhost";
@@ -41,7 +47,7 @@ before(async () => {
 		modules: true,
 		script: bundle.outputFiles[0].text,
 		compatibilityDate: "2025-11-28",
-		compatibilityFlags: ["nodejs_compat"],
+		compatibilityFlags: COMPATIBILITY_FLAGS,
 		bindings: { EMAIL_ADDRESSES: [MAILBOX] },
 		email: { send_email: [{ name: "EMAIL" }] },
 		r2Buckets: ["BUCKET"],
@@ -173,6 +179,18 @@ test("without a token /mcp answers 401 and points at its OAuth metadata", async 
 	assert.equal((await mf.dispatchFetch(`${ORIGIN}/mcp/tools`)).status, 404, "nothing else lives under /mcp");
 });
 
+test("the protected resource metadata lists every scope the server grants, mail.send included (#44)", async () => {
+	const res = await mf.dispatchFetch(`${ORIGIN}/.well-known/oauth-protected-resource/mcp`);
+	assert.equal(res.headers.get("content-type")?.split(";")[0], "application/json");
+	const resource = await res.json();
+	const server = await (await mf.dispatchFetch(`${ORIGIN}/.well-known/oauth-authorization-server`)).json();
+	assert.deepEqual(resource.scopes_supported, ["mail", "mail.send"]);
+	assert.deepEqual(resource.scopes_supported, server.scopes_supported);
+	assert.equal(resource.resource, `${ORIGIN}/mcp`, "the rest is unchanged");
+	const challenge = (await mf.dispatchFetch(`${ORIGIN}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).headers.get("www-authenticate");
+	assert.match(challenge, /scope="mail"/, "only mail is required");
+});
+
 test("/mcp refuses requests from another site's page, with the frame headers", async () => {
 	const res = await mf.dispatchFetch(`${ORIGIN}/mcp`, { method: "POST", headers: { origin: "https://evil.example.net", "content-type": "application/json" }, body: "{}" });
 	assert.equal(res.status, 403);
@@ -180,6 +198,18 @@ test("/mcp refuses requests from another site's page, with the frame headers", a
 	assert.equal(res.headers.get("x-frame-options"), "DENY");
 	const meta = await mf.dispatchFetch(`${ORIGIN}/.well-known/oauth-protected-resource/mcp`);
 	assert.equal(meta.headers.get("x-frame-options"), "DENY");
+});
+
+test("a client ID metadata document URL is supported, and one that can't load shows Can't connect (#31)", async () => {
+	const server = await (await mf.dispatchFetch(`${ORIGIN}/.well-known/oauth-authorization-server`)).json();
+	assert.equal(server.client_id_metadata_document_supported, true);
+	const query = new URLSearchParams({
+		response_type: "code", client_id: "https://app.example.invalid/client.json", redirect_uri: "https://app.example.invalid/callback",
+		scope: "mail", state: "s1", code_challenge: "x".repeat(43), code_challenge_method: "S256",
+	});
+	const res = await mf.dispatchFetch(`${ORIGIN}/authorize?${query}`, { headers: { accept: "text/html" } });
+	assert.equal(res.status, 400);
+	assert.match(await res.text(), /Can&#39;t connect this app|Can't connect this app/);
 });
 
 test("the consent page escapes the client's name, and Deny sends access_denied back", async () => {

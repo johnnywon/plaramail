@@ -63,6 +63,21 @@ function providerFor(origin: string, web: Handler): OAuthProvider<Env> {
 	return provider;
 }
 
+const RESOURCE_METADATA = `/.well-known/oauth-protected-resource${MCP_ROUTE}`;
+
+/**
+ * The provider lists only required scopes in the protected resource metadata. List every
+ * scope, as the authorization server metadata does, so a client reading RFC 9728 learns
+ * that mail.send exists. `mail` stays the only required one (the 401 challenge's scope).
+ */
+async function withAllScopes(response: Response): Promise<Response> {
+	if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) return response;
+	const metadata = (await response.json()) as Record<string, unknown>;
+	const headers = new Headers(response.headers);
+	headers.delete("content-length");
+	return new Response(JSON.stringify({ ...metadata, scopes_supported: [...MCP_SCOPES] }), { status: response.status, headers });
+}
+
 /** The Worker's fetch with OAuth in front: /mcp and the OAuth endpoints go to the provider, the rest to `web`. */
 export function withMcpOAuth(web: Handler): Handler["fetch"] {
 	return async (request, env, ctx) => {
@@ -71,7 +86,8 @@ export function withMcpOAuth(web: Handler): Handler["fetch"] {
 		if (isMcpLookalike(url.pathname)) return withSecurityHeaders(new Response("Not found", { status: 404 }));
 		// A page on another site can't drive the server from someone's browser (DNS rebinding included).
 		if (url.pathname === MCP_ROUTE && foreignOrigin(request)) return withSecurityHeaders(new Response("Cross-origin request refused", { status: 403 }));
-		const response = await providerFor(url.origin, web).fetch(request, env, ctx);
+		let response = await providerFor(url.origin, web).fetch(request, env, ctx);
+		if (url.pathname === RESOURCE_METADATA && request.method === "GET") response = await withAllScopes(response);
 		return own ? withSecurityHeaders(response) : response;
 	};
 }

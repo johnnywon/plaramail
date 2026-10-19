@@ -28,6 +28,18 @@ No D1 migration.
 - The Cancel button on a scheduled draft's row is named "Cancel scheduled send" for screen readers and browser agents.
 - An agent reply no longer offers Open draft for a draft it sent later in the same turn.
 
+### Upgrading
+
+- Add `"global_fetch_strictly_public"` to `compatibility_flags` in a deployment's own Wrangler config. `wrangler.jsonc` has it. It lets MCP clients sign in with a Client ID Metadata Document URL, and `npm run smoke` fails without it.
+
+### Fixed
+
+- `/authorize` with a Client ID Metadata Document URL as `client_id` returned 500, because the OAuth library needs the `global_fetch_strictly_public` flag for those documents. The flag is now set. Any error `/authorize` doesn't recognise shows the "Can't connect this app" page and is logged.
+- The protected resource metadata (`/.well-known/oauth-protected-resource/mcp`) lists both scopes, `mail` and `mail.send`, as the authorization server metadata does. A client that builds its request from it can now ask for `mail.send`. `mail` stays the only required scope. docs/mcp.md says which document to read.
+- `npm run smoke` checks that both OAuth documents list the same scopes and that client ID metadata documents are supported.
+
+No D1 migration.
+
 ## 0.9.1
 
 ### Added

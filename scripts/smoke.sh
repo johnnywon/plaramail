@@ -62,6 +62,27 @@ check_metadata() {
 	fi
 }
 
+# The two OAuth documents list the same scopes, so a client reading either can ask for mail.send,
+# and client ID metadata documents are on (they need the global_fetch_strictly_public flag).
+check_oauth_documents() {
+	local resource server problem
+	resource=$(curl -s --max-time 15 "$BASE/.well-known/oauth-protected-resource/mcp" || true)
+	server=$(curl -s --max-time 15 "$BASE/.well-known/oauth-authorization-server" || true)
+	problem=$(RESOURCE="$resource" SERVER="$server" node -e '
+		const read = (text) => { try { return JSON.parse(text); } catch { return {}; } };
+		const r = read(process.env.RESOURCE), s = read(process.env.SERVER);
+		const a = JSON.stringify(r.scopes_supported ?? []), b = JSON.stringify(s.scopes_supported ?? []);
+		if (a !== b) console.log(`scopes differ: resource ${a}, server ${b}`);
+		else if (s.client_id_metadata_document_supported !== true) console.log("client_id_metadata_document_supported is not true. Add the global_fetch_strictly_public compatibility flag (docs/setup.md)");
+	')
+	if [[ -z "$problem" ]]; then
+		printf '  ok   %-5s %s\n' GET "OAuth scopes and client ID metadata documents"
+	else
+		printf '  FAIL %-5s %s\n' GET "OAuth documents: $problem" >&2
+		fail=1
+	fi
+}
+
 echo "Smoke: $BASE"
 check GET /
 check GET /api/v1/mail
@@ -71,4 +92,5 @@ check GET /authorize
 check_mcp
 check_metadata /.well-known/oauth-authorization-server issuer
 check_metadata /.well-known/oauth-protected-resource/mcp resource
+check_oauth_documents
 exit "$fail"
