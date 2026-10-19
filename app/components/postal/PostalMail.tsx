@@ -817,7 +817,8 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 								ref={searchRef}
 								value={search}
 								onChange={setSearchText}
-								onOpenFirst={() => rows[0] && openConversation(rows[0])}
+								// Before the results for this text arrive, rows are the previous list's: Enter only runs the search.
+								onOpenFirst={() => debounced.trim() === search.trim() && !list.isPlaceholderData && rows[0] && openConversation(rows[0])}
 								onOpenResult={(row) => openConversation(row)}
 								onMove={move}
 								resultCount={searching && !list.isPending ? total : null}

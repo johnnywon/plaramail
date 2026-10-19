@@ -13,6 +13,8 @@ import tsconfigPaths from "vite-tsconfig-paths";
 // public/ folder (brand files) without copying them into this checkout.
 const wranglerConfig = process.env.PLURAMAIL_WRANGLER_CONFIG;
 const publicDir = process.env.PLURAMAIL_PUBLIC_DIR;
+// The browser check keeps its local D1, R2 and KV apart from the dev server's (playwright.config.mjs).
+const persistPath = process.env.PLURAMAIL_PERSIST;
 
 // Dependencies Vite otherwise discovers only after the first request. Re-optimizing them
 // mid-load gives the open page a second copy of React ("Invalid hook call").
@@ -53,6 +55,7 @@ export default defineConfig({
     cloudflare({
       viteEnvironment: { name: "ssr" },
       configPath: wranglerConfig ? resolve(wranglerConfig) : undefined,
+      persistState: persistPath ? { path: resolve(persistPath) } : undefined,
     }),
     tailwindcss(),
     reactRouter(),

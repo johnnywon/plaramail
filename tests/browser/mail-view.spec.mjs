@@ -38,11 +38,18 @@ test("the inbox lists conversations and opens one", async ({ page }, testInfo) =
 	}
 });
 
-test("search finds mail", async ({ page }) => {
+test("search finds mail, and Enter opens the first result", async ({ page }) => {
 	await page.goto("/?view=inbox");
+	const first = page.getByRole("region", { name: "Conversations" }).getByRole("listitem").getByRole("link").first();
+	const newest = (await first.textContent({ timeout: 30_000 })).trim();
 	const search = page.getByRole("combobox", { name: "Search mail" });
 	await search.fill("invoice");
+	// The list shows the search's results once its first row is no longer the inbox's.
+	await expect(first).not.toHaveText(newest, { timeout: 30_000 });
+	await expect(first).toBeVisible();
+	const subject = (await first.textContent()).trim();
 	await search.press("Enter");
 	await expect(page).toHaveURL(/invoice/);
-	await expect(page.getByRole("region", { name: "Conversations" }).getByRole("listitem").first()).toBeVisible({ timeout: 30_000 });
+	await expect(page).toHaveURL(/[?&]open=/);
+	await expect(page.getByRole("region", { name: "Message" }).getByRole("heading", { level: 1, name: subject })).toBeVisible();
 });

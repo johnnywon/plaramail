@@ -8,9 +8,11 @@ import { defineConfig } from "@playwright/test";
 
 const PORT = 5199;
 const CONFIG = "tests/browser/wrangler.ci.jsonc";
+const STATE = ".wrangler/browser-test";
 
 export default defineConfig({
 	testDir: "tests/browser",
+	globalSetup: "./tests/browser/warm-up.mjs",
 	timeout: 60_000,
 	retries: process.env.CI ? 1 : 0,
 	reporter: process.env.CI ? [["list"], ["github"]] : "list",
@@ -20,7 +22,7 @@ export default defineConfig({
 		{ name: "375px", use: { browserName: "chromium", viewport: { width: 375, height: 812 }, hasTouch: true } },
 	],
 	webServer: {
-		command: `npx wrangler d1 migrations apply DB --local -c ${CONFIG} --persist-to .wrangler/state && PLURAMAIL_WRANGLER_CONFIG=${CONFIG} npx react-router dev --port ${PORT} --strictPort`,
+		command: `npx wrangler d1 migrations apply DB --local -c ${CONFIG} --persist-to ${STATE} && PLURAMAIL_WRANGLER_CONFIG=${CONFIG} PLURAMAIL_PERSIST=${STATE} npx react-router dev --port ${PORT} --strictPort`,
 		url: `http://localhost:${PORT}/health`,
 		reuseExistingServer: !process.env.CI,
 		timeout: 180_000,
