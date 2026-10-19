@@ -58,8 +58,9 @@ export async function sendEmail(
 	}
 
 	if (params.attachments && params.attachments.length > 0) {
+		// The binding sends a string as the file's own text, so decode the base64.
 		message.attachments = params.attachments.map((att) => ({
-			content: att.content,
+			content: Uint8Array.from(atob(att.content), (c) => c.charCodeAt(0)),
 			filename: att.filename,
 			type: att.type,
 			disposition: att.disposition,

@@ -238,3 +238,15 @@ test("the HTTP send route returns the open attempt with a 409 (WON-243)", async 
 	assert.deepEqual(res.body.attempt, { state: "sending", providerId: null });
 	assert.ok(res.body.error);
 });
+
+test("attachments reach the mail binding as the file's bytes, not base64 text (#28)", async () => {
+	const h = await harness();
+	const file = Uint8Array.from([..."plain text attachment for issue 28\n"].map((c) => c.charCodeAt(0)).concat([0, 0xff, 0x80]));
+	const content = Buffer.from(file).toString("base64");
+	const result = await h.send("k1", { attachments: [{ content, filename: "note.bin", type: "application/octet-stream", disposition: "attachment" }] });
+	assert.equal(result.ok, true);
+	const [sent] = h.delivered[0].attachments;
+	assert.ok(sent.content instanceof Uint8Array);
+	assert.deepEqual([...sent.content], [...file]);
+	assert.equal(sent.filename, "note.bin");
+});
