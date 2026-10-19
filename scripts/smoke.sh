@@ -2,7 +2,8 @@
 # Post-deploy smoke check. The app sits behind Cloudflare Access, so an
 # unauthenticated request must redirect to the Access login. A 200 or a 5xx
 # there means Access is off or the Worker is broken. /mcp and /.well-known
-# bypass Access: MCP clients sign in with the Worker's own OAuth.
+# bypass Access: MCP clients sign in with the Worker's own OAuth. /health
+# bypasses it too and reports whether D1 and R2 answer.
 set -euo pipefail
 
 # Defaults to the first route in wrangler.jsonc; SMOKE_URL overrides it.
@@ -83,12 +84,30 @@ check_oauth_documents() {
 	fi
 }
 
+# /health answers 200 with {"ok":true} when D1 and R2 answer, 503 naming the store that failed.
+check_health() {
+	local body code
+	body=$(curl -s -w '\n%{http_code}' --max-time 15 "$BASE/health" || true)
+	code=${body##*$'\n'}
+	body=${body%$'\n'*}
+	if [[ "$code" == "200" ]] && printf '%s' "$body" | grep -q '"ok": *true'; then
+		printf '  ok   %-5s %s -> D1 and R2\n' GET /health
+	elif [[ "$code" == "302" ]]; then
+		printf '  FAIL %-5s %s -> Access. Add /health to the Access bypass (docs/setup.md, step 5)\n' GET /health >&2
+		fail=1
+	else
+		printf '  FAIL %-5s %s -> %s %s\n' GET /health "$code" "$body" >&2
+		fail=1
+	fi
+}
+
 echo "Smoke: $BASE"
 check GET /
 check GET /api/v1/mail
 check GET /api/v1/labels
 check POST /api/v1/mail/bulk
 check GET /authorize
+check_health
 check_mcp
 check_metadata /.well-known/oauth-authorization-server issuer
 check_metadata /.well-known/oauth-protected-resource/mcp resource

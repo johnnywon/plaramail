@@ -33,20 +33,21 @@ Requirements: a domain on Cloudflare, R2, and Workers Paid for outbound email. T
    ```
    `TEAM_DOMAIN` must include `https://`; use the team URL or the full `/cdn-cgi/access/certs` URL.
 
-   Then let MCP clients past Access: they sign in with the app's own OAuth instead. In Zero Trust › Access › Applications, add a self-hosted application on the same hostname with these two paths and one **Bypass** policy for Everyone:
+   Then let MCP clients and health checks past Access: clients sign in with the app's own OAuth instead. In Zero Trust › Access › Applications, add a self-hosted application on the same hostname with these three paths and one **Bypass** policy for Everyone:
    - `/mcp`
    - `/.well-known`
+   - `/health`
 
    Or add it with the API, using a token with Access: Apps and Policies Edit. The policy id is an existing reusable Bypass policy for Everyone (list them with `GET .../access/policies`):
    ```sh
    curl -X POST "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/access/apps" \
      -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
      -d '{"name":"Mail MCP bypass","type":"self_hosted","domain":"mail.example.com/mcp",
-          "destinations":[{"type":"public","uri":"mail.example.com/mcp"},{"type":"public","uri":"mail.example.com/.well-known"}],
+          "destinations":[{"type":"public","uri":"mail.example.com/mcp"},{"type":"public","uri":"mail.example.com/.well-known"},{"type":"public","uri":"mail.example.com/health"}],
           "app_launcher_visible":false,"policies":[{"id":"<bypass policy id>","precedence":1}]}'
    ```
 
-   Console > MCP checks this and shows the two paths with your hostname while Access still blocks clients. `/mcp` covers the OAuth endpoints under it (`/mcp/oauth/token`, `/mcp/oauth/register`). Leave `/authorize` behind Access: it is the consent page, and who passes Access there is who the client acts for.
+   Console > MCP checks this and shows the two paths with your hostname while Access still blocks clients. `/mcp` covers the OAuth endpoints under it (`/mcp/oauth/token`, `/mcp/oauth/register`). Leave `/authorize` behind Access: it is the consent page, and who passes Access there is who the client acts for. `/health` answers `{"ok":true,"d1":"ok","r2":"ok"}`, or 503 with the store that failed, and nothing else; point an uptime monitor at it if you use one.
 6. **Route mail to the Worker.** Enable Email Routing for the domain, then add one rule per address in `EMAIL_ADDRESSES`:
    ```sh
    npx wrangler@latest email routing enable example.com
@@ -60,7 +61,7 @@ Requirements: a domain on Cloudflare, R2, and Workers Paid for outbound email. T
    npx wrangler@latest email sending enable example.com
    ```
    This works for a subdomain too, for example `mail.example.com`.
-8. **Check it.** `npm run smoke` expects the app and its API to redirect to the Access login, `/mcp` to answer 401 with an OAuth challenge, the OAuth metadata under `/.well-known` to load with the same scopes in both documents and client ID metadata documents on, and `/authorize` to stay behind Access. It reads the hostname from `routes`; without one, run `SMOKE_URL=https://<your worker URL> npm run smoke`. Then send a message to one of your addresses. A configured address gets its mailbox on first delivery, so mail is kept even if nobody has opened the app yet.
+8. **Check it.** `npm run smoke` expects the app and its API to redirect to the Access login, `/health` to report D1 and R2 working, `/mcp` to answer 401 with an OAuth challenge, the OAuth metadata under `/.well-known` to load with the same scopes in both documents and client ID metadata documents on, and `/authorize` to stay behind Access. It reads the hostname from `routes`; without one, run `SMOKE_URL=https://<your worker URL> npm run smoke`. Then send a message to one of your addresses. A configured address gets its mailbox on first delivery, so mail is kept even if nobody has opened the app yet.
 9. **Check sending and receiving (optional).** `npm run smoke:mail` sends real mail between two of your addresses and reads it back: a message to `SMOKE_TO` with a Cc to `SMOKE_FROM`, an HTML body, a 256-byte binary attachment and a short text attachment. It checks the subject, the formatting, the Cc and that both attachments download byte for byte, then replies and checks the reply threads on both sides, forwards the message back and checks the attachments came with it unchanged, and moves everything it sent and received to Trash. It prints one line per check and exits 1 if any fails. It sends three messages, which count against your Email Sending quota, so it does not run on its own.
 
    It reaches the API through Access with a service token. Create one under Zero Trust > Access > Service credentials, add a **Service Auth** policy for it to the Worker's Access application, then run:
@@ -105,6 +106,7 @@ Bounces: because Email Sending sets the Return-Path, most bounces for mail sent 
 | `EMAIL_ADDRESSES` | `vars` | Addresses that get a mailbox, as a list or a comma-separated string. Mail to other addresses bounces. |
 | `ATTACHMENT_SEARCH` | `vars` | `true` makes attachment text searchable. Uses one Workers AI `toMarkdown` call per PDF, Word or Excel file. |
 | `MCP_SEND_ENABLED` | `vars` | `false` takes the send tools away from every MCP client, whatever it was granted |
+| `ALERT_TO` | `vars` | An address for error alerts, best one this deployment doesn't receive. Once an hour, if a request threw, inbound mail failed, a cron step failed or `/health` fails, the Worker mails it the errors since the last alert, from the first address in `EMAIL_ADDRESSES`. Unset sends none. |
 | `POLICY_AUD`, `TEAM_DOMAIN` | secrets | Cloudflare Access verification |
 | `global_fetch_strictly_public` | `compatibility_flags` | Lets MCP clients sign in with a Client ID Metadata Document URL as their `client_id`. Without it the OAuth metadata reports `client_id_metadata_document_supported: false` and such clients get "Can't connect this app". `wrangler.jsonc` sets it; a deployment with its own config adds it next to `nodejs_compat`. |
 
