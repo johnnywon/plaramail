@@ -10,6 +10,7 @@
 import { Folders } from "../../../shared/folders";
 import { textKind } from "../../lib/attachment-kind";
 import { htmlToText, listHeaders, parseSender } from "../../lib/message-meta";
+import { foldLetters } from "../../lib/search-fold";
 import type { Statement } from "../sql";
 
 export const SYSTEM_FOLDERS: readonly string[] = Object.values(Folders);
@@ -82,7 +83,7 @@ export function ftsInsert(emailId: string, f: SearchFields): Statement {
 	return {
 		sql: `INSERT INTO messages_fts (rowid, subject, sender_name, sender_addr, recipients, body_text, attachment_names)
 			SELECT id, ?, ?, ?, ?, ?, ? FROM messages WHERE email_id = ?`,
-		params: [f.subject, f.senderName, f.senderAddr, f.recipients, f.bodyText, f.attachmentNames, emailId],
+		params: [...[f.subject, f.senderName, f.senderAddr, f.recipients, f.bodyText, f.attachmentNames].map(foldLetters), emailId],
 	};
 }
 
@@ -150,7 +151,7 @@ export function insertStatements(
 		ftsInsert(email.id, { subject: email.subject ?? "", senderName: sender.name, senderAddr: sender.addr, recipients, bodyText, attachmentNames: names }),
 		{
 			sql: `INSERT INTO messages_trigram (rowid, subject, sender_addr, recipients, attachment_names) VALUES (${rowid}, ?, ?, ?, ?)`,
-			params: [email.id, email.subject ?? "", sender.addr, recipients, names],
+			params: [email.id, ...[email.subject ?? "", sender.addr, recipients, names].map(foldLetters)],
 		},
 	];
 }

@@ -212,6 +212,8 @@ export interface Conversation {
 	date: string;
 	sender_addr: string;
 	sender_name: string;
+	/** The To line, for showing who sent mail went to. */
+	recipient: string;
 	subject: string;
 	snippet: string;
 	unread: boolean;

@@ -81,7 +81,7 @@ test("search text the URL has no chip for stays text", () => {
 
 const LABELS = [{ id: "receipts", name: "Receipts" }, { id: "tax-2026", name: "Tax 2026" }];
 
-test("label: resolves a name or id to the label's id; unknown labels stay text", () => {
+test("label: resolves a name to the label's id; unknown labels stay text", () => {
 	assert.deepEqual(f.parseSearchText("label:receipts", LABELS).chips, [{ kind: "label", value: "receipts" }]);
 	assert.deepEqual(f.parseSearchText('label:"tax 2026" invoice', LABELS), { view: undefined, chips: [{ kind: "label", value: "tax-2026" }], text: "invoice", errors: [] });
 	assert.deepEqual(f.parseSearchText("label:Tax-2026", LABELS).chips, [{ kind: "label", value: "tax-2026" }]);
@@ -91,3 +91,10 @@ test("label: resolves a name or id to the label's id; unknown labels stay text",
 	assert.deepEqual(next.chips, [{ kind: "label", value: "receipts" }, { kind: "label", value: "tax-2026" }]);
 });
 
+
+test("label: resolves the current name only; a renamed label's first name doesn't (#43)", () => {
+	const renamed = [{ id: "receipts", name: "Bills" }, { id: "tax-2026", name: "Tax 2026" }];
+	assert.deepEqual(f.parseSearchText("label:bills", renamed).chips, [{ kind: "label", value: "receipts" }]);
+	assert.deepEqual(f.parseSearchText("label:receipts", renamed).chips, []);
+	assert.deepEqual(f.parseSearchText("label:tax-2026", renamed).chips, [{ kind: "label", value: "tax-2026" }], "spaces may be written as hyphens");
+});

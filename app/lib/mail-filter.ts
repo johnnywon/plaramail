@@ -163,8 +163,9 @@ export interface LabelRef {
 const IN_VIEWS: Record<string, string> = { draft: "drafts", drafts: "drafts", inbox: "inbox", sent: "sent", archive: "archive", spam: "spam", trash: "trash", all: "all", starred: "starred", unread: "unread" };
 
 function resolveLabel(value: string, labels: readonly LabelRef[]): string | null {
+	// The current name, spaces optionally written as hyphens. Not the id: it keeps the label's first name.
 	const v = value.trim().toLowerCase();
-	return labels.find((l) => l.id === v || l.name.toLowerCase() === v)?.id ?? null;
+	return labels.find((l) => l.name.toLowerCase() === v || l.name.toLowerCase().replace(/\s+/g, "-") === v)?.id ?? null;
 }
 
 /** The chip a lone, not excluded item becomes, or the view `in:` picks. Null leaves it in the search text. */
@@ -190,7 +191,7 @@ function chipOf(leaf: Leaf, labels: readonly LabelRef[]): Chip | { view: string 
 /**
  * Turn search text into chips with the shared parser (shared/search-query.ts).
  * A lone operator the URL has a chip for becomes that chip; `in:` changes the
- * view; `label:` takes a label name or id. Everything else, including
+ * view; `label:` takes a label's current name. Everything else, including
  * exclusions, OR, unknown labels and the newer operators, stays as text for
  * the server to parse. Operators with bad values are left out and reported.
  */

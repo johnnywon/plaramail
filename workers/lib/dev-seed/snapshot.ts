@@ -19,6 +19,7 @@ import { recordsSql } from "../../store";
 import type { Statement } from "../../store/sql";
 import type { Env } from "../../types";
 import { htmlToText } from "../message-meta";
+import { foldLettersSql as f } from "../search-fold";
 
 /** Tables the copy holds, parents before children. */
 const COPIED = ["labels", "messages", "attachments", "message_labels", "label_auto", "draft_notes", "saved_searches"] as const;
@@ -159,12 +160,12 @@ export async function restoreSnapshot(env: Env, key: string, opts: { now?: numbe
 		{ sql: `DELETE FROM messages_trigram WHERE rowid IN ${reindexed}` },
 		{
 			sql: `INSERT INTO messages_fts (rowid, subject, sender_name, sender_addr, recipients, body_text, attachment_names)
-				SELECT m.id, m.subject, m.sender_name, m.sender_addr, m.recipients, t.body_text, ${names}
+				SELECT m.id, ${f("m.subject")}, ${f("m.sender_name")}, ${f("m.sender_addr")}, ${f("m.recipients")}, ${f("t.body_text")}, ${f(names)}
 				FROM messages m JOIN ${snap("text")} t ON t.id = m.id WHERE m.id IN ${reindexed}`,
 		},
 		{
 			sql: `INSERT INTO messages_trigram (rowid, subject, sender_addr, recipients, attachment_names)
-				SELECT m.id, m.subject, m.sender_addr, m.recipients, ${names} FROM messages m WHERE m.id IN ${reindexed}`,
+				SELECT m.id, ${f("m.subject")}, ${f("m.sender_addr")}, ${f("m.recipients")}, ${f(names)} FROM messages m WHERE m.id IN ${reindexed}`,
 		},
 	];
 	if (opts.shiftDates) {

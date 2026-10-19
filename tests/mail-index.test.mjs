@@ -467,3 +467,10 @@ test("Empty Trash ops are chunked to 100 ids", () => {
 	for (let i = 0; i < rows.length; i += 50) apply(exec, "a@example.com", rows.slice(i, i + 50));
 	assert.deepEqual(run(exec, "planEmptyTrash", 130).map((op) => op.emailIds.length), [100, 30]);
 });
+
+test("rows carry the recipient, so Sent can say who mail went to (#34)", () => {
+	const { exec } = d1Db();
+	apply(exec, "a@example.com", [row("s1", { state: "sent", sender_addr: "a@example.com", sender_name: "a", recipients: "bob@example.org, cy@example.net" })]);
+	const [sent] = q(exec, { view: "sent" }).conversations;
+	assert.equal(sent.recipient, "bob@example.org, cy@example.net");
+});

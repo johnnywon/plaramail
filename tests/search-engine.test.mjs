@@ -161,3 +161,43 @@ test("facets with words count the newest matches on D1", () => {
 	const counts = seen.filter((s) => /FROM messages m/.test(s) && /MATCH/.test(s));
 	assert.ok(counts.length > 0 && counts.every((s) => /ORDER BY rowid DESC LIMIT \?/.test(s)));
 });
+
+test("search folds accents both ways, for words and substrings (#40)", () => {
+	const d = openDb();
+	for (const s of statements(D1_SCHEMA)) d.exec(s);
+	d.exec(`INSERT INTO mailboxes (id, created_at) VALUES (?, 'x')`, A);
+	d.exec(`INSERT INTO folders (mailbox_id, id, name) VALUES (?, 'inbox', 'inbox')`, A);
+	const mail = [["a1", "Café menu"], ["a2", "Cafe hours"], ["a3", "Über rides"], ["a4", "Uber receipts"], ["a5", "ünïcødé test"], ["a6", "Résumé attached"], ["a7", "Resume draft"]];
+	for (const [id, subject] of mail) {
+		const email = { id, subject, sender: "ann@example.org", recipient: A, date: iso(1), body: "<p>x</p>", thread_id: id };
+		for (const s of rows.insertStatements(A, "inbox", email, [], id, { bodyInR2: false })) d.exec(s.sql, ...s.params);
+	}
+	const find = (q) => ids(idx.runSync(eng.d1MailQuery(filter(q), { now: NOW }), d.exec)).sort();
+	assert.deepEqual(find("cafe"), ["a1", "a2"]);
+	assert.deepEqual(find("café"), ["a1", "a2"]);
+	assert.deepEqual(find("uber"), ["a3", "a4"]);
+	assert.deepEqual(find("über"), ["a3", "a4"]);
+	assert.deepEqual(find("unicode"), ["a5"]);
+	assert.deepEqual(find("sume"), ["a6", "a7"], "inside Résumé, by substring");
+	assert.deepEqual(find("sumé"), ["a6", "a7"]);
+});
+
+test("migration 0009 refills the substring index from stored mail, folded (#40)", async () => {
+	const { readdirSync, readFileSync } = await import("node:fs");
+	const fold = await loadTs("workers/lib/search-fold.ts");
+	const files = readdirSync("migrations").filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
+	const before = files.filter((f) => f < "0009").map((f) => readFileSync(`migrations/${f}`, "utf8")).join("\n");
+	const m9 = readFileSync("migrations/0009_search_fold.sql", "utf8");
+	assert.ok(m9.includes(fold.foldLettersSql("m.subject")), "the migration folds the letters search-fold.ts folds");
+
+	const d = openDb();
+	for (const s of statements(before)) d.exec(s);
+	d.exec(`INSERT INTO mailboxes (id, created_at) VALUES (?, 'x')`, A);
+	d.exec(`INSERT INTO folders (mailbox_id, id, name) VALUES (?, 'inbox', 'inbox')`, A);
+	const email = { id: "old", subject: "Résumé for Bjørn", sender: "ann@example.org", recipient: A, date: iso(1), body: "<p>x</p>", thread_id: "old" };
+	for (const s of rows.insertStatements(A, "inbox", email, [], "old", { bodyInR2: false })) d.exec(s.sql, ...s.params);
+	for (const s of statements(m9)) d.exec(s);
+	const hit = (q) => d.exec(`SELECT rowid FROM messages_trigram WHERE messages_trigram MATCH ?`, `"${q}"`).length;
+	assert.equal(hit("sume"), 1);
+	assert.equal(hit("bjorn"), 1);
+});
