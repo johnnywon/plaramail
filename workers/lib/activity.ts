@@ -47,6 +47,10 @@ export const TOOL_ACTIONS: Record<string, ActivityAction> = {
 	set_shortcut: "settings",
 	reset_shortcuts: "settings",
 	redraft: "draft",
+	// People in the app (WON-217).
+	unsubscribe: "settings",
+	block_sender: "settings",
+	unblock_sender: "settings",
 };
 
 export interface ActivityEntry {

@@ -38,6 +38,11 @@ export type MailboxStore = Pick<
 	| "getAttachment"
 	| "findThreadBySubject"
 	| "findThreadByMessageIds"
+	// Blocked senders
+	| "isBlockedSender"
+	| "blockSender"
+	| "unblockSender"
+	| "listBlockedSenders"
 	// Folder import (folders to labels)
 	| "folderImportCounts"
 	| "folderEmailIds"

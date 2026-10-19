@@ -42,6 +42,8 @@ const ALLOWED: [method: string, path: RegExp][] = [
 ];
 
 const SENDS = /^\/api\/v1\/mailboxes\/[^/]+\/(emails|scheduled|emails\/[^/]+\/(reply|forward))$/;
+/** The sample mail's lists don't exist, so a demo never posts to them. */
+const UNSUBSCRIBE = /^\/api\/v1\/mailboxes\/[^/]+\/emails\/[^/]+\/unsubscribe$/;
 const AI = /^\/api\/v1\/(search\/interpret|agent-model\/test|mailboxes\/[^/]+\/drafts\/[^/]+\/redraft)$/;
 /** The AI calls a demo visitor may make, within the daily cap. */
 const AI_ALLOWED = /^\/api\/v1\/(search\/interpret|mailboxes\/[^/]+\/drafts\/[^/]+\/redraft)$/;
@@ -56,6 +58,7 @@ export function demoRefusal(method: string, path: string): string | null {
 	if (ALLOWED.some(([m, re]) => m === method && re.test(path))) return null;
 	if (method === "POST" && AI_ALLOWED.test(path)) return null;
 	if (SENDS.test(path)) return "Sending is off in the demo";
+	if (UNSUBSCRIBE.test(path)) return "Unsubscribe is off in the demo";
 	if (AI.test(path)) return "AI is off in the demo";
 	return "Settings are read-only in the demo";
 }

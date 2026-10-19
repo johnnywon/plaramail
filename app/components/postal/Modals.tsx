@@ -20,6 +20,7 @@ import { useDemo } from "~/lib/demo";
 import { LimitsTab, useAgentLimitsDraft } from "./LimitsTab";
 import { ActivityTab } from "./ActivityTab";
 import { StorageTab } from "./StorageTab";
+import { BlockedSenders } from "./BlockedSenders";
 import { receivedCount, ROUTING_URL } from "./routing-guide";
 import type { Prefs } from "./prefs";
 import { ShortcutMap } from "./ShortcutMap";
@@ -282,6 +283,9 @@ export function ConsoleSettings({ tab, onTab, prefs, setPrefs, addresses, identi
 							})}
 							<Field label="Add an address" hint={<>Add it to <span className="pg-mono">EMAIL_ADDRESSES</span> in your Worker config and deploy. Its domain must be in <span className="pg-mono">DOMAINS</span>.</>}>
 								<CopyField label="EMAIL_ADDRESSES config line" value={`"EMAIL_ADDRESSES": ${JSON.stringify(addresses)}`} />
+							</Field>
+							<Field label="Blocked senders">
+								<BlockedSenders identities={identities} />
 							</Field>
 						</>
 					)}

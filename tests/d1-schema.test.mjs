@@ -77,8 +77,14 @@ async function scenario(sql) {
 	assert.deepEqual(await sql.all("SELECT id FROM attachments"), []);
 	assert.deepEqual(await sql.all("SELECT message FROM message_labels"), [{ message: 3 }]);
 
-	// Deleting a mailbox cascades to its folders, messages and their search rows.
+	// Blocked senders are per address, one row per sender.
+	await sql.run("INSERT INTO blocked_senders (mailbox_id, address, created_at) VALUES ('b@example.com', 'ann@example.org', ?)", now);
+	await assert.rejects(sql.run("INSERT INTO blocked_senders (mailbox_id, address, created_at) VALUES ('b@example.com', 'ann@example.org', ?)", now));
+	await assert.rejects(sql.run("INSERT INTO blocked_senders (mailbox_id, address, created_at) VALUES ('nobody@example.com', 'ann@example.org', ?)", now));
+
+	// Deleting a mailbox cascades to its folders, messages, blocked senders and search rows.
 	await sql.run("DELETE FROM mailboxes WHERE id = 'b@example.com'");
+	assert.deepEqual(await sql.all("SELECT address FROM blocked_senders"), []);
 	assert.deepEqual(await sql.all("SELECT email_id FROM messages"), [{ email_id: "m2" }]);
 	assert.deepEqual(await matches('"invoice"*'), []);
 	assert.deepEqual(await sql.all("SELECT count(*) AS n FROM folders WHERE mailbox_id = 'b@example.com'"), [{ n: 0 }]);

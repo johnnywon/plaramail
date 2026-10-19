@@ -292,6 +292,18 @@ export interface Label {
 	auto?: boolean;
 }
 
+/** What Unsubscribe did: posted one-click from the Worker, or what the app opens. */
+export type UnsubscribeResult =
+	| { method: "one-click"; ok: true; status: number; host: string }
+	| { method: "link"; ok: true; url: string }
+	| { method: "mailto"; ok: true; mailto: { to: string; subject: string; body: string } };
+
+export interface BlockedSender {
+	mailboxId: string;
+	address: string;
+	createdAt: string;
+}
+
 export interface ScheduledSend {
 	mailboxId: string;
 	emailId: string;
@@ -428,6 +440,15 @@ const api = {
 		post<void>(`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/reply`, email, sendKey(key)),
 	forwardEmail: (mailboxId: string, emailId: string, email: unknown, key?: string) =>
 		post<void>(`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/forward`, email, sendKey(key)),
+
+	// Unsubscribe and blocked senders (WON-217)
+	unsubscribe: (mailboxId: string, emailId: string) =>
+		post<UnsubscribeResult>(`/api/v1/mailboxes/${encodeURIComponent(mailboxId)}/emails/${encodeURIComponent(emailId)}/unsubscribe`),
+	blockSender: (mailboxId: string, emailId: string) =>
+		post<BlockedSender>(`/api/v1/mailboxes/${encodeURIComponent(mailboxId)}/emails/${encodeURIComponent(emailId)}/block`),
+	unblockSender: (mailboxId: string, address: string) =>
+		del<{ removed: true }>(`/api/v1/mailboxes/${encodeURIComponent(mailboxId)}/blocked-senders/${encodeURIComponent(address)}`),
+	getBlockedSenders: () => get<BlockedSender[]>("/api/v1/blocked-senders"),
 
 	// Scheduled send
 	scheduleSend: (mailboxId: string, request: ScheduleRequest) =>

@@ -3,11 +3,12 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
-	ArchiveIcon, ArrowBendDoubleUpLeftIcon, ArrowBendUpLeftIcon, ArrowBendUpRightIcon, CalendarBlankIcon, CaretLeftIcon, CheckIcon, CodeIcon, DownloadSimpleIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon, FileAudioIcon, FileCodeIcon, FileDocIcon, FileIcon, FileImageIcon, FilePdfIcon, FilePptIcon, FileTextIcon, FileVideoIcon, FileXlsIcon, FileZipIcon, ImageIcon, PaperclipIcon, PencilSimpleLineIcon, PlusIcon, StarIcon, TagIcon, TrashIcon, TrayArrowUpIcon, WarningIcon, WarningOctagonIcon, XIcon,
+	ArchiveIcon, ArrowBendDoubleUpLeftIcon, BellSlashIcon, ArrowBendUpLeftIcon, ArrowBendUpRightIcon, CalendarBlankIcon, CaretLeftIcon, CheckIcon, CodeIcon, DownloadSimpleIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon, FileAudioIcon, FileCodeIcon, FileDocIcon, FileIcon, FileImageIcon, FilePdfIcon, FilePptIcon, FileTextIcon, FileVideoIcon, FileXlsIcon, FileZipIcon, ImageIcon, PaperclipIcon, PencilSimpleLineIcon, PlusIcon, ProhibitIcon, StarIcon, TagIcon, TrashIcon, TrayArrowUpIcon, WarningIcon, WarningOctagonIcon, XIcon,
 } from "@phosphor-icons/react";
 import { AgentIcon } from "./AgentIcon";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Folders } from "shared/folders";
+import { type UnsubscribeMethod, unsubscribeMethod, unsubscribeTargets } from "shared/unsubscribe";
 import EmailIframe, { type EmailPalette, hasRemoteImages, isPlainHtml, MailText } from "~/components/EmailIframe";
 import { isHtmlBody } from "~/components/plain-text";
 import { getAttachmentUrl, getNonInlineAttachments, messageBodyHtml } from "~/lib/utils";
@@ -54,7 +55,19 @@ export interface ReaderProps {
 	replyRequest: { mode: Exclude<ComposeMode, "new">; id: number } | null;
 	/** Changes when the label shortcut asks for the label picker. */
 	labelRequest: number;
+	/** Unsubscribe from the list that sent this message (WON-217). */
+	onUnsubscribe: (email: Email, method: UnsubscribeMethod) => void;
+	/** Whether new mail from this sender to this address goes to Trash. */
+	isBlocked: (mailboxId: string, address: string) => boolean;
+	onBlock: (email: Email, block: boolean) => void;
 }
+
+/** What Unsubscribe does, as its tooltip hint. */
+const UNSUBSCRIBE_HINT: Record<UnsubscribeMethod, string> = {
+	"one-click": "Tells the list to stop, in one click",
+	link: "Opens the list's unsubscribe page",
+	mailto: "Opens a mail to the list's unsubscribe address",
+};
 
 function sortAsc(list: Email[]) {
 	return [...list].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -141,6 +154,10 @@ export function Reader(props: ReaderProps) {
 	const attachmentCount = email ? getNonInlineAttachments(email.attachments).length : 0;
 	const unread = row?.unread ?? false;
 	const reply = (mode: Exclude<ComposeMode, "new">) => original && props.startReply(mode, original);
+	// Unsubscribe and Block act on the open message, and only on mail someone sent you.
+	const incoming = head && !sent && head.folder_id !== Folders.DRAFT && head.sender && head.sender.toLowerCase() !== mailbox ? head : null;
+	const unsubscribe = incoming ? unsubscribeMethod(unsubscribeTargets(incoming.raw_headers)) : null;
+	const blocked = !!incoming && props.isBlocked(mailbox, incoming.sender);
 
 	// The message's letterhead: who and where on the left, when on the right, inside the page.
 	const when = (head ? fullDate(head.date) : row ? fullDate(row.date) : "").split(" · ");
@@ -225,6 +242,21 @@ export function Reader(props: ReaderProps) {
 						</button>
 						<button ref={labelBtn} type="button" className="pg-icon-btn" title={tip("label", "Label")} aria-label="Label" aria-expanded={pickerOpen} onClick={() => openPicker()} disabled={!row}><TagIcon size={16} /></button>
 					</div>
+					{incoming && (
+						<div className="pg-group">
+							{unsubscribe && <button type="button" className="pg-icon-btn" title={`Unsubscribe · ${UNSUBSCRIBE_HINT[unsubscribe]}`} aria-label="Unsubscribe" onClick={() => props.onUnsubscribe(incoming, unsubscribe)}><BellSlashIcon size={16} /></button>}
+							<button
+								type="button"
+								className="pg-icon-btn"
+								title={blocked ? `Unblock sender · New mail from ${incoming.sender} goes to the Inbox` : `Block sender · New mail from ${incoming.sender} goes to Trash`}
+								aria-label={blocked ? "Unblock sender" : "Block sender"}
+								aria-pressed={blocked}
+								onClick={() => props.onBlock(incoming, !blocked)}
+							>
+								<ProhibitIcon size={16} color={blocked ? "var(--pg-danger-text)" : undefined} />
+							</button>
+						</div>
+					)}
 					<div style={{ flex: 1 }} />
 					<button type="button" className="pg-icon-btn" title="View source" aria-label="View source" onClick={() => head && setSource(head)} disabled={!head}><CodeIcon size={16} /></button>
 				</div>
