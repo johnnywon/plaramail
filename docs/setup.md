@@ -76,6 +76,26 @@ Requirements: a domain on Cloudflare, R2, and Workers Paid for outbound email. T
 - `Invalid or expired Access token`: `POLICY_AUD` or `TEAM_DOMAIN` is wrong. Turn Access off and on for the Worker to see the values again, then reset both secrets.
 - `POLICY_AUD is missing`, `TEAM_DOMAIN is missing`, or `TEAM_DOMAIN must be an https:// URL`: correct the missing or malformed secret. The Worker fails closed on purpose.
 
+## DMARC
+
+DMARC tells receiving servers what to do with mail that claims your From domain but fails authentication. It is one TXT record at `_dmarc.<your domain>`. Its policy, `p=`, is one of:
+
+- `p=none`: deliver the mail as usual and only report on it.
+- `p=quarantine`: put failing mail in spam.
+- `p=reject`: refuse failing mail.
+
+A message passes DMARC when SPF or DKIM passes and that check is in alignment with the From domain: the DKIM signature's `d=` domain, or for SPF the envelope sender (Return-Path) domain, must match the From domain or share its organizational domain. Email Sending signs each message with DKIM for your domain, so DKIM is the check that aligns. The Return-Path is set by Email Sending for its bounce handling, so do not count on SPF alignment. To confirm, open a message you sent in another provider's mailbox and read its `Authentication-Results` header: it should show `dkim=pass` with `header.d=example.com` and `dmarc=pass`.
+
+Step 7 adds a DMARC record. Look at it before adding one: a domain can have only one, and a second makes receivers ignore both. Start at `p=none` with `rua` reports, which receivers send as daily XML summaries of the mail they saw from your domain, including mail you did not send:
+
+```
+_dmarc.example.com.  TXT  "v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com"
+```
+
+The `rua` address can be one of your addresses in `EMAIL_ADDRESSES`. Once the reports show only your own sending passing, move to `p=quarantine`, then `p=reject`. The same applies to a subdomain you send from, under `_dmarc.mail.example.com`; without its own record a subdomain follows the parent's `sp=` or `p=`.
+
+Bounces: because Email Sending sets the Return-Path, most bounces for mail sent from PluraMail go to Cloudflare, not to your mailbox. When a bounce notice (a delivery status report) does reach a mailbox, PluraMail files it in the conversation of the Sent message it is about.
+
 ## Configuration
 
 | Setting | Where | Purpose |
