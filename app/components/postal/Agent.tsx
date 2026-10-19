@@ -9,7 +9,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
 import type { ComposeState } from "./compose";
 import { Keys, useShortcuts } from "./shortcuts";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { canSend, DRAFT_START_MS, draftStartStep, ownText } from "./draft-start";
 import { AgentMarkdown } from "./agent-markdown";
 import { SHARED_AGENT, type AgentContext } from "../../../shared/agent";
 import { DEMO_AGENT_NOTICE, useDemo } from "~/lib/demo";
@@ -458,38 +459,69 @@ export interface DraftJob {
 	id: number;
 	mailboxId: string;
 	prompt: string;
+	/** Sends so far, counting this one. */
+	tries: number;
+}
+
+interface RunnerProps {
+	job: DraftJob;
+	/** The agent began answering: the request reached it. */
+	onStarted: () => void;
+	onDone: (r: DraftResult) => void;
+	onError: (message: string) => void;
 }
 
 /**
  * Sends one message to the mailbox's agent and waits for its draft_reply or
- * draft_email result. Mount while a job runs; it renders nothing.
+ * draft_email result. Mount while a job runs; it renders nothing. The chat
+ * hook suspends while it loads history, so it has its own boundary: the
+ * composer's "Drafting…" doesn't wait on it.
  */
-export function AgentDraftRunner({ job, onDone, onError }: { job: DraftJob; onDone: (r: DraftResult) => void; onError: (message: string) => void }) {
+export function AgentDraftRunner(props: RunnerProps) {
 	const { hooks, error } = useAgentHooks();
 	useEffect(() => {
-		if (error) onError(error);
+		if (error) props.onError(error);
 	}, [error]); // eslint-disable-line react-hooks/exhaustive-deps
 	if (!hooks) return null;
-	return <Runner hooks={hooks} job={job} onDone={onDone} onError={onError} />;
+	return (
+		<Suspense fallback={null}>
+			<Runner hooks={hooks} {...props} />
+		</Suspense>
+	);
 }
 
-function Runner({ hooks, job, onDone, onError }: { hooks: Hooks; job: DraftJob; onDone: (r: DraftResult) => void; onError: (message: string) => void }) {
+function Runner({ hooks, job, onStarted, onDone, onError }: RunnerProps & { hooks: Hooks }) {
 	const agent = hooks.useAgent({ agent: "EmailAgent", name: job.mailboxId });
 	const { messages, sendMessage, status } = hooks.useAgentChat({ agent });
 	const sent = useRef(false);
 	const settled = useRef(false);
 	const started = useRef(false);
+	const reported = useRef(false);
+	// The request waits for the connection: a send before it opens can be lost (#60).
+	const [open, setOpen] = useState(() => canSend(agent.readyState));
 
 	useEffect(() => {
-		if (sent.current) return;
+		if (open) return;
+		const onOpen = () => setOpen(true);
+		agent.addEventListener("open", onOpen);
+		if (canSend(agent.readyState)) setOpen(true);
+		return () => agent.removeEventListener("open", onOpen);
+	}, [agent, open]);
+
+	useEffect(() => {
+		if (sent.current || !open) return;
 		sent.current = true;
 		sendMessage({ text: job.prompt });
-	}, [sendMessage, job.prompt]);
+	}, [open, sendMessage, job.prompt]);
 
 	useEffect(() => {
 		if (settled.current) return;
 		if (status === "streaming" || status === "submitted") started.current = true;
 		const at = messages.map((m) => m.role === "user" && m.parts.some((p) => p.type === "text" && p.text === job.prompt)).lastIndexOf(true);
+		if (!reported.current && (status === "streaming" || (at >= 0 && messages.slice(at + 1).some((m) => m.role === "assistant")))) {
+			reported.current = true;
+			onStarted();
+		}
 		if (at < 0) return;
 		for (const m of messages.slice(at + 1)) {
 			for (const part of m.parts) {
@@ -525,6 +557,8 @@ export function useDraftWithAgent() {
 	const queryClient = useQueryClient();
 	const [job, setJob] = useState<DraftJob | null>(null);
 	const waiter = useRef<{ resolve: (r: DraftResult) => void; reject: (e: Error) => void } | null>(null);
+	// The job whose agent began answering.
+	const startedJob = useRef<number | null>(null);
 
 	const finish = (fn: (w: NonNullable<typeof waiter.current>) => void) => {
 		const w = waiter.current;
@@ -534,9 +568,21 @@ export function useDraftWithAgent() {
 		queryClient.invalidateQueries({ queryKey: ["mail"] });
 	};
 
+	// Nothing started a few seconds after the send: send once more on a fresh connection, then give up with an error.
+	useEffect(() => {
+		if (!job) return;
+		const t = setTimeout(() => {
+			const step = draftStartStep({ started: startedJob.current === job.id, elapsed: DRAFT_START_MS, tries: job.tries });
+			if (step === "retry") setJob({ ...job, id: Date.now(), tries: job.tries + 1 });
+			else if (step === "fail") finish((w) => w.reject(new Error("The agent didn't start. Try again.")));
+		}, DRAFT_START_MS);
+		return () => clearTimeout(t);
+	}, [job]); // eslint-disable-line react-hooks/exhaustive-deps
+
 	const draftWithAgent = (state: ComposeState): Promise<DraftResult> => {
 		if (demo) return Promise.reject(new Error(DEMO_AGENT_NOTICE));
-		const notes = state.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+		// The writer's own words, not the quote under a reopened reply draft.
+		const notes = ownText(state.html);
 		const to = state.to[0]?.addr;
 		let mailboxId = state.from;
 		let prompt: string;
@@ -564,7 +610,7 @@ export function useDraftWithAgent() {
 					reject(e);
 				},
 			};
-			setJob({ id: Date.now(), mailboxId, prompt });
+			setJob({ id: Date.now(), mailboxId, prompt, tries: 1 });
 		});
 	};
 
@@ -572,6 +618,9 @@ export function useDraftWithAgent() {
 		<AgentDraftRunner
 			key={job.id}
 			job={job}
+			onStarted={() => {
+				startedJob.current = job.id;
+			}}
 			onDone={(r) => finish((w) => w.resolve(r))}
 			onError={(m) => finish((w) => w.reject(new Error(m)))}
 		/>

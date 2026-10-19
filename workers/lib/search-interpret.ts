@@ -12,7 +12,7 @@
  * Only the request text goes to the model, never mail.
  */
 import { z } from "zod";
-import { formatSearch, MAX_SEARCH_LENGTH, OPERATOR_HELP, OPERATORS, parseSearch, type Term } from "../../shared/search-query";
+import { formatLeaf, formatSearch, type Leaf, MAX_SEARCH_LENGTH, OPERATOR_HELP, OPERATORS, parseSearch, type Term } from "../../shared/search-query";
 import { compileSearch } from "../store/search";
 
 export const MAX_REQUEST_LENGTH = 300;
@@ -160,5 +160,108 @@ export async function interpretSearch(text: string, ctx: InterpretContext, gener
 	}
 	const query = searchFromTerms(model, ctx);
 	if (!query) return { error: "The model found nothing to search for. Searching for the words instead.", query: request };
-	return { query, explanation: model.explanation.replace(/\s+/g, " ").trim().slice(0, 160) };
+	return { query, explanation: checkExplanation(model.explanation, query) };
+}
+
+const MAX_EXPLANATION = 160;
+
+/**
+ * Words that promise a date filter. Months leave out "May", which is more
+ * often the verb.
+ */
+const DATE_WORDS = new RegExp(
+	[
+		"today", "tonight", "yesterday", "recent(ly)?", "since", "ago", "weekend",
+		"this (morning|afternoon|evening|week|month|year)",
+		"last (night|week|month|year|\\d+|few|couple)",
+		"past (\\d+|few|couple|day|week|month|year)",
+		"(mon|tues|wednes|thurs|fri|satur|sun)day",
+		"january|february|march|april|june|july|august|september|october|november|december",
+	].map((w) => `\\b(${w})\\b`).join("|"),
+	"i",
+);
+
+/**
+ * The model's explanation, or one built from the query when the model's
+ * names a date the query doesn't filter on, or is empty. The query is what
+ * runs, so the explanation must not promise more.
+ */
+export function checkExplanation(explanation: string, query: string): string {
+	const text = explanation.replace(/\s+/g, " ").trim();
+	const hasDate = parseSearch(query).terms.some((t) => t.any.some((l) => l.type === "date"));
+	if (text && (hasDate || !DATE_WORDS.test(text))) return text.slice(0, MAX_EXPLANATION);
+	return describeSearch(query);
+}
+
+const HAS_TEXT: Record<string, string> = {
+	attachment: "with an attachment",
+	pdf: "with a PDF",
+	image: "with an image",
+	link: "with a link",
+	draft: "with a draft",
+	unsubscribe: "from a mailing list",
+};
+const IN_TEXT: Record<string, string> = {
+	inbox: "in Inbox",
+	unread: "in Unread",
+	starred: "in Starred",
+	drafts: "in Drafts",
+	sent: "in Sent",
+	archive: "in Archive",
+	spam: "in Spam",
+	trash: "in Trash",
+	all: "in All mail",
+	anywhere: "in any folder",
+};
+
+/** The value of a formatted date or size leaf, after its operator. */
+const leafValue = (leaf: Leaf) => formatLeaf(leaf).slice(formatLeaf(leaf).indexOf(":") + 1);
+
+function leafText(leaf: Leaf): string {
+	switch (leaf.type) {
+		case "word": return leaf.text;
+		case "phrase": return `"${leaf.text}"`;
+		case "size": return `${leaf.op} than ${leafValue(leaf)}`;
+		case "date":
+			if (leaf.value.kind === "ago") return `${leaf.op === "after" ? "newer" : "older"} than ${leafValue(leaf)}`;
+			return `${leaf.op === "after" ? "on or after" : "before"} ${leafValue(leaf)}`;
+		case "op":
+			switch (leaf.op) {
+				case "from": return `from ${leaf.value}`;
+				case "to": return `to ${leaf.value}`;
+				case "cc": return `copying ${leaf.value}`;
+				case "subject": return `with ${leaf.value} in the subject`;
+				case "label": return `labeled ${leaf.value}`;
+				case "in": return IN_TEXT[leaf.value] ?? `in ${leaf.value}`;
+				case "is": return leaf.value;
+				case "has": return HAS_TEXT[leaf.value] ?? `with ${leaf.value}`;
+				case "filename": return `with an attachment named ${leaf.value}`;
+				case "list": return `from list ${leaf.value}`;
+			}
+	}
+}
+
+const negated = (text: string) => (text.startsWith("with ") ? `without ${text.slice(5)}` : `not ${text}`);
+
+/** A plain sentence for search text, built only from what the search does. */
+export function describeSearch(query: string): string {
+	const words: string[] = [];
+	const states: string[] = [];
+	const parts: string[] = [];
+	for (const term of parseSearch(query).terms) {
+		const [leaf] = term.any;
+		const single = term.any.length === 1 && !term.negate;
+		if (single && (leaf.type === "word" || leaf.type === "phrase")) words.push(leafText(leaf));
+		else if (single && leaf.type === "op" && leaf.op === "is") states.push(leaf.value);
+		else {
+			const text = term.any.map(leafText).join(" or ");
+			const isText = term.any.every((l) => l.type === "word" || l.type === "phrase");
+			if (term.negate) parts.push(isText ? `without ${text}` : negated(text));
+			else parts.push(isText ? `containing ${text}` : text);
+		}
+	}
+	if (words.length) parts.unshift(`containing ${words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}` : words[0]}`);
+	const head = states.length ? `${states.join(", ")} mail` : "mail";
+	const text = parts.length ? `${head} ${parts.join(", ")}` : head;
+	return text.replace(/^./, (c) => c.toUpperCase()).slice(0, MAX_EXPLANATION);
 }
