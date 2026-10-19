@@ -3,12 +3,15 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
-	ArrowLeftIcon, ArrowRightIcon, AtIcon, CheckIcon, EyeIcon, LockSimpleIcon, ClockCounterClockwiseIcon, CpuIcon, DatabaseIcon, HouseIcon, KeyboardIcon, PaperPlaneRightIcon, PencilSimpleIcon, PlugsConnectedIcon, PlusIcon,
+	ArrowDownIcon, ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, AtIcon, CheckIcon, EyeIcon, LockSimpleIcon, ClockCounterClockwiseIcon, CpuIcon, DatabaseIcon, HouseIcon, KeyboardIcon, PaperPlaneRightIcon, PencilSimpleIcon, PlugsConnectedIcon, PlusIcon,
 	SignatureIcon, SlidersHorizontalIcon, TagIcon, TrayIcon, WarningIcon, XIcon,
 } from "@phosphor-icons/react";
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, type ReactNode, type Ref, useEffect, useRef, useState } from "react";
+import { SEND_VERSION } from "shared/agent";
 import type { Unmatched } from "shared/prefs";
+import { moveInOrder } from "./agent-order";
+import { confirmReady } from "./confirm-guard";
 import api, { type Agent, type AgentDraft, type AgentMode, type AgentRule, type AgentStats, type AutoDraftRun } from "~/services/api";
 import { RunBadge, when } from "./ActivityTab";
 import { AgentIcon } from "./AgentIcon";
@@ -34,8 +37,8 @@ import { Keys } from "./shortcuts";
 const MODES: { value: AgentMode; label: string; disabled?: boolean; title?: string }[] = [
 	{ value: "watch", label: "Watch" },
 	{ value: "draft", label: "Draft" },
-	// Send arrives in 0.10, after Test on past mail (workers/lib/agents.ts, SEND_ENABLED).
-	{ value: "send", label: "Send", disabled: true, title: "Arrives in 0.10" },
+	// Send arrives in SEND_VERSION, after Test on past mail (workers/lib/agents.ts, SEND_ENABLED).
+	{ value: "send", label: "Send", disabled: true, title: `Arrives in ${SEND_VERSION}` },
 ];
 
 /** One icon per page, at rail size and search size. */
@@ -271,6 +274,14 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 		queryClient.setQueryData(["agents"], { ...data, agents: ids.map((id) => data.agents.find((a) => a.id === id)!) });
 		order.mutate(ids);
 	};
+	// The keyboard's and screen reader's way to reorder: the same order API as dragging.
+	const move = (id: string, by: -1 | 1) => {
+		if (!data) return;
+		const ids = moveInOrder(data.agents.map((a) => a.id), id, by);
+		if (!ids) return;
+		queryClient.setQueryData(["agents"], { ...data, agents: ids.map((i) => data.agents.find((a) => a.id === i)!) });
+		order.mutate(ids);
+	};
 	// With nothing picked, the detail shows the PluraMail Agent; on a phone the list shows instead.
 	const picked = tab === "mailroom" || !!agentId;
 	const shown = tab === "agents" && agentId ? agentId : MAILROOM_ROW.id;
@@ -283,7 +294,7 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 				count={(data?.agents.length ?? 0) + 1}
 				picked={picked}
 				actions={<Button size="sm" variant="primary" icon={<PlusIcon size={12} weight="bold" />} onClick={() => setCreating(true)}>Create agent</Button>}
-				foot="Each agent starts in Watch, moves to Draft, then to Send once you trust it. Higher in the list takes a message first; drag to reorder."
+				foot="Each agent starts in Watch, moves to Draft, then to Send once you trust it. Higher in the list takes a message first. Drag to reorder, or use the arrows."
 				rows={<>
 					<Row
 						icon={<AgentIcon size={14} />}
@@ -295,7 +306,7 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 						current={shown === MAILROOM_ROW.id}
 						onClick={() => onTab("mailroom")}
 					/>
-					{data?.agents.map((a) => (
+					{data?.agents.map((a, i, all) => (
 						<Row
 							key={a.id}
 							title={a.name}
@@ -306,6 +317,10 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 							current={shown === a.id}
 							off={!a.enabled}
 							onClick={() => onAgent(a.id)}
+							tools={all.length > 1 && <>
+								<button type="button" className="pg-icon-btn" aria-label={`Move ${a.name} up`} title="Move up" disabled={i === 0} onClick={() => move(a.id, -1)}><ArrowUpIcon size={12} /></button>
+								<button type="button" className="pg-icon-btn" aria-label={`Move ${a.name} down`} title="Move down" disabled={i === all.length - 1} onClick={() => move(a.id, 1)}><ArrowDownIcon size={12} /></button>
+							</>}
 							liProps={{
 								"data-dragging": dragging === a.id || undefined,
 								draggable: true,
@@ -594,7 +609,7 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 										<span className="pg-ui-rung-n" aria-hidden>{i < at ? <CheckIcon size={11} weight="bold" /> : i + 1}</span>
 										<b>{m.label}</b>
 										{state === "now" && <Badge tone={m.value} dot>Now</Badge>}
-										{state === "locked" && <span className="pg-ui-rung-later"><LockSimpleIcon size={11} />0.9</span>}
+										{state === "locked" && <span className="pg-ui-rung-later"><LockSimpleIcon size={11} />{SEND_VERSION}</span>}
 										<span className="pg-ui-rung-icon" aria-hidden>{rung.icon(16)}</span>
 									</span>
 									<ul>
@@ -614,7 +629,7 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 								<li key={g.label} data-met={g.met || undefined} data-later={g.later || undefined}>
 									<span className="pg-ui-gate-mark" aria-hidden>{g.later ? <LockSimpleIcon size={11} /> : g.met ? <CheckIcon size={11} weight="bold" /> : null}</span>
 									<span className="pg-ui-gate-label">{g.label}</span>
-									{g.later ? <span className="pg-ui-gate-later">0.9</span> : (
+									{g.later ? <span className="pg-ui-gate-later">{SEND_VERSION}</span> : (
 										<svg className="pg-ui-meter" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden><rect width="100" height="4" /><rect data-fill width={Math.round(Math.min(1, g.value ?? 0) * 100)} height="4" /></svg>
 									)}
 								</li>
@@ -788,20 +803,24 @@ function AgentSetup({ agent, addresses, identities }: { agent: Agent; addresses:
 	);
 }
 
-/** The last thing on an agent's page, apart from the rest: Delete, then a second click to confirm. */
+/**
+ * The last thing on an agent's page, apart from the rest: Delete, then a second click to confirm.
+ * The confirm says something else, takes focus to Keep, and ignores clicks for a moment, so a double-click can't delete.
+ */
 function AgentDelete({ agent, onDeleted }: { agent: Agent; onDeleted: () => void }) {
-	const [confirming, setConfirming] = useState(false);
+	// When the confirm step opened, or null.
+	const [confirming, setConfirming] = useState<number | null>(null);
 	const remove = useMutation({ mutationFn: () => api.deleteAgent(agent.id), onSuccess: onDeleted });
 	return (
 		<div className="pg-ui-toolbar pg-ui-danger-zone">
-			{confirming
+			{confirming !== null
 				? <>
-					<Button variant="danger" icon={<AgentIcon size={14} />} disabled={remove.isPending} onClick={() => remove.mutate()}>Delete Agent {agent.name}</Button>
-					<Button onClick={() => setConfirming(false)}>Keep</Button>
+					<Button variant="danger" icon={<AgentIcon size={14} />} disabled={remove.isPending} onClick={() => confirmReady(confirming, Date.now()) && remove.mutate()}>Yes, delete {agent.name}</Button>
+					<Button autoFocus onClick={() => setConfirming(null)}>Keep</Button>
 					<span className="pg-ui-quiet">Its activity stays in the log.</span>
 					{remove.error && <Note tone="error">{remove.error.message}</Note>}
 				</>
-				: <Button variant="danger" icon={<AgentIcon size={14} />} onClick={() => setConfirming(true)}>Delete Agent {agent.name}</Button>}
+				: <Button variant="danger" icon={<AgentIcon size={14} />} onClick={() => setConfirming(Date.now())}>Delete Agent {agent.name}</Button>}
 		</div>
 	);
 }

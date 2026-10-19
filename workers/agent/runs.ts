@@ -20,6 +20,8 @@
 import type { Unmatched } from "../../shared/prefs";
 import { DEFAULT_AGENT_LIMITS } from "../../shared/send-limits";
 import type { Sql } from "../store/sql";
+import { logActivity } from "../lib/activity";
+import { htmlToText } from "../lib/message-meta";
 
 /** Must match max_retries on the queue consumer in wrangler.jsonc. */
 export const AUTO_DRAFT_MAX_RETRIES = 3;
@@ -86,6 +88,35 @@ export function settleDrafts(
 export function outcomeAfterError(error: unknown, draftIds: string[]): DraftOutcome {
 	const message = (error as Error)?.message || "Auto-draft failed";
 	return draftIds.length ? draftedOutcome(draftIds) : { status: "error", error: message };
+}
+
+/**
+ * Throw away drafts a run made and won't keep, and log each in Console > Activity
+ * as discarded with the reason, so the earlier draft_reply entry isn't the last word.
+ */
+export async function discardRunDrafts(
+	sql: Sql,
+	discard: (mailboxId: string, draftId: string) => Promise<unknown>,
+	mailboxId: string,
+	draftIds: readonly (string | null | undefined)[],
+	reason: string,
+): Promise<void> {
+	for (const id of draftIds) {
+		if (!id) continue;
+		const result = await discard(mailboxId, id).catch((e: Error) => ({ error: e.message }));
+		const error = (result as { error?: string } | null)?.error;
+		await logActivity(sql, {
+			actor: "auto-draft", tool: "discard_draft", mailboxId, target: id,
+			summary: error ? `not discarded, ${error}` : `discarded, ${reason}`, ok: !error,
+		});
+	}
+}
+
+/** What a Watch run keeps of the reply it would have sent: plain text, without the quoted original. */
+export function watchedReason(body: string): string {
+	const reply = String(body ?? "").replace(/<blockquote\b[\s\S]*<\/blockquote>/i, " ");
+	const preview = htmlToText(reply).slice(0, 300);
+	return preview ? `Would reply: ${preview}` : "Would reply";
 }
 
 /** Seconds before retry n (1-based): 30, 60, 120. */
@@ -192,9 +223,8 @@ export async function attemptRun(
 	}
 	// A run keeps one draft, its last; a run superseded while it ran keeps none.
 	const kept = await settleRun(sql, run.emailId, "drafted", { draftId: outcome.draftId, agentId: outcome.agentId ?? null, reason: outcome.reason ?? null });
-	for (const id of kept ? outcome.earlier ?? [] : [...(outcome.earlier ?? []), outcome.draftId]) {
-		if (id) await options.discardDraft(run.mailboxId, id).catch(() => {});
-	}
+	if (kept) await discardRunDrafts(sql, options.discardDraft, run.mailboxId, outcome.earlier ?? [], "an earlier draft from this run");
+	else await discardRunDrafts(sql, options.discardDraft, run.mailboxId, [...(outcome.earlier ?? []), outcome.draftId], "newer mail in the thread replaced this run");
 	return "done";
 }
 

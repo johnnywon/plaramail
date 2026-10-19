@@ -38,6 +38,14 @@ No D1 migration.
 - The protected resource metadata (`/.well-known/oauth-protected-resource/mcp`) lists both scopes, `mail` and `mail.send`, as the authorization server metadata does. A client that builds its request from it can now ask for `mail.send`. `mail` stays the only required scope. docs/mcp.md says which document to read.
 - `npm run smoke` checks that both OAuth documents list the same scopes and that client ID metadata documents are supported.
 
+### Fixed
+
+- Your agents: each agent row has Move up and Move down buttons, so the order can be changed from the keyboard, a screen reader or a browser agent. They use the same `PUT /api/v1/agents/order` as dragging.
+- The Send rung and the "To move to Send" gates show 0.10, the release Send arrives in, instead of 0.9. The Console and the API read it from one constant, `SEND_VERSION` in `shared/agent.ts`.
+- A watched run's reason is plain text of the reply the agent would have sent, without HTML entities or the quoted original. Reasons stored before this version are unchanged.
+- Console > Activity logs a `discard_draft` entry with the reason when a run throws its draft away: no agent's job fits, Watch mode, an earlier draft from the same run, or newer mail in the thread. A run that ended skipped no longer leaves a successful draft as the last word.
+- Delete agent's confirm button reads "Yes, delete <name>", focus moves to Keep, and clicks in the first 400 ms are ignored, so a double-click no longer deletes the agent.
+
 No D1 migration.
 
 ## 0.9.1

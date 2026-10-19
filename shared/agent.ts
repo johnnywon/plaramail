@@ -8,6 +8,9 @@
  */
 export const SHARED_AGENT = "all";
 
+/** The release hired agents get Send in. The Console's badges and the API's refusal read it from here. */
+export const SEND_VERSION = "0.10";
+
 /** What the chat panel tells the agent about the conversation on screen. */
 export type AgentContext = {
 	open?: { mailboxId: string; emailId: string } | null;

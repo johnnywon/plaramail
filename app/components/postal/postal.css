@@ -1654,6 +1654,10 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
 .pg-ui-rows { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
 .pg-ui-row { border-bottom: 1px solid var(--pg-line-faint); }
 .pg-ui-row[data-dragging] { opacity: .4; }
+.pg-ui-row:has(> .pg-ui-row-tools) { display: flex; align-items: stretch; }
+.pg-ui-row:has(> .pg-ui-row-tools) > button { flex: 1; min-width: 0; }
+.pg-ui-row-tools { flex: none; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 8px 0 0; }
+.pg-ui-row-tools > button:disabled { opacity: .35; cursor: default; }
 .pg-ui-row > button { width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px 13px; text-align: left; outline-offset: -2px; }
 .pg-ui-row > button:hover { background: var(--pg-hover); }
 .pg-ui-row > button[aria-current="true"] { background: var(--pg-row-current); box-shadow: inset 0 0 0 1px var(--pg-line-3); }
