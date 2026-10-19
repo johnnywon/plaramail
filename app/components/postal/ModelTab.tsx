@@ -81,9 +81,9 @@ function DataText({ provider }: { provider: ProviderId }) {
 	const info = PROVIDER_INFO[provider];
 	return (
 		<>
-			{info.zdr && <ShieldCheckIcon size={13} aria-hidden="true" />}
+			{info.zdr && <ShieldCheckIcon size={14} aria-hidden="true" />}
 			{info.data}{" "}
-			<a href={info.policyUrl} target="_blank" rel="noreferrer">Policy<ArrowSquareOutIcon size={11} aria-hidden="true" /></a>
+			<a href={info.policyUrl} target="_blank" rel="noreferrer">Policy<ArrowSquareOutIcon size={12} aria-hidden="true" /></a>
 		</>
 	);
 }
@@ -147,8 +147,8 @@ function ProviderTable({ draft, counts, zdrCounts, openKey, highlight, onToggle 
 				return (
 					<Name sub={
 						<span className="pg-prov-links">
-							{info.modelsUrl && <a href={info.modelsUrl} target="_blank" rel="noreferrer">Models<ArrowSquareOutIcon size={11} aria-hidden="true" /></a>}
-							<a href={info.policyUrl} target="_blank" rel="noreferrer">Policy<ArrowSquareOutIcon size={11} aria-hidden="true" /></a>
+							{info.modelsUrl && <a href={info.modelsUrl} target="_blank" rel="noreferrer">Models<ArrowSquareOutIcon size={12} aria-hidden="true" /></a>}
+							<a href={info.policyUrl} target="_blank" rel="noreferrer">Policy<ArrowSquareOutIcon size={12} aria-hidden="true" /></a>
 						</span>
 					}><ProviderMark provider={p} /></Name>
 				);
@@ -158,9 +158,9 @@ function ProviderTable({ draft, counts, zdrCounts, openKey, highlight, onToggle 
 		{
 			key: "retention", label: "Retention",
 			cell: (p) => PROVIDER_INFO[p].zdr
-				? <span className="pg-zdr"><ShieldCheckIcon size={13} aria-hidden="true" />Zero retention</span>
+				? <span className="pg-zdr"><ShieldCheckIcon size={14} aria-hidden="true" />Zero retention</span>
 				: zdrCounts[p] > 0
-					? <span className="pg-zdr"><ShieldCheckIcon size={13} aria-hidden="true" />{zdrCounts[p]} of {counts[p]} models</span>
+					? <span className="pg-zdr"><ShieldCheckIcon size={14} aria-hidden="true" />{zdrCounts[p]} of {counts[p]} models</span>
 					: "Not promised",
 		},
 		{ key: "models", label: "Models", num: true, wide: true, cell: (p) => counts[p] },
@@ -300,11 +300,11 @@ function ModelPicker({ catalog, draft, onPick, onBack }: {
 			}}
 		>
 			<div className="pg-picker-head">
-				<button type="button" className="pg-btn pg-btn-sm pg-btn-quiet" onClick={onBack}><ArrowLeftIcon size={13} /> Back</button>
+				<button type="button" className="pg-btn pg-btn-sm pg-btn-quiet" onClick={onBack}><ArrowLeftIcon size={14} /> Back</button>
 				<b>Choose a model</b>
 			</div>
 			<label className="pg-models-search">
-				<MagnifyingGlassIcon size={15} aria-hidden="true" />
+				<MagnifyingGlassIcon size={16} aria-hidden="true" />
 				<input
 					type="search"
 					autoFocus
@@ -368,7 +368,7 @@ function ModelPicker({ catalog, draft, onPick, onBack }: {
 							>
 								<span className="pg-pick-role">
 									{role}
-									{selected && <CheckIcon size={13} weight="bold" />}
+									{selected && <CheckIcon size={14} weight="bold" />}
 								</span>
 								<b>{m.name}</b>
 								<ModelSub model={m} needsKey={!draft.hasKey(m.provider)} />
@@ -421,7 +421,7 @@ function ModelPicker({ catalog, draft, onPick, onBack }: {
 								{!draft.hasKey(p) && <span className="pg-model-needs">Needs key</span>}
 							</span>
 							<span className="pg-browse-count">{catalog.providers[p]?.models.length ?? 0} models</span>
-							<CaretRightIcon size={13} aria-hidden="true" />
+							<CaretRightIcon size={14} aria-hidden="true" />
 						</button>
 					))}
 					{MAKER_FILTERS.map((f) => (
@@ -429,7 +429,7 @@ function ModelPicker({ catalog, draft, onPick, onBack }: {
 							<span>{f}</span>
 							<span className="pg-model-sub"><ProviderMark provider="openrouter" /></span>
 							<span className="pg-browse-count">{(catalog.providers.openrouter?.models ?? []).filter((m) => makerOf(m).label === f).length} models</span>
-							<CaretRightIcon size={13} aria-hidden="true" />
+							<CaretRightIcon size={14} aria-hidden="true" />
 						</button>
 					))}
 				</div>
@@ -502,7 +502,7 @@ export function AgentModelSection({ draft }: { draft: AgentModelDraft }) {
 					{maker.label !== PROVIDER_INFO[effective.provider].label && <div><dt>Maker</dt><dd>{maker.label}</dd></div>}
 					<div><dt>Model ID</dt><dd><code>{effective.id}</code></dd></div>
 					<div><dt>Retention</dt><dd>{model.zdr || PROVIDER_INFO[effective.provider].zdr
-						? <span className="pg-zdr"><ShieldCheckIcon size={13} aria-hidden="true" />Zero retention</span>
+						? <span className="pg-zdr"><ShieldCheckIcon size={14} aria-hidden="true" />Zero retention</span>
 						: "Not promised"}</dd></div>
 					<div><dt>Context</dt><dd>{formatContext(model.context)}</dd></div>
 					<div><dt>Price</dt><dd>{model.price

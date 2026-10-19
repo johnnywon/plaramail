@@ -93,7 +93,7 @@ function Sidebar() {
 	const items = inArea("go").filter((s) => !s.header);
 	return (
 		<section className="pg-map-col" data-area="go" aria-label="Sidebar">
-			<Head area="go" title="All addresses" icon={<AllAddressesIcon size={13} />} side="left" />
+			<Head area="go" title="All addresses" icon={<AllAddressesIcon size={14} />} side="left" />
 			<div className="pg-map-body">
 				{items.map((s) => (
 					<div key={s.id} className="pg-map-nav" title={s.label}>
@@ -118,7 +118,7 @@ function List() {
 	return (
 		<section className="pg-map-col" data-area="list" aria-label="List">
 			<div className="pg-map-head">
-				<InboxIcon size={13} />
+				<InboxIcon size={14} />
 				<span className="pg-flex">Inbox</span>
 				{compose && (
 					<span className="pg-map-btn" title={compose.label}><Glyph def={compose} size={13} /><Keys id="compose" /></span>
@@ -160,7 +160,7 @@ function Reader() {
 			<div className="pg-map-body pg-map-page" aria-hidden="true"><i /><i /><i /><i /></div>
 			{inArea("composer").map((s) => (
 				<div key={s.id} className="pg-map-composer" title={s.label}>
-					<PencilSimpleLineIcon size={13} />
+					<PencilSimpleLineIcon size={14} />
 					<span className="pg-flex" />
 					<Keys id={s.id as ShortcutId} />
 					<Glyph def={s} size={14} />
@@ -174,7 +174,7 @@ function Agent() {
 	const items = inArea("agent").filter((s) => !s.header);
 	return (
 		<section className="pg-map-col" data-area="agent" aria-label="Agent">
-			<Head area="agent" title="Agent" icon={<AgentIcon size={13} weight="fill" color="var(--pg-green)" />} side="right" />
+			<Head area="agent" title="Agent" icon={<AgentIcon size={14} weight="fill" color="var(--pg-green)" />} side="right" />
 			<div className="pg-map-body">
 				{items.map((s) => <div key={s.id} className="pg-map-nav" title={s.label}><Glyph def={s} /><span className="pg-flex" /><Keys id={s.id as ShortcutId} /></div>)}
 			</div>

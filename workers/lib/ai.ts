@@ -151,13 +151,16 @@ RULES:
 3. When in doubt, KEEP the content. False positives (removing real content) are far worse than false negatives (leaving an artifact).
 4. Return ONLY the email text. No explanations, no "Here is the cleaned version:", no wrapper text.`;
 
+/** Whitespace, a line break or an empty paragraph around a quote. */
+const QUOTE_GAP = String.raw`(?:\s|<br\s*\/?>|<p>\s*(?:<br\s*\/?>)?\s*<\/p>)`;
+/** The quoted block: the composer's "On …, … wrote:" line if it sits outside it, and any gap after it (#30). */
+const QUOTED_BLOCK = new RegExp(String.raw`${QUOTE_GAP}*(?:<(div|p)>[^<]*wrote:<\/\1>\s*)?<blockquote[\s\S]*<\/blockquote>${QUOTE_GAP}*$`, "i");
+
 /**
  * Split an HTML body into the reply portion and the quoted block.
  */
 export function splitQuotedBlock(html: string): { reply: string; quoted: string } {
-	const match = html.match(
-		/(\s*(?:<br\s*\/?>)\s*)?(<blockquote[\s\S]*<\/blockquote>)\s*$/i,
-	);
+	const match = html.match(QUOTED_BLOCK);
 	if (match) {
 		const quoted = match[0];
 		const reply = html.slice(0, html.length - quoted.length);

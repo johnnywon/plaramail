@@ -399,7 +399,7 @@ export function LogoutModal({ onClose }: { onClose: () => void }) {
 				<div className="pg-flex" />
 				<button type="button" className="pg-btn" onClick={onClose} data-autofocus>Cancel</button>
 				<button type="button" className="pg-btn pg-btn-danger" onClick={() => { window.location.href = "/cdn-cgi/access/logout"; }}>
-					<SignOutIcon size={13} weight="bold" />Log out
+					<SignOutIcon size={14} weight="bold" />Log out
 				</button>
 			</div>
 		</Modal>
@@ -430,7 +430,7 @@ export function Toast({ toast, onClose }: { toast: ToastState | null; onClose: (
 					<button type="button" className="pg-undo" onClick={toast.onUndo}>Undo<Keys id="undo" /></button>
 				</>
 			)}
-			<button type="button" className="pg-x" aria-label="Dismiss" onClick={onClose} style={toast.onUndo ? undefined : { marginLeft: 6 }}><XIcon size={13} /></button>
+			<button type="button" className="pg-x" aria-label="Dismiss" onClick={onClose} style={toast.onUndo ? undefined : { marginLeft: 6 }}><XIcon size={14} /></button>
 		</div>
 	);
 }

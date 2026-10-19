@@ -173,7 +173,7 @@ export function Reader(props: ReaderProps) {
 							title={attachmentCount === 1 ? "1 attachment" : `${attachmentCount} attachments`}
 							onClick={() => scrollRef.current?.querySelector(".pg-attachments")?.scrollIntoView({ behavior: "smooth", block: "nearest" })}
 						>
-							<PaperclipIcon size={13} />{attachmentCount}
+							<PaperclipIcon size={14} />{attachmentCount}
 						</button>
 					)}
 				</div>
@@ -414,10 +414,10 @@ function AttachmentRow({ attachment: a, href }: { attachment: { filename: string
 	const Icon = FILE_KINDS.find(([re]) => re.test(type))?.[1] ?? MIME_KINDS.find(([re]) => re.test(a.mimetype.toLowerCase()))?.[1] ?? FileIcon;
 	return (
 		<a className="pg-attach" data-risk={risk ? "" : undefined} href={href} download={a.filename} title={risk ? `${a.filename} · ${risk[0].toUpperCase()}${risk.slice(1)}` : a.filename}>
-			{risk ? <WarningIcon size={18} className="pg-attach-icon" /> : <Icon size={18} className="pg-attach-icon" />}
+			{risk ? <WarningIcon size={16} className="pg-attach-icon" /> : <Icon size={16} className="pg-attach-icon" />}
 			<span className="pg-attach-name">{base}<span className="pg-attach-ext">{ext}</span></span>
 			<span className="pg-attach-meta">{risk ?? formatSize(a.size)}</span>
-			<DownloadSimpleIcon size={15} className="pg-attach-get" />
+			<DownloadSimpleIcon size={16} className="pg-attach-get" />
 		</a>
 	);
 }

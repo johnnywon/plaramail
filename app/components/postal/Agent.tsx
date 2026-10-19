@@ -301,7 +301,7 @@ function AgentChat({ hooks, open, reading, prefill, inert, onOpenDraft, onBusy }
 				<Reading subject={reading} />
 				{messages.length > 0 && !busy && (
 					<button type="button" className="pg-head-btn" title="Clear chat" aria-label="Clear chat" onClick={() => window.confirm("Clear this chat?") && setMessages([])}>
-						<TrashIcon size={13} />
+						<TrashIcon size={14} />
 					</button>
 				)}
 			</div>
@@ -360,7 +360,7 @@ function AgentChat({ hooks, open, reading, prefill, inert, onOpenDraft, onBusy }
 						id="pg-agent-input"
 					/>
 					{busy ? (
-						<button type="button" className="pg-return" title="Stop" aria-label="Stop" onClick={() => stop()}><StopIcon size={13} weight="fill" /></button>
+						<button type="button" className="pg-return" title="Stop" aria-label="Stop" onClick={() => stop()}><StopIcon size={14} weight="fill" /></button>
 					) : (
 						<button type="submit" className="pg-return" title="Send (↵)" aria-label="Send" disabled={!input.trim()}><ArrowElbowDownLeftIcon size={14} weight="bold" /></button>
 					)}

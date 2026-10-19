@@ -606,15 +606,15 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 							<li key={m.value} data-state={state}>
 								<button type="button" className="pg-ui-rung" disabled={m.disabled} aria-current={i === at ? "step" : undefined} title={m.title} onClick={() => { if (i !== at) onMode(m.value); }}>
 									<span className="pg-ui-rung-head">
-										<span className="pg-ui-rung-n" aria-hidden>{i < at ? <CheckIcon size={11} weight="bold" /> : i + 1}</span>
+										<span className="pg-ui-rung-n" aria-hidden>{i < at ? <CheckIcon size={12} weight="bold" /> : i + 1}</span>
 										<b>{m.label}</b>
 										{state === "now" && <Badge tone={m.value} dot>Now</Badge>}
-										{state === "locked" && <span className="pg-ui-rung-later"><LockSimpleIcon size={11} />{SEND_VERSION}</span>}
+										{state === "locked" && <span className="pg-ui-rung-later"><LockSimpleIcon size={12} />{SEND_VERSION}</span>}
 										<span className="pg-ui-rung-icon" aria-hidden>{rung.icon(16)}</span>
 									</span>
 									<ul>
-										{rung.does.map((d) => <li key={d}><CheckIcon size={11} weight="bold" aria-hidden />{d}</li>)}
-										{rung.never && <li data-never><XIcon size={11} weight="bold" aria-hidden />{rung.never}</li>}
+										{rung.does.map((d) => <li key={d}><CheckIcon size={12} weight="bold" aria-hidden />{d}</li>)}
+										{rung.never && <li data-never><XIcon size={12} weight="bold" aria-hidden />{rung.never}</li>}
 									</ul>
 								</button>
 							</li>
@@ -627,7 +627,7 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 						<ul className="pg-ui-gate-list">
 							{gate.map((g) => (
 								<li key={g.label} data-met={g.met || undefined} data-later={g.later || undefined}>
-									<span className="pg-ui-gate-mark" aria-hidden>{g.later ? <LockSimpleIcon size={11} /> : g.met ? <CheckIcon size={11} weight="bold" /> : null}</span>
+									<span className="pg-ui-gate-mark" aria-hidden>{g.later ? <LockSimpleIcon size={12} /> : g.met ? <CheckIcon size={12} weight="bold" /> : null}</span>
 									<span className="pg-ui-gate-label">{g.label}</span>
 									{g.later ? <span className="pg-ui-gate-later">{SEND_VERSION}</span> : (
 										<svg className="pg-ui-meter" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden><rect width="100" height="4" /><rect data-fill width={Math.round(Math.min(1, g.value ?? 0) * 100)} height="4" /></svg>
@@ -907,7 +907,7 @@ function ReviewPage({ identities, onOpenDraft, onSendDraft }: PageProps) {
 									</div>
 									<p className="pg-review-body">{d.text || d.snippet}</p>
 									<div className="pg-review-foot" onClick={(e) => e.stopPropagation()}>
-										<span className="pg-row-badge"><AgentIcon size={11} />{d.agent ?? "PluraMail Agent"}</span>
+										<span className="pg-row-badge"><AgentIcon size={12} />{d.agent ?? "PluraMail Agent"}</span>
 										{error?.id === d.emailId && <span className="pg-review-error">{error.text}</span>}
 										<span className="pg-flex" />
 										{confirming === d.emailId ? (
@@ -918,9 +918,9 @@ function ReviewPage({ identities, onOpenDraft, onSendDraft }: PageProps) {
 										) : (
 											<>
 												<button type="button" className="pg-btn pg-btn-sm pg-btn-quiet" disabled={working} onClick={() => setConfirming(d.emailId)}>Discard</button>
-												<button type="button" className="pg-btn pg-btn-sm pg-btn-outline" disabled={working} onClick={open}><PencilSimpleIcon size={13} />Edit</button>
+												<button type="button" className="pg-btn pg-btn-sm pg-btn-outline" disabled={working} onClick={open}><PencilSimpleIcon size={14} />Edit</button>
 												<button type="button" className="pg-btn pg-btn-sm pg-btn-primary" disabled={working} onClick={() => run(d, () => onSendDraft(d.mailboxId, d.emailId))}>
-													<PaperPlaneRightIcon size={13} weight="fill" />{working ? "Sending" : "Send"}
+													<PaperPlaneRightIcon size={14} weight="fill" />{working ? "Sending" : "Send"}
 												</button>
 											</>
 										)}

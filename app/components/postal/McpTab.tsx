@@ -90,7 +90,7 @@ export function McpTab({ onTab }: { onTab: (tab: ConsoleTab) => void }) {
 				<Section>
 					<Note tone="warn">
 						Access is blocking MCP clients. In{" "}
-						<a href={ACCESS_APPS} target="_blank" rel="noreferrer">Access applications <ArrowSquareOutIcon size={11} /></a>, add a
+						<a href={ACCESS_APPS} target="_blank" rel="noreferrer">Access applications <ArrowSquareOutIcon size={12} /></a>, add a
 						self-hosted application for these two paths with a <b>Bypass</b> policy for <b>Everyone</b>.
 					</Note>
 					<CopyField value={`${host}/mcp`} label="Path to bypass" />

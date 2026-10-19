@@ -125,17 +125,17 @@ export function FormatBar({ editor }: { editor: TipTap | null }) {
 	};
 	return (
 		<div className="pg-format" role="toolbar" aria-label="Formatting">
-			<button type="button" title={tip("bold", "Bold")} aria-label="Bold" aria-pressed={state?.bold} onMouseDown={run((e) => e.chain().focus().toggleBold().run())}><TextBIcon size={15} weight="bold" /></button>
-			<button type="button" title={tip("italic", "Italic")} aria-label="Italic" aria-pressed={state?.italic} onMouseDown={run((e) => e.chain().focus().toggleItalic().run())}><TextItalicIcon size={15} /></button>
-			<button type="button" title={tip("underline", "Underline")} aria-label="Underline" aria-pressed={state?.underline} onMouseDown={run((e) => e.chain().focus().toggleUnderline().run())}><TextUnderlineIcon size={15} /></button>
-			<button type="button" title="Strikethrough" aria-label="Strikethrough" aria-pressed={state?.strike} onMouseDown={run((e) => e.chain().focus().toggleStrike().run())}><TextStrikethroughIcon size={15} /></button>
+			<button type="button" title={tip("bold", "Bold")} aria-label="Bold" aria-pressed={state?.bold} onMouseDown={run((e) => e.chain().focus().toggleBold().run())}><TextBIcon size={16} weight="bold" /></button>
+			<button type="button" title={tip("italic", "Italic")} aria-label="Italic" aria-pressed={state?.italic} onMouseDown={run((e) => e.chain().focus().toggleItalic().run())}><TextItalicIcon size={16} /></button>
+			<button type="button" title={tip("underline", "Underline")} aria-label="Underline" aria-pressed={state?.underline} onMouseDown={run((e) => e.chain().focus().toggleUnderline().run())}><TextUnderlineIcon size={16} /></button>
+			<button type="button" title="Strikethrough" aria-label="Strikethrough" aria-pressed={state?.strike} onMouseDown={run((e) => e.chain().focus().toggleStrike().run())}><TextStrikethroughIcon size={16} /></button>
 			<span className="pg-sep" />
-			<button type="button" title="Bulleted list" aria-label="Bulleted list" aria-pressed={state?.bullet} onMouseDown={run((e) => e.chain().focus().toggleBulletList().run())}><ListBulletsIcon size={15} /></button>
-			<button type="button" title="Numbered list" aria-label="Numbered list" aria-pressed={state?.ordered} onMouseDown={run((e) => e.chain().focus().toggleOrderedList().run())}><ListNumbersIcon size={15} /></button>
-			<button type="button" title="Quote" aria-label="Quote" aria-pressed={state?.quote} onMouseDown={run((e) => e.chain().focus().toggleBlockquote().run())}><QuotesIcon size={15} /></button>
+			<button type="button" title="Bulleted list" aria-label="Bulleted list" aria-pressed={state?.bullet} onMouseDown={run((e) => e.chain().focus().toggleBulletList().run())}><ListBulletsIcon size={16} /></button>
+			<button type="button" title="Numbered list" aria-label="Numbered list" aria-pressed={state?.ordered} onMouseDown={run((e) => e.chain().focus().toggleOrderedList().run())}><ListNumbersIcon size={16} /></button>
+			<button type="button" title="Quote" aria-label="Quote" aria-pressed={state?.quote} onMouseDown={run((e) => e.chain().focus().toggleBlockquote().run())}><QuotesIcon size={16} /></button>
 			<span className="pg-sep" />
-			<button type="button" title={tip("link", "Insert link")} aria-label="Insert link" aria-pressed={state?.link} onMouseDown={run(promptLink)}><LinkIcon size={15} /></button>
-			<button type="button" title="Clear formatting" aria-label="Clear formatting" onMouseDown={run((e) => e.chain().focus().unsetAllMarks().clearNodes().run())}><TextTSlashIcon size={15} /></button>
+			<button type="button" title={tip("link", "Insert link")} aria-label="Insert link" aria-pressed={state?.link} onMouseDown={run(promptLink)}><LinkIcon size={16} /></button>
+			<button type="button" title="Clear formatting" aria-label="Clear formatting" onMouseDown={run((e) => e.chain().focus().unsetAllMarks().clearNodes().run())}><TextTSlashIcon size={16} /></button>
 		</div>
 	);
 }

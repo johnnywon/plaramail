@@ -13,6 +13,7 @@ import { z } from "zod";
 import { HeaderValueSchema } from "../lib/schemas";
 import { verifyDraft } from "../lib/ai";
 import { agentModel } from "../lib/agent-model";
+import { CHAT_STEP_LIMIT, chatPrepareStep } from "./chat-steps";
 import { mailStore, recordsSql } from "../store";
 import { logActivity } from "../lib/activity";
 import {
@@ -398,7 +399,8 @@ export class EmailAgent extends AIChatAgent<any> {
 			system: systemPrompt,
 			messages: await convertToModelMessages(this.messages),
 			tools,
-			stopWhen: stepCountIs(5),
+			stopWhen: stepCountIs(CHAT_STEP_LIMIT),
+			prepareStep: chatPrepareStep(systemPrompt),
 			onFinish,
 		});
 

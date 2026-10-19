@@ -452,17 +452,17 @@ export function ListPane(props: ListPaneProps) {
 									</button>
 									<span className="pg-sep" />
 									{RESTORABLE.has(filter.view) && (
-										<button type="button" title="Move to Inbox" aria-label="Move to Inbox" onClick={() => props.onRowAction(row, "restore")}><TrayArrowUpIcon size={15} /></button>
+										<button type="button" title="Move to Inbox" aria-label="Move to Inbox" onClick={() => props.onRowAction(row, "restore")}><TrayArrowUpIcon size={16} /></button>
 									)}
-									<button type="button" title={tip("archive", "Archive")} aria-label="Archive" onClick={() => props.onRowAction(row, "archive")}><ArchiveIcon size={15} /></button>
+									<button type="button" title={tip("archive", "Archive")} aria-label="Archive" onClick={() => props.onRowAction(row, "archive")}><ArchiveIcon size={16} /></button>
 									<button type="button" title={row.starred ? "Unstar" : "Star"} aria-label={row.starred ? "Unstar" : "Star"} onClick={() => props.onRowAction(row, "star")}>
-										<StarIcon size={15} weight={row.starred ? "fill" : "regular"} />
+										<StarIcon size={16} weight={row.starred ? "fill" : "regular"} />
 									</button>
 									<button type="button" title={row.unread ? "Mark read" : "Mark unread"} aria-label={row.unread ? "Mark read" : "Mark unread"} onClick={() => props.onRowAction(row, "read")}>
-										{row.unread ? <EnvelopeOpenIcon size={15} /> : <EnvelopeSimpleIcon size={15} />}
+										{row.unread ? <EnvelopeOpenIcon size={16} /> : <EnvelopeSimpleIcon size={16} />}
 									</button>
 									{filter.view !== "trash" && (
-										<button type="button" title="Move to Trash" aria-label="Move to Trash" onClick={() => props.onRowAction(row, "trash")}><TrashIcon size={15} /></button>
+										<button type="button" title="Move to Trash" aria-label="Move to Trash" onClick={() => props.onRowAction(row, "trash")}><TrashIcon size={16} /></button>
 									)}
 								</div>
 								{/* With a mouse, hover always brings up the toolbar's Select first, so this check is only a picture. */}
@@ -482,12 +482,12 @@ export function ListPane(props: ListPaneProps) {
 							<span className="pg-sel-count">{props.checked.size} selected</span>
 							<button type="button" className="pg-all" onClick={props.onSelectAll}>All</button>
 							<div style={{ flex: 1 }} />
-							{RESTORABLE.has(filter.view) && <button type="button" className="pg-tool" title="Move to Inbox" aria-label="Move to Inbox" onClick={() => props.onBulk("restore")}><TrayArrowUpIcon size={15} /></button>}
-							<button type="button" className="pg-tool" title={tip("archive", "Archive")} aria-label="Archive" onClick={() => props.onBulk("archive")}><ArchiveIcon size={15} /></button>
-							<button type="button" className="pg-tool" title={tip("markRead", "Mark read")} aria-label="Mark read" onClick={() => props.onBulk("read")}><EnvelopeOpenIcon size={15} /></button>
-							<button type="button" className="pg-tool" title={tip("star", "Star")} aria-label="Star" onClick={() => props.onBulk("star")}><StarIcon size={15} /></button>
-							{filter.view !== "trash" && <button type="button" className="pg-tool" title={tip("trash", "Move to Trash")} aria-label="Move to Trash" onClick={() => props.onBulk("trash")}><TrashIcon size={15} /></button>}
-							{filter.view !== "spam" && <button type="button" className="pg-tool" title={tip("spam", "Report spam")} aria-label="Report spam" onClick={() => props.onBulk("spam")}><WarningOctagonIcon size={15} /></button>}
+							{RESTORABLE.has(filter.view) && <button type="button" className="pg-tool" title="Move to Inbox" aria-label="Move to Inbox" onClick={() => props.onBulk("restore")}><TrayArrowUpIcon size={16} /></button>}
+							<button type="button" className="pg-tool" title={tip("archive", "Archive")} aria-label="Archive" onClick={() => props.onBulk("archive")}><ArchiveIcon size={16} /></button>
+							<button type="button" className="pg-tool" title={tip("markRead", "Mark read")} aria-label="Mark read" onClick={() => props.onBulk("read")}><EnvelopeOpenIcon size={16} /></button>
+							<button type="button" className="pg-tool" title={tip("star", "Star")} aria-label="Star" onClick={() => props.onBulk("star")}><StarIcon size={16} /></button>
+							{filter.view !== "trash" && <button type="button" className="pg-tool" title={tip("trash", "Move to Trash")} aria-label="Move to Trash" onClick={() => props.onBulk("trash")}><TrashIcon size={16} /></button>}
+							{filter.view !== "spam" && <button type="button" className="pg-tool" title={tip("spam", "Report spam")} aria-label="Report spam" onClick={() => props.onBulk("spam")}><WarningOctagonIcon size={16} /></button>}
 							<span className="pg-sep" />
 							<button type="button" className="pg-tool" title={tip("back", "Clear selection")} aria-label="Clear selection" onClick={props.onClearSelection} style={{ color: "var(--pg-text-6)" }}><XIcon size={14} /></button>
 						</div>

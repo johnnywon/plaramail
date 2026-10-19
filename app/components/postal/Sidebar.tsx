@@ -266,7 +266,7 @@ export function Sidebar(props: SidebarProps) {
 									href={toSearch(filter, null, s.query)}
 									onGo={() => props.onSavedSearch(s)}
 								>
-									<BookmarkSimpleIcon size={13} color="var(--pg-text-6)" style={{ flex: "none" }} />
+									<BookmarkSimpleIcon size={14} color="var(--pg-text-6)" style={{ flex: "none" }} />
 									<span className="pg-flex pg-ellipsis">{s.name}</span>
 									<span className="pg-count" style={{ fontWeight: 400, minWidth: 16, textAlign: "right" }}>{count(s.count ?? undefined)}</span>
 								</NavLink>
