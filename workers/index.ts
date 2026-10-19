@@ -5,7 +5,7 @@
 import { type Context, Hono } from "hono";
 import pkg from "../package.json";
 import { cors } from "hono/cors";
-import PostalMime from "postal-mime";
+import { parseMail } from "./lib/parse-mail";
 import { z } from "zod";
 import { generateText } from "ai";
 import { deleteAttachmentFiles, type StoredAttachment } from "./lib/attachments";
@@ -801,7 +801,7 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 	}
 
 	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
-	const parsedEmail = await new PostalMime().parse(rawEmail);
+	const parsedEmail = await parseMail(rawEmail);
 	const extractMsgId = (s: string) => { const m = s.match(/<([^>]+)>/); return m ? m[1] : s.trim().split(/\s+/)[0]; };
 	const originalMessageId = parsedEmail.messageId ? extractMsgId(parsedEmail.messageId) : null;
 	const allRecipients = (parsedEmail.to || []).map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];

@@ -94,16 +94,24 @@ async function bytesOf(address, emailId, attachmentId) {
 	return new Uint8Array(await (await api("GET", `${box(address)}/emails/${encodeURIComponent(emailId)}/attachments/${encodeURIComponent(attachmentId)}`)).arrayBuffer());
 }
 
-const FILE = Uint8Array.from({ length: 256 }, (_, i) => i);
-const FILENAME = "smoke.bin";
-const sameBytes = (a) => a.length === FILE.length && a.every((b, i) => b === FILE[i]);
+// A binary file and a text file that ends in a newline (#59: text parts gained a 0x0a per trip).
+const FILES = [
+	{ filename: "smoke.bin", type: "application/octet-stream", bytes: Uint8Array.from({ length: 256 }, (_, i) => i) },
+	{ filename: "smoke.txt", type: "text/plain", bytes: new TextEncoder().encode("Smoke text line\n") },
+];
+const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
+/** Check each file arrived byte for byte; returns the attachments found. */
 async function attachmentCheck(name, address, received) {
-	const att = received?.attachments?.find((a) => a.filename === FILENAME);
-	if (!check(`${name}: has ${FILENAME}`, !!att)) return null;
-	const got = await bytesOf(address, received.id, att.id);
-	check(`${name}: ${FILENAME} matches byte for byte`, sameBytes(got), `${got.length} bytes, expected ${FILE.length}`);
-	return att;
+	const found = [];
+	for (const file of FILES) {
+		const att = received?.attachments?.find((a) => a.filename === file.filename);
+		if (!check(`${name}: has ${file.filename}`, !!att)) continue;
+		const got = await bytesOf(address, received.id, att.id);
+		check(`${name}: ${file.filename} matches byte for byte`, sameBytes(got, file.bytes), `${got.length} bytes, expected ${file.bytes.length}`);
+		found.push(att);
+	}
+	return found;
 }
 
 const subject = `[smoke] ${new Date().toISOString()}`;
@@ -111,24 +119,24 @@ const toTrash = [];
 console.log(`Mail smoke: ${BASE}, ${FROM} -> ${TO}`);
 
 try {
-	// 1. Send with a Cc back to the sender, HTML formatting and a binary attachment.
+	// 1. Send with a Cc back to the sender, HTML formatting, a binary and a text attachment.
 	const sent = await json("POST", `${box(FROM)}/emails`, {
 		from: FROM, to: TO, cc: FROM, subject,
 		html: "<p><b>Smoke test</b></p><ul><li>one</li><li>two</li></ul>",
 		text: "Smoke test\n- one\n- two",
-		attachments: [{ content: Buffer.from(FILE).toString("base64"), filename: FILENAME, type: "application/octet-stream", disposition: "attachment" }],
+		attachments: FILES.map((f) => ({ content: Buffer.from(f.bytes).toString("base64"), filename: f.filename, type: f.type, disposition: "attachment" })),
 	});
 	toTrash.push([FROM, sent.id]);
 	check("send", !!sent.id);
 
-	// 2. It arrives with its subject, formatting, Cc and attachment.
+	// 2. It arrives with its subject, formatting, Cc and attachments.
 	const received = await waitFor(TO, subject);
 	if (check(`delivered to ${TO}`, !!received, `nothing within ${TIMEOUT_MS / 1000} s`)) {
 		toTrash.push([TO, received.id]);
 		check("subject", received.subject === subject);
 		check("HTML formatting", /<b>Smoke test<\/b>/i.test(received.body || "") && /<li>one<\/li>/i.test(received.body || ""));
 		check("Cc header", (received.cc || "").toLowerCase().includes(FROM), received.cc || "no Cc");
-		const att = await attachmentCheck("attachment", TO, received);
+		const atts = await attachmentCheck("attachment", TO, received);
 
 		// 3. A reply threads into one conversation on both sides.
 		const reply = await json("POST", `${box(TO)}/emails/${encodeURIComponent(received.id)}/reply`, {
@@ -144,10 +152,10 @@ try {
 			check(`reply threads on ${FROM}`, replyIn.thread_id === original.thread_id);
 		}
 
-		// 4. A forward carries the attachment.
-		if (att) {
+		// 4. A forward carries the attachments.
+		if (atts.length) {
 			const fwd = await json("POST", `${box(TO)}/emails/${encodeURIComponent(received.id)}/forward`, {
-				from: TO, to: FROM, subject: `Fwd: ${subject}`, html: "<p>Forward</p>", text: "Forward", forward_attachments: [att.id],
+				from: TO, to: FROM, subject: `Fwd: ${subject}`, html: "<p>Forward</p>", text: "Forward", forward_attachments: atts.map((a) => a.id),
 			});
 			toTrash.push([TO, fwd.id]);
 			const fwdIn = await waitFor(FROM, `Fwd: ${subject}`);

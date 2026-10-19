@@ -6,10 +6,11 @@ import { promisify } from "node:util";
 
 // scripts/smoke-mail.mjs (#38) against a stand-in deployment that keeps mail in memory. With
 // `asText`, outgoing attachments arrive as their base64 text, as they did before #28 was fixed.
+// With `textNewline`, text attachments arrive with one more 0x0a, as they did before #59 was fixed.
 
 const run = promisify(execFile);
 
-function deployment({ asText = false } = {}) {
+function deployment({ asText = false, textNewline = false } = {}) {
 	const emails = new Map();
 	let next = 0;
 	// Each send is one message: its copies share `msgid`. A reply joins the thread of the copy it answers on each side.
@@ -23,7 +24,11 @@ function deployment({ asText = false } = {}) {
 		};
 		const files = (body.attachments ?? []).map((a, i) => ({ id: `${msgid}-a${i}`, filename: a.filename, bytes: Buffer.from(a.content, "base64") }));
 		const sent = store(mailbox, "sent", files);
-		const arrived = files.map((f) => ({ ...f, id: `${f.id}-in`, bytes: asText ? Buffer.from(f.bytes.toString("base64")) : f.bytes }));
+		const carried = (f) => {
+			if (asText) return Buffer.from(f.bytes.toString("base64"));
+			return textNewline && f.filename.endsWith(".txt") ? Buffer.concat([f.bytes, Buffer.from("\n")]) : f.bytes;
+		};
+		const arrived = files.map((f) => ({ ...f, id: `${f.id}-in`, bytes: carried(f) }));
 		for (const to of [body.to, body.cc].flat().filter((a) => a && a !== mailbox)) store(to, "inbox", arrived);
 		return sent;
 	};
@@ -89,7 +94,7 @@ test("smoke:mail passes when mail and its attachment arrive intact, and trashes 
 	const { server, emails } = deployment();
 	const { code, out } = await smoke(server);
 	assert.equal(code, 0, out);
-	for (const line of ["subject", "HTML formatting", "Cc header", "attachment: smoke.bin matches byte for byte", "reply threads on b@example.org", "reply threads on a@example.com", "forward attachment: smoke.bin matches byte for byte"]) {
+	for (const line of ["subject", "HTML formatting", "Cc header", "attachment: smoke.bin matches byte for byte", "attachment: smoke.txt matches byte for byte", "reply threads on b@example.org", "reply threads on a@example.com", "forward attachment: smoke.bin matches byte for byte", "forward attachment: smoke.txt matches byte for byte"]) {
 		assert.match(out, new RegExp(`ok   ${line.replace(/[.]/g, "\\.")}`), out);
 	}
 	assert.match(out, /ok {3}moved 6 of 6 to Trash/);
@@ -101,6 +106,14 @@ test("smoke:mail fails when an attachment arrives as base64 text (#28)", async (
 	const { code, out } = await smoke(server);
 	assert.equal(code, 1, out);
 	assert.match(out, /FAIL attachment: smoke\.bin matches byte for byte/);
+});
+
+test("smoke:mail fails when a text attachment gains a newline (#59)", async () => {
+	const { server } = deployment({ textNewline: true });
+	const { code, out } = await smoke(server);
+	assert.equal(code, 1, out);
+	assert.match(out, /FAIL attachment: smoke\.txt matches byte for byte: 17 bytes, expected 16/);
+	assert.match(out, /ok {3}attachment: smoke\.bin matches byte for byte/);
 });
 
 test("smoke:mail needs two addresses", async () => {
