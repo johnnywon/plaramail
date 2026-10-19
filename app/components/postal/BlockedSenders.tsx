@@ -26,8 +26,15 @@ export function BlockedSenders({ identities }: { identities: Identities }) {
 						rows={rows}
 						rowKey={(b) => `${b.mailboxId} ${b.address}`}
 						columns={[
-							{ key: "sender", label: "Sender", head: true, cell: (b) => <span className="pg-mono">{b.address}</span>, clip: (b) => b.address },
-							{ key: "to", label: "To", cell: (b) => <AddressText address={b.mailboxId} identity={identities.of(b.mailboxId)} bold={false} short /> },
+							{
+								key: "sender", label: "Sender", head: true,
+								cell: (b) => (
+									<>
+										<span className="pg-mono pg-ui-break">{b.address}</span>
+										<span className="pg-ui-name-sub"><AddressText address={b.mailboxId} identity={identities.of(b.mailboxId)} bold={false} short /></span>
+									</>
+								),
+							},
 							{ key: "at", label: "Blocked", wide: true, cell: (b) => day(b.createdAt) },
 							{
 								key: "remove", label: "", num: true,
