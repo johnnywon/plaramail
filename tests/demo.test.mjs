@@ -58,6 +58,9 @@ const WRITES = {
 	"POST /api/v1/mailboxes/:mailboxId/threads/:threadId/read": null,
 	"POST /api/v1/mailboxes/:mailboxId/emails/:id/reply": SEND,
 	"POST /api/v1/mailboxes/:mailboxId/emails/:id/forward": SEND,
+	"POST /api/v1/mailboxes/:mailboxId/emails/:id/unsubscribe": "Unsubscribe is off in the demo",
+	"POST /api/v1/mailboxes/:mailboxId/emails/:id/block": SETTINGS,
+	"DELETE /api/v1/mailboxes/:mailboxId/blocked-senders/:address": SETTINGS,
 };
 
 const sample = (route) => route.replace(":mailboxId", "hello@example.com").replace(/:[a-zA-Z]+/g, "x1");

@@ -2,11 +2,12 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { ArchiveIcon, BookmarkSimpleIcon, ClockIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon, FileIcon, KeyboardIcon, PaperPlaneTiltIcon, StarIcon, TagIcon, TrashIcon, TrayArrowUpIcon, WarningIcon } from "@phosphor-icons/react";
+import { ArchiveIcon, BellSlashIcon, BookmarkSimpleIcon, ClockIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon, FileIcon, KeyboardIcon, PaperPlaneTiltIcon, ProhibitIcon, StarIcon, TagIcon, TrashIcon, TrayArrowUpIcon, WarningIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { LABEL_COLORS } from "shared/label-colors";
+import type { UnsubscribeMethod } from "shared/unsubscribe";
 import { cleanOverrides, cycleView, describeChanges, KeyMatcher, type KeyLike, type MailShortcutId, ownerOf, resolveBindings, type ShortcutOverrides, stepOf } from "shared/shortcuts";
 import { type BulkAction, applyAction, readToggle, starToggle } from "~/lib/bulk-optimistic";
 import { type MailFilter, type OpenRef, filterToParams, openParam, parseOpen, VIEW_LABELS } from "~/lib/mail-filter";
@@ -23,7 +24,7 @@ import { useUnreadTab } from "~/lib/unread-tab";
 import { useEmail } from "~/queries/emails";
 import {
 	type ComposeMode, type ComposeState, composeFor, composeFromDraft, emptyCompose, handOff, HANDOFF_KEY, useAddressInfo,
-	sentText, useMailSender,
+	sentText, textToParagraphs, useMailSender,
 } from "./compose";
 import { ComposePopout, Composer } from "./ComposeWindow";
 import { buildIdentities } from "./identity";
@@ -510,6 +511,70 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 		}
 	};
 
+	// ── Unsubscribe and blocked senders (WON-217) ─────────────────
+	const blockedQuery = useQuery({ queryKey: ["blocked-senders"], queryFn: () => api.getBlockedSenders() });
+	const blockedSet = useMemo(() => new Set((blockedQuery.data ?? []).map((b) => `${b.mailboxId}\u001f${b.address}`)), [blockedQuery.data]);
+	const isBlocked = (mailboxId: string, address: string) => blockedSet.has(`${mailboxId.toLowerCase()}\u001f${address.toLowerCase()}`);
+
+	/** The Worker posts one-click itself. A page opens in a new tab and a mailto in the composer, from the address the mail came to. */
+	const unsubscribeFrom = async (email: Email, method: UnsubscribeMethod) => {
+		if (!open) return;
+		const mailboxId = open.mailboxId;
+		// Opened now, while the click still counts, so the page isn't blocked as a popup.
+		const tab = method === "link" ? window.open("", "_blank") : null;
+		try {
+			const result = await api.unsubscribe(mailboxId, email.id);
+			if (result.method === "one-click") {
+				showToast({ text: `Unsubscribed from ${email.sender}`, icon: <BellSlashIcon size={ICON} /> });
+			} else if (result.method === "link") {
+				if (tab) {
+					tab.opener = null;
+					tab.location.href = result.url;
+				} else {
+					window.open(result.url, "_blank", "noopener,noreferrer");
+				}
+				showToast({ text: "Opened the list's unsubscribe page", icon: <BellSlashIcon size={ICON} /> });
+			} else {
+				openCompose({
+					...emptyCompose(mailboxId),
+					to: [{ addr: result.mailto.to }],
+					subject: result.mailto.subject || "Unsubscribe",
+					html: result.mailto.body ? textToParagraphs(result.mailto.body) : "",
+					signature: false,
+				});
+			}
+		} catch (e) {
+			tab?.close();
+			showToast({ text: `Could not unsubscribe. ${(e as Error).message}`, icon: <WarningIcon size={ICON} /> });
+		}
+	};
+
+	const blockSender = async (email: Email, block: boolean) => {
+		if (!open) return;
+		const mailboxId = open.mailboxId;
+		const address = email.sender.toLowerCase();
+		try {
+			if (block) {
+				await api.blockSender(mailboxId, email.id);
+				showToast({
+					text: `Blocked ${address}. New mail from them goes to Trash.`,
+					icon: <ProhibitIcon size={ICON} />,
+					onUndo: () => {
+						setToast(null);
+						void blockSender(email, false);
+					},
+				});
+			} else {
+				await api.unblockSender(mailboxId, address);
+				showToast({ text: `Unblocked ${address}`, icon: <ProhibitIcon size={ICON} /> });
+			}
+		} catch (e) {
+			showToast({ text: (e as Error).message, icon: <WarningIcon size={ICON} /> });
+		} finally {
+			queryClient.invalidateQueries({ queryKey: ["blocked-senders"] });
+		}
+	};
+
 	// One-click send from Draft review: the draft goes out as the agent wrote it, signature included.
 	const sendDraft = async (mailboxId: string, draftId: string) => {
 		const state = draftState(mailboxId, await api.getEmail(mailboxId, draftId));
@@ -873,6 +938,9 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 									draftWithAgent={draftWithAgent}
 									replyRequest={replyRequest}
 									labelRequest={labelRequest}
+									onUnsubscribe={unsubscribeFrom}
+									isBlocked={isBlocked}
+									onBlock={blockSender}
 								/>
 							</main>
 						</div>

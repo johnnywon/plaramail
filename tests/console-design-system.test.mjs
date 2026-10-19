@@ -12,6 +12,7 @@ const read = (name) => readFileSync(new URL(name, DIR), "utf8");
 const CONSOLE_FILES = [
 	"Console.tsx", "ConsoleColophon.tsx", "ConsoleUI.tsx", "ConsoleSearch.tsx", "ConsoleMessage.tsx", "OverviewTab.tsx",
 	"LimitsTab.tsx", "ActivityTab.tsx", "StorageTab.tsx", "LabelsTab.tsx", "ShortcutsTab.tsx", "ModelTab.tsx", "McpTab.tsx",
+	"BlockedSenders.tsx",
 ];
 
 /** Primitives the whole app shares: controls, type, table, layout helpers, dialogs. */
