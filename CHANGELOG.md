@@ -2,6 +2,30 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## 0.9.4
+
+### Added
+
+- Unsubscribe in the reader, for mail with a `List-Unsubscribe` header. With RFC 8058 one-click, the Worker posts the request itself, only to a public https host. A list that offers only a link opens it in a new tab; one that offers only a mail address opens the composer filled in, for you to send. `POST /api/v1/mailboxes/:mailboxId/emails/:id/unsubscribe`.
+- Block sender in the reader. New mail from a blocked address goes to Trash, marked read, and no agent sees it. Mail already received stays where it is. Console > Addresses lists blocked senders with Remove. `POST .../emails/:id/block`, `GET /api/v1/blocked-senders`, `DELETE /api/v1/mailboxes/:mailboxId/blocked-senders/:address`.
+- `star_conversation` for the chat agent and MCP clients. It stars or unstars a conversation the way `s` does, and is logged in Activity. MCP has 25 tools.
+- HTML mail gets a plain-text part when the sender wrote none, on every send path.
+- A delivery report (`multipart/report`) that reaches a mailbox joins the conversation of the Sent message it is about. Cloudflare Email Sending sets its own Return-Path, so most bounces go to Cloudflare, not the mailbox.
+- docs/setup.md has a DMARC section: policies, alignment, an example record.
+- `npm run smoke:mail` also checks a text attachment byte for byte.
+
+### Fixed
+
+- Text attachments no longer gain a newline each time they are received. The parser kept the line break that belongs to the MIME boundary. Attachments sent as 7bit or quoted-printable with CRLF line endings still arrive with LF.
+- A chat run that reaches its 20-step limit ends with "Stopped after 20 steps. Ask me to continue." On Workers AI the last step could still call a tool and end with no answer.
+- Chat replies no longer include the model's reasoning. Earlier reasoning is not sent back to the model, `<think>` blocks are split out, and chat on GLM 5.3 Flash runs at low reasoning effort.
+- The chat agent no longer resends its whole history on every step. The last two requests go whole; older tool output over 300 characters becomes a short stub, and the oldest requests are dropped past about 30K tokens.
+- Draft reply on the reader's reply bar waits for the agent connection, shows Drafting… at once, retries once, and says "The agent didn't start. Try again." if it can't. A reply opened for drafting is not saved while it has no text of its own.
+- Move up and Move down on an agent keep focus on the agent's arrow and announce the new position.
+- Turn into a search no longer explains a date filter the query doesn't have. The explanation is built from the query instead.
+
+D1 migration: `0011_blocked_senders.sql`. `npm run deploy` applies it.
+
 ## 0.9.3
 
 ### Added
