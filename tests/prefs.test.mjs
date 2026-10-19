@@ -21,7 +21,7 @@ function fakeBucket() {
 }
 
 test("cleanPrefs keeps valid fields, takes the rest from base and drops unknown ones", () => {
-	assert.deepEqual(cleanPrefs({ theme: "light", keys: false, markRead: false, images: "never", replyFrom: false }), { theme: "light", keys: false, markRead: false, images: "never", replyFrom: false, shortcuts: {}, activityDays: 90, unmatched: "leave" });
+	assert.deepEqual(cleanPrefs({ theme: "light", keys: false, markRead: false, images: "never", replyFrom: false }), { theme: "light", keys: false, markRead: false, images: "never", replyFrom: false, shortcuts: {}, activityDays: 90, unmatched: "leave", timeZone: "" });
 	assert.equal(cleanPrefs({ unmatched: "leave" }).unmatched, "leave");
 	assert.equal(cleanPrefs({ unmatched: "send" }).unmatched, "leave");
 	assert.equal(cleanPrefs({ activityDays: 180 }).activityDays, 180);
@@ -32,6 +32,13 @@ test("cleanPrefs keeps valid fields, takes the rest from base and drops unknown 
 	assert.deepEqual(cleanPrefs({ images: "always" }, { ...DEFAULT_PREFS, theme: "system" }), { ...DEFAULT_PREFS, theme: "system", images: "always" });
 	assert.ok(samePrefs(cleanPrefs({}), DEFAULT_PREFS));
 	assert.ok(!samePrefs({ ...DEFAULT_PREFS, keys: true }, DEFAULT_PREFS));
+});
+
+test("cleanPrefs keeps a time zone Intl knows and drops anything else (#33)", () => {
+	assert.equal(cleanPrefs({ timeZone: "America/New_York" }).timeZone, "America/New_York");
+	assert.equal(cleanPrefs({ timeZone: "Not/A_Zone" }).timeZone, "");
+	assert.equal(cleanPrefs({ timeZone: 5 }, { ...DEFAULT_PREFS, timeZone: "Asia/Tokyo" }).timeZone, "Asia/Tokyo");
+	assert.ok(!samePrefs({ ...DEFAULT_PREFS, timeZone: "Asia/Tokyo" }, DEFAULT_PREFS));
 });
 
 test("cleanPrefs keeps rebound shortcuts that can be bound and drops the rest", () => {

@@ -22,6 +22,7 @@ import {
 import { Editor, FormatBar } from "./Editor";
 import { AddressText, buildIdentities, type Identities, Swatch } from "./identity";
 import { formatSize, sendTimeLabel } from "./model";
+import { scheduleSlots } from "./schedule-slots";
 import { usePrefs, useResolvedTheme } from "./prefs";
 import { useShortcuts } from "./shortcuts";
 import { TooltipLayer } from "./Tooltip";
@@ -123,19 +124,6 @@ export function RecipientField({ label, list, onChange, inputRef, autoFocus, ext
 			{extra}
 		</div>
 	);
-}
-
-function nextDay(add: number, hour: number) {
-	const d = new Date();
-	d.setDate(d.getDate() + add);
-	d.setHours(hour, 0, 0, 0);
-	return d;
-}
-
-function nextMonday() {
-	const d = new Date();
-	const days = (8 - d.getDay()) % 7 || 7;
-	return nextDay(days, 8);
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -568,7 +556,7 @@ export function Composer(props: ComposerProps) {
 									<div className="pg-scrim-click" style={{ zIndex: 4 }} onClick={() => setSchedOpen(false)} />
 									<div className="pg-popover pg-sched" style={{ zIndex: 5 }} role="menu" aria-label="Schedule send">
 										<span className="pg-caption">SCHEDULE SEND</span>
-										{([["Tomorrow morning", nextDay(1, 8)], ["Tomorrow afternoon", nextDay(1, 13)], ["Monday morning", nextMonday()]] as const).map(([label, at]) => (
+										{scheduleSlots().map(([label, at]) => (
 											<button key={label} type="button" role="menuitem" className="pg-menu-item" onClick={() => schedule(at)}>
 												<ClockIcon size={14} color="var(--pg-text-6)" />
 												<span className="pg-flex">{label}</span>

@@ -166,12 +166,12 @@ export function buildQuotedReplyBlock(original: {
 	date?: string;
 	sender?: string;
 	body?: string;
-}): string {
+}, timeZone?: string): string {
 	if (!original.body) return "";
 	
 	// HTML-escape sender and date to prevent injection
 	const originalSender = escapeHtml(original.sender || "unknown");
-	const originalDate = escapeHtml(formatQuotedDate(original.date || ""));
+	const originalDate = escapeHtml(formatQuotedDate(original.date || "", timeZone));
 
 	// Sanitize the body to plain text to prevent stored XSS.
 	// The original HTML renders safely in the sandboxed iframe, but quoted

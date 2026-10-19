@@ -112,6 +112,8 @@ export const SendEmailRequestSchema = z
 				}),
 			)
 			.optional(),
+		/** On a forward: ids of the original's attachments to send with it, copied from R2. */
+		forward_attachments: z.array(z.string().min(1).max(100)).max(50).optional(),
 		in_reply_to: HeaderValueSchema.optional(),
 		references: z.array(HeaderValueSchema).max(100).optional(),
 		thread_id: HeaderValueSchema.optional(),

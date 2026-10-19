@@ -2,6 +2,20 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## 0.9.2
+
+### Added
+
+- `npm run smoke:mail` sends real mail between two of your addresses and checks it arrives: subject, HTML formatting, Cc, the attachment byte for byte, a reply threading on both sides and a forward keeping the attachment. Then it moves everything to Trash. It is opt-in and reaches the API with an Access service token (docs/setup.md, step 9).
+
+### Fixed
+
+- Forward carries the original's attachments. They show as files in the composer, where you can remove any of them, and the Worker copies the rest from R2 when it sends. The send and schedule APIs take `forward_attachments`, a list of the original's attachment ids.
+- Quotes the Worker writes into drafts ("On …, … wrote:") show the time in your time zone instead of unlabelled UTC. The browser saves its time zone in prefs as `timeZone`. Until one is saved, the quote says UTC.
+- Schedule send no longer lists Monday 8:00 AM twice on a Sunday.
+
+No D1 migration.
+
 ## 0.9.1
 
 ### Added

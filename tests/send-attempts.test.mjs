@@ -250,3 +250,39 @@ test("attachments reach the mail binding as the file's bytes, not base64 text (#
 	assert.deepEqual([...sent.content], [...file]);
 	assert.equal(sent.filename, "note.bin");
 });
+
+test("a forward copies the original's attachments it names, byte for byte (#32)", async () => {
+	const h = await harness();
+	const file = Uint8Array.from([0, 1, 2, 0x80, 0xfe, 0xff]);
+	const original = {
+		id: "orig-1", folder_id: "inbox", subject: "Notes", sender: "ann@example.org", recipient: MAILBOX,
+		attachments: [
+			{ id: "att1", filename: "qa-notes.bin", mimetype: "application/octet-stream", size: file.byteLength, disposition: "attachment" },
+			{ id: "att2", filename: "dropped.txt", mimetype: "text/plain", size: 4, disposition: "attachment" },
+		],
+	};
+	h.stub.getEmail = async (id) => (id === original.id ? original : null);
+	const reads = [];
+	h.env.BUCKET.get = async (key) => {
+		reads.push(key);
+		return key === "attachments/orig-1/att1/qa-notes.bin" ? { arrayBuffer: async () => file.buffer.slice(0) } : null;
+	};
+	const body = { to: "bob@example.org", from: MAILBOX, subject: "Fwd: Notes", text: "See below", forward_attachments: ["att1"] };
+	const result = await sendMail(h.env, MAILBOX, h.stub, body, { kind: "forward", originalId: original.id });
+	assert.equal(result.ok, true);
+	assert.deepEqual(reads, ["attachments/orig-1/att1/qa-notes.bin"], "only the kept file is read");
+	const [sent] = h.delivered[0].attachments;
+	assert.deepEqual([...sent.content], [...file]);
+	assert.equal(sent.filename, "qa-notes.bin");
+	assert.equal(sent.type, "application/octet-stream");
+});
+
+test("a forward naming an attachment the original doesn't have sends nothing (#32)", async () => {
+	const h = await harness();
+	h.stub.getEmail = async () => ({ id: "orig-1", folder_id: "inbox", subject: "Notes", attachments: [] });
+	const body = { to: "bob@example.org", from: MAILBOX, subject: "Fwd: Notes", text: "See below", forward_attachments: ["att9"] };
+	const result = await sendMail(h.env, MAILBOX, h.stub, body, { kind: "forward", originalId: "orig-1" });
+	assert.equal(result.ok, false);
+	assert.equal(result.status, 404);
+	assert.equal(h.delivered.length, 0);
+});

@@ -456,8 +456,9 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 		if (!open) return;
 		const from = open.mailboxId;
 		const next = composeFor(mode, original, open.mailboxId, from);
-		// Switching mode keeps what was written, attached and saved.
-		const carried = keep ? { html: keep.html, files: keep.files, draftId: keep.draftId, from: keep.from, signature: keep.signature } : {};
+		// Switching mode keeps what was written, attached and saved. The original's files come only with Forward.
+		const files = keep ? [...next.files, ...keep.files.filter((f) => !f.attachmentId)] : next.files;
+		const carried = keep ? { html: keep.html, files, draftId: keep.draftId, from: keep.from, signature: keep.signature } : {};
 		setInline({ key: Date.now(), initial: { ...next, ...carried, askAgent } });
 	};
 

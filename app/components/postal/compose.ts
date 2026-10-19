@@ -25,8 +25,22 @@ export interface ComposeFile {
 	name: string;
 	size: number;
 	type: string;
-	/** base64 */
+	/** base64; empty for a file of the forwarded original */
 	content: string;
+	/** A file of the forwarded original, which the Worker copies when it sends. */
+	attachmentId?: string;
+}
+
+/** Files as the send request carries them: new files by content, the forwarded original's by id. */
+export function sendFiles(files: ComposeFile[]) {
+	const added = files.filter((f) => !f.attachmentId);
+	const kept = files.flatMap((f) => (f.attachmentId ? [f.attachmentId] : []));
+	return {
+		attachments: added.length
+			? added.map((f) => ({ content: f.content, filename: f.name, type: f.type || "application/octet-stream", disposition: "attachment" as const }))
+			: undefined,
+		forward_attachments: kept.length ? kept : undefined,
+	};
 }
 
 export interface ComposeState {
@@ -146,7 +160,11 @@ export function composeFor(mode: Exclude<ComposeMode, "new">, original: Email, m
 		showBcc: false,
 		subject: prefixed(original.subject || "", forward ? "Fwd" : "Re"),
 		html: "",
-		files: [],
+		files: forward
+			? (original.attachments ?? [])
+				.filter((a) => a.disposition !== "inline")
+				.map((a) => ({ name: a.filename, size: a.size, type: a.mimetype, content: "", attachmentId: a.id }))
+			: [],
 		originalId: original.id,
 		originalMailbox: self,
 		quoteHtml,
@@ -271,9 +289,7 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 				subject: state.subject,
 				html,
 				text: htmlToPlainText(html),
-				attachments: state.files.length
-					? state.files.map((f) => ({ content: f.content, filename: f.name, type: f.type || "application/octet-stream", disposition: "attachment" as const }))
-					: undefined,
+				...sendFiles(state.files),
 			};
 		},
 		[info],
