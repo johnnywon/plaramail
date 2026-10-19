@@ -28,7 +28,7 @@ One radius: 6px, from the global rule in `app/index.css`. The exceptions, enforc
 - 2px: domain swatches and search-highlight marks.
 - 0: scrollbar thumbs, the full-screen mobile composer, and anything with a border on one side only (row and table dividers, headers, footers, the side columns). A radius would curl a divider's ends, and dividers are straight. The `.postal :is(...)` rule near the top of `postal.css` lists them, and the design test fails when a new one is missing.
 - Split controls may square their inner corners (`6px 0 0 6px`).
-- Window corners: on macOS the window's bottom corners are round, and the controls in them follow the curve. The Console button's bottom-left corner and the agent input's and send button's bottom-right corners get `--window-corner` (26px) minus their inset from the window edge, never under 6px. `data-os="mac"` on `<html>` turns it on (`app/lib/window-os.ts`); phone widths, other systems and full screen keep 6px.
+- Window corners: on macOS the window's bottom corners are round, and the controls in them follow the curve. The Console button's bottom-left corner and the agent input's and send button's bottom-right corners get `--window-corner` (26px) minus their inset from the window edge, never under 6px. `data-os="mac"` on `<html>` turns it on (`app/lib/window-os.ts`); phone widths, other systems, full screen and a page narrower than its window (vertical tabs, a side panel, docked DevTools) keep 6px.
 
 ### Domain identity
 
