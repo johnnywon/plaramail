@@ -13,7 +13,7 @@ async function serve(bypass, { resourceScopes = ["mail", "mail.send"], cimd = tr
 		const base = `http://127.0.0.1:${server.address().port}`;
 		const path = req.url.split("?")[0];
 		const open = bypass && (path === "/mcp" || path.startsWith("/.well-known/"));
-		if (!open) return res.writeHead(302, { location: "https://team.cloudflareaccess.com/cdn-cgi/access/login/host" }).end();
+		if (!open) return res.writeHead(302, { location: "https://your-team.cloudflareaccess.com/cdn-cgi/access/login/host" }).end();
 		if (path === "/mcp") return res.writeHead(401, { "www-authenticate": `Bearer realm="OAuth", resource_metadata="${base}/.well-known/oauth-protected-resource/mcp"` }).end();
 		const metadata = path.endsWith("/mcp")
 			? { resource: `${base}/mcp`, scopes_supported: resourceScopes }

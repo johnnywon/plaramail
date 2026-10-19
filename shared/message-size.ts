@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 /**
  * The 5 MiB message limit (WON-215). Email Sending refuses a message over
  * 5 MiB (README, Limits). Attachments travel base64 encoded in 76-character

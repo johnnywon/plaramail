@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 // Text-only mail as reading HTML: paragraphs instead of raw line breaks, links,
 // the signature set apart and quoted replies folded.
 

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 /**
  * The chat panel's step budget (#29). A run gets CHAT_STEP_LIMIT model steps.
  * The last one has no tools, so a run that hits the limit ends on a written

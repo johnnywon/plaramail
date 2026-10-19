@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 /**
  * The unread count in the browser tab (WON-227): "(12) PluraMail" in the
  * title and a badge drawn on the deployment's own favicon. At 0 both go back

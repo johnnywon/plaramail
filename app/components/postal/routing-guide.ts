@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 /**
  * Console > Addresses shows how to start receiving at an address that has no
  * mail yet (WON-228), and nothing once mail arrives. Receiving means any

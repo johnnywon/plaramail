@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 // Whether the page layout is mid-motion (a side column opening or closing).
 // Kept outside React so marking it costs no render. Work that would relayout
 // on every frame of the motion, like an email frame reporting its height,
