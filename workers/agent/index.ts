@@ -36,6 +36,7 @@ import {
 	toolResetShortcuts,
 	SHORTCUT_TOOL_DESCRIPTIONS,
 	toolLabelConversation,
+	toolStarConversation,
 	toolLabelMatching,
 	toolSearchAllMail,
 	LABEL_MATCHING_MAX,
@@ -302,6 +303,18 @@ function createEmailTools(env: Env, bound: string | null, { crossAddress = false
 			}),
 			execute: async ({ mailboxId, emailId, add, remove, archive }): Promise<unknown> => {
 				return run(mailboxId, (m) => toolLabelConversation(env, m, emailId, { add, remove, archive }));
+			},
+		}),
+
+		star_conversation: defineTool({
+			description: "Star or unstar the conversation that holds an email. Starring marks its latest message; unstarring clears every message.",
+			parameters: z.object({
+				...where(IN),
+				emailId: z.string().describe("Any email ID in the conversation"),
+				starred: z.boolean().describe("true to star, false to unstar"),
+			}),
+			execute: async ({ mailboxId, emailId, starred }): Promise<unknown> => {
+				return run(mailboxId, (m) => toolStarConversation(env, m, emailId, starred));
 			},
 		}),
 

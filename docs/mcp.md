@@ -133,6 +133,7 @@ The reply is refused, and nothing is sent, when:
 | `rename_label` | `label` (id or name), `name` | Renames it everywhere |
 | `label_conversation` | `mailboxId`, `emailId`, `add`?, `remove`?, `archive`? | Labels the conversation that holds the email |
 | `label_matching` | the `search_all_mail` filters, `add`?, `remove`?, `archive`? | Labels up to 500 matching conversations in one call |
+| `star_conversation` | `mailboxId`, `emailId`, `starred` | Stars or unstars the conversation that holds the email, as `s` does in the app |
 
 ### Send and delete
 

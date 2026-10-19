@@ -28,6 +28,7 @@ import {
 	toolResetShortcuts,
 	SHORTCUT_TOOL_DESCRIPTIONS,
 	toolLabelConversation,
+	toolStarConversation,
 	toolLabelMatching,
 	toolSearchAllMail,
 	LABEL_MATCHING_MAX,
@@ -496,6 +497,22 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 				const denied = await verifyMailbox(mailboxId);
 				if (denied) return denied;
 				return mcpResult(await toolLabelConversation(env, mailboxId, emailId, { add, remove, archive }));
+			},
+		);
+
+		// ── star_conversation ──────────────────────────────────────
+		tool(
+			"star_conversation",
+			"Star or unstar the conversation that holds an email. Starring marks its latest message; unstarring clears every message.",
+			{
+				mailboxId: z.string().describe("The mailbox email address"),
+				emailId: z.string().describe("Any email ID in the conversation"),
+				starred: z.boolean().describe("true to star, false to unstar"),
+			},
+			async ({ mailboxId, emailId, starred }) => {
+				const denied = await verifyMailbox(mailboxId);
+				if (denied) return denied;
+				return mcpResult(await toolStarConversation(env, mailboxId, emailId, starred));
 			},
 		);
 
