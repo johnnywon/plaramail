@@ -22,3 +22,5 @@ worker-configuration.d.ts
 wrangler.local.jsonc
 wrangler.qa.jsonc
 CLAUDE.local.md
+/test-results/
+/playwright-report/

@@ -39,7 +39,8 @@
 		"preview": "npm run build && vite preview",
 		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b",
 		"test": "node --test tests/*.test.mjs",
-		"test:build": "node --test --test-concurrency=1 tests/builds/*.test.mjs"
+		"test:build": "node --test --test-concurrency=1 tests/builds/*.test.mjs",
+		"test:browser": "playwright test"
 	},
 	"dependencies": {
 		"@ai-sdk/openai-compatible": "^2.0.81",
@@ -111,6 +112,7 @@
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "1.49.0",
 		"@cloudflare/workers-types": "^5.20260730.1",
+		"@playwright/test": "1.62.1",
 		"@react-router/dev": "^7.5.3",
 		"@tailwindcss/vite": "^4.1.4",
 		"@types/dompurify": "^3.0.5",
