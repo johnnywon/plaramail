@@ -60,7 +60,15 @@ test("migration 0008 adds agents, the run's agent and the draft's agent on top o
 	assert.ok((await columns("draft_notes")).includes("agent"));
 });
 
-test("Send waits for 0.9: the API refuses it and a stored Send agent works as Draft", async () => {
+test("the version Send arrives in is one constant, and the Console shows it from there (#45)", () => {
+	assert.equal(agents.SEND_VERSION, "0.10");
+	assert.ok(agents.SEND_LATER.includes(agents.SEND_VERSION));
+	const console_ = readFileSync("app/components/postal/Console.tsx", "utf8");
+	assert.doesNotMatch(console_, /\b0\.(9|10)\b/, "no version typed into the Console");
+	assert.match(console_, /\{SEND_VERSION\}/);
+});
+
+test("Send waits for SEND_VERSION: the API refuses it and a stored Send agent works as Draft", async () => {
 	assert.equal(agents.SEND_ENABLED, false);
 	const refused = agents.AgentBody.partial().safeParse({ mode: "send" });
 	assert.equal(refused.success, false);
@@ -166,4 +174,36 @@ test("list order decides between agents whose jobs fit, not the model", () => {
 	assert.equal(agents.firstFitting(list, "Mabel")?.name, "Mabel");
 	assert.equal(agents.firstFitting(list, null, []), null);
 	assert.equal(agents.firstFitting(list, "Nobody", ["Ghost"]), null);
+});
+
+test("a watched run's reason is plain text of the reply, without the quoted original (#46)", () => {
+	const body = `<div style="white-space:pre-wrap">Hi Alice,\n\nWe&#39;ve received your message &amp; will reply by Friday.</div><br><blockquote style="border: 1px solid #ddd;">On Sun, Oct 18, 2026, 8:00 AM, alice@example.org wrote:<br><br>Where is my order?</blockquote>`;
+	assert.equal(runs.watchedReason(body), "Would reply: Hi Alice, We've received your message & will reply by Friday.");
+	assert.equal(runs.watchedReason(""), "Would reply");
+	assert.equal(runs.watchedReason(`<p>${"word ".repeat(100)}</p>`).length, "Would reply: ".length + 300);
+});
+
+test("a draft a run throws away is logged as discarded, with why (#47)", async () => {
+	const { sql } = await openD1();
+	const thrown = [];
+	const discard = async (mailboxId, id) => { thrown.push([mailboxId, id]); return { status: "discarded" }; };
+	// The model drafted, then no agent's job fit: the run ends skipped and its draft goes.
+	const settled = runs.settleDrafts(["d1"], null, 1, "leave");
+	assert.equal(settled.outcome.status, "skipped");
+	await runs.discardRunDrafts(sql, discard, A, settled.discard, settled.outcome.reason);
+	assert.deepEqual(thrown, [[A, "d1"]]);
+	const rows = await sql.all(`SELECT actor, action, tool, target, summary, ok FROM agent_activity`);
+	assert.deepEqual(rows, [{ actor: "auto-draft", action: "delete", tool: "discard_draft", target: "d1", summary: "discarded, no agent's job fits", ok: 1 }]);
+});
+
+test("a superseded run's draft is logged as discarded too (#47)", async () => {
+	const { sql } = await openD1();
+	const target = (emailId) => ({ mailboxId: A, emailId, threadId: "t", sender: "bob@example.net" });
+	await runs.recordRun(sql, target("e1"));
+	await runs.attemptRun(sql, { emailId: "e1" }, async () => {
+		await runs.recordRun(sql, target("e2")); // newer mail in the thread supersedes e1 while it runs
+		return { status: "drafted", draftId: "d1" };
+	}, { final: false, discardDraft: async () => ({ status: "discarded" }) });
+	const rows = await sql.all(`SELECT tool, target, summary FROM agent_activity`);
+	assert.deepEqual(rows, [{ tool: "discard_draft", target: "d1", summary: "discarded, newer mail in the thread replaced this run" }]);
 });

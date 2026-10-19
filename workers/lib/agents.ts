@@ -10,9 +10,10 @@
  * reply: Watch records it, Draft keeps the draft, Send sends it.
  *
  * People write agents in Console > Agents; nothing from incoming mail
- * reaches them. Send waits for 0.9 (SEND_ENABLED): an agent earns it with
+ * reaches them. Send waits for SEND_VERSION (SEND_ENABLED): an agent earns it with
  * Test on past mail and a record of drafts sent unchanged.
  */
+import { SEND_VERSION } from "../../shared/agent";
 import { z } from "zod";
 import { RUN_STALE_MS } from "../agent/runs";
 import type { Sql } from "../store/sql";
@@ -21,9 +22,10 @@ import { htmlToText } from "./message-meta";
 export const AGENT_MODES = ["watch", "draft", "send"] as const;
 export type AgentMode = (typeof AGENT_MODES)[number];
 
-/** Off until 0.9. While off, the API refuses Send and an agent stored in Send works as Draft. */
+/** Off until SEND_VERSION. While off, the API refuses Send and an agent stored in Send works as Draft. */
 export const SEND_ENABLED = false;
-export const SEND_LATER = "Send arrives in 0.10. Use Draft for now.";
+export { SEND_VERSION };
+export const SEND_LATER = `Send arrives in ${SEND_VERSION}. Use Draft for now.`;
 
 export const RULE_FIELDS = ["from", "subject", "body"] as const;
 export const RULE_OPS = ["contains", "not_contains", "is", "domain"] as const;

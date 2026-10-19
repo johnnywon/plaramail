@@ -130,3 +130,15 @@ test("the list API and the agent's tools give the same conversations", () => {
 	}
 	assert.match(tools.mailSearchFilter({ query: "before:soon" }, labels).error, /^before: needs a date.*The query uses the mail search language/);
 });
+
+test("label: matches a label's current name, not the name it was created with (#43)", () => {
+	const exec = guarded(DB.exec);
+	exec(`UPDATE labels SET name = 'Bills' WHERE id = 'receipts'`);
+	try {
+		assert.deepEqual(find("label:bills"), find("label:Bills"));
+		assert.equal(find("label:bills").length, 1);
+		assert.deepEqual(find("label:receipts"), [], "the old name no longer matches");
+	} finally {
+		exec(`UPDATE labels SET name = 'Receipts' WHERE id = 'receipts'`);
+	}
+});

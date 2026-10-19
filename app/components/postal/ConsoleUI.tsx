@@ -112,7 +112,7 @@ export function Split({ label, title, count, actions, rows, foot, picked, childr
 }
 
 /** One row of a `Split` list: icon, title and tags, a mark on the right, a second line and a quiet meta line. */
-export function Row({ icon, title, tag, aside, sub, meta, current, off, onClick, liProps }: {
+export function Row({ icon, title, tag, aside, sub, meta, current, off, onClick, liProps, tools }: {
 	icon?: ReactNode;
 	title: ReactNode;
 	tag?: ReactNode;
@@ -123,6 +123,8 @@ export function Row({ icon, title, tag, aside, sub, meta, current, off, onClick,
 	off?: boolean;
 	onClick: () => void;
 	liProps?: React.LiHTMLAttributes<HTMLLIElement> & Record<`data-${string}`, unknown>;
+	/** Buttons beside the row, such as Move up and Move down. */
+	tools?: ReactNode;
 }) {
 	return (
 		<li className="pg-ui-row" data-off={off || undefined} {...liProps}>
@@ -131,6 +133,7 @@ export function Row({ icon, title, tag, aside, sub, meta, current, off, onClick,
 				{sub && <span className="pg-ui-row-sub">{sub}</span>}
 				{meta && <span className="pg-ui-row-meta">{meta}</span>}
 			</button>
+			{tools && <span className="pg-ui-row-tools">{tools}</span>}
 		</li>
 	);
 }

@@ -48,7 +48,8 @@ export async function authorize(request: Request, oauth: OAuthHelpers, userId: s
 		if (e instanceof AuthorizationError && e.redirectTo) return Response.redirect(e.redirectTo, 302);
 		if (e instanceof AuthorizationError) return errorResponse(request, 400, "Can't connect this app", e.description);
 		if (e instanceof CimdFetchError) return errorResponse(request, 400, "Can't connect this app", "The app's details could not be loaded.");
-		throw e;
+		console.error("MCP authorize failed:", (e as Error)?.message ?? e);
+		return errorResponse(request, 400, "Can't connect this app", "This app's sign-in request could not be read.");
 	}
 }
 

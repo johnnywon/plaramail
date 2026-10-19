@@ -125,6 +125,25 @@ export async function sendMail(
 	}
 }
 
+/** The original's attachments named by id, read from R2 as base64, or null when one is missing. */
+async function forwardedAttachments(bucket: Env["BUCKET"], original: EmailFull, ids: string[]) {
+	const out: NonNullable<SendEmailRequest["attachments"]> = [];
+	for (const id of ids) {
+		const att = original.attachments?.find((a) => a.id === id);
+		if (!att) return null;
+		const obj = await bucket.get(`attachments/${original.id}/${att.id}/${att.filename}`);
+		if (!obj) return null;
+		const bytes = new Uint8Array(await obj.arrayBuffer());
+		let binary = "";
+		for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+		out.push({
+			content: btoa(binary), filename: att.filename, type: att.mimetype || "application/octet-stream",
+			disposition: "attachment",
+		});
+	}
+	return out;
+}
+
 async function sendOnce(
 	env: Env,
 	mailboxId: string,
@@ -135,7 +154,8 @@ async function sendOnce(
 	key: string | null,
 	onDelivered: () => void,
 ): Promise<SendResult> {
-	const { to, cc, bcc, from, subject, html, text, attachments } = body;
+	const { to, cc, bcc, from, subject, html, text } = body;
+	let attachments = body.attachments;
 
 	// Threading for this send.
 	let inReplyTo: string | null = null;
@@ -146,6 +166,11 @@ async function sendOnce(
 		const rawOriginal = (await stub.getEmail(mode.originalId)) as EmailFull | null;
 		if (!rawOriginal) return { ok: false, status: 404, error: "Original email not found" };
 		const original = await resolveOriginalEmail(stub, rawOriginal);
+		if (mode.kind === "forward" && body.forward_attachments?.length) {
+			const copied = await forwardedAttachments(env.BUCKET, rawOriginal, body.forward_attachments);
+			if (!copied) return { ok: false, status: 404, error: "An attachment of the forwarded email was not found" };
+			attachments = [...copied, ...(attachments ?? [])];
+		}
 		if (mode.kind === "reply") {
 			const chain = buildReferencesChain(original);
 			inReplyTo = chain.originalMsgId;

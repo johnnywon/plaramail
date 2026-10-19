@@ -17,6 +17,7 @@ import { markdownName, textKind } from "../../lib/attachment-kind";
 import { htmlToText } from "../../lib/message-meta";
 import type { Sql } from "../sql";
 import { attachmentKey, attachmentNames, ftsInsert } from "./rows";
+import { foldLetters } from "../../lib/search-fold";
 
 export const ATTACHMENT_TEXT_MAX = 64 * 1024;
 export const ATTACHMENT_BATCH = 5;
@@ -107,7 +108,7 @@ export async function reindexMessage(sql: Sql, bucket: TextSources["bucket"], em
 		{ sql: `DELETE FROM messages_fts WHERE rowid = ?`, params: [message.id] },
 		{ sql: `DELETE FROM attachment_trigram WHERE rowid = ?`, params: [message.id] },
 		...(texts.length > 0
-			? [{ sql: `INSERT INTO attachment_trigram (rowid, text) SELECT id, ? FROM messages WHERE email_id = ?`, params: [texts.join("\n\n"), emailId] }]
+			? [{ sql: `INSERT INTO attachment_trigram (rowid, text) SELECT id, ? FROM messages WHERE email_id = ?`, params: [foldLetters(texts.join("\n\n")), emailId] }]
 			: []),
 		ftsInsert(emailId, {
 			subject: String(message.subject ?? ""),

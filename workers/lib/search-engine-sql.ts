@@ -12,6 +12,7 @@ import { highlightTerms, type Leaf, parseSearch } from "../../shared/search-quer
 import { htmlToText } from "./message-meta";
 import { type Conversation, facetsQuery, type MailFilter, type MailPage, mailQuery, type Query, sqlStep } from "./mail-index-sql";
 import { escapeHtml, fold, snippetHtml } from "./snippets";
+import { foldLetters } from "./search-fold";
 
 /** Shorter words are left to the word index: the trigram index needs three characters. */
 const MIN_SUBSTRING = 3;
@@ -22,7 +23,7 @@ const MAX_WORDS = 4;
 /** Bodies are read this far for snippets. */
 const SNIPPET_BODY = 65_536;
 
-const quoted = (word: string) => `"${word.replace(/"/g, '""')}"`;
+const quoted = (word: string) => `"${foldLetters(word).replace(/"/g, '""')}"`;
 
 /** The search's positive single words, the ones a fallback or a spelling fix can stand in for. */
 function loneWords(q: string): { text: string; start: number; end: number }[] {

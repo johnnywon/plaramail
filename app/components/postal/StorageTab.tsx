@@ -41,7 +41,7 @@ export function StorageTab({ identities }: { identities: Identities }) {
 						rows={rows}
 						rowKey={(r) => r.mailboxId}
 						columns={[
-							{ key: "address", label: "Address", head: true, cell: (r) => <AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} short /> },
+							{ key: "address", label: "Address", head: true, clip: (r) => r.mailboxId, cell: (r) => <AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} /> },
 							...columns.map((c) => ({ key: c.label, label: c.label, num: true, quiet: (r: (typeof rows)[number]) => c.count(r) === 0, cell: (r: (typeof rows)[number]) => c.count(r).toLocaleString() })),
 						]}
 					/>

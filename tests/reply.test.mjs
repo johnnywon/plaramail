@@ -26,7 +26,7 @@ const stubs = {
 	"~/queries/keys": "export const queryKeys = {};",
 	"./identity": "export const handleOf = (a) => a;",
 };
-const { composeFor } = await load("app/components/postal/compose.ts", {
+const { composeFor, sendFiles } = await load("app/components/postal/compose.ts", {
 	jsx: "automatic",
 	plugins: [
 		{
@@ -120,4 +120,28 @@ test("Reply with Reply-To but no marker still quotes the whole message, attribut
 	assert.equal(addrs(state.to), "alex@example.com");
 	assert.match(state.quoteHead, /news@updates\.example\.org wrote:/);
 	assert.match(state.quoteBody, /Name: Alex Topic: Media/);
+});
+
+const withFiles = {
+	...inquiry,
+	attachments: [
+		{ id: "att1", filename: "qa-notes.txt", mimetype: "text/plain", size: 36, disposition: "attachment" },
+		{ id: "att2", filename: "logo.png", mimetype: "image/png", size: 900, disposition: "inline", content_id: "logo" },
+	],
+};
+
+test("Forward carries the original's attachments as files the writer can remove (#32)", () => {
+	const state = composeFor("forward", withFiles, "hello@example.org", "hello@example.org");
+	assert.deepEqual(state.files, [{ name: "qa-notes.txt", size: 36, type: "text/plain", content: "", attachmentId: "att1" }]);
+	assert.deepEqual(composeFor("reply", withFiles, "hello@example.org", "hello@example.org").files, []);
+});
+
+test("the original's files go by id, new files by content (#32)", () => {
+	const kept = { name: "qa-notes.txt", size: 36, type: "text/plain", content: "", attachmentId: "att1" };
+	const added = { name: "new.txt", size: 3, type: "", content: "YWJj" };
+	assert.deepEqual(sendFiles([kept, added]), {
+		attachments: [{ content: "YWJj", filename: "new.txt", type: "application/octet-stream", disposition: "attachment" }],
+		forward_attachments: ["att1"],
+	});
+	assert.deepEqual(sendFiles([]), { attachments: undefined, forward_attachments: undefined });
 });

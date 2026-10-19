@@ -560,9 +560,10 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-row[data-unread="true"] .pg-row-to .pg-addr-handle { color: var(--pg-text-3); }
 .pg-row-to .pg-addr-at { color: var(--pg-text-9); }
 .pg-row-to .pg-also { flex: none; color: var(--pg-text-8); }
-.pg-row-sender { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 1.3; font-weight: 500; color: var(--pg-text-3); }
+.pg-row-sender { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 1.3; font-weight: 500; color: var(--pg-text-3); }
 .pg-row[data-unread="true"] .pg-row-sender { font-weight: 650; color: var(--pg-text-1); }
-.pg-row-subject { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 1.35; color: var(--pg-text-4); }
+.pg-row-sender-to, .pg-row-sender-more { font-weight: 500; color: var(--pg-text-5); }
+.pg-row-subject { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 1.35; color: var(--pg-text-4); }
 /* The subject is the row's link; the focus ring goes round the whole row. */
 .pg-row-link:focus-visible { outline: none; }
 .pg-row:has(.pg-row-link:focus-visible) { outline: 2px solid var(--pg-mail); }
@@ -662,7 +663,7 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-mail-text p { margin: 0 0 1em; }
 .pg-mail-text :is(.pm-plain, .pm-sig, blockquote) > :last-child { margin-bottom: 0; }
 .pg-mail-text blockquote { margin: 0; padding: 0; font-size: 15px; color: var(--pg-text-6); }
-.pg-mail-text .pm-sig { margin-top: 1.25em; padding-top: 1em; border-top: 1px solid var(--pg-line-2); font-size: 14px; color: var(--pg-text-6); }
+.pg-mail-text .pm-sig { margin-top: 1.25em; padding-top: 1em; border-top: 1px solid var(--pg-line-2); font-size: 13px; color: var(--pg-text-6); }
 .pg-mail-text .pm-sig p { margin-bottom: .5em; }
 .pg-mail-text .pm-quote { margin: 1em 0 0; }
 .pg-mail-text .pm-quote > summary {
@@ -1653,12 +1654,16 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
 .pg-ui-rows { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
 .pg-ui-row { border-bottom: 1px solid var(--pg-line-faint); }
 .pg-ui-row[data-dragging] { opacity: .4; }
+.pg-ui-row:has(> .pg-ui-row-tools) { display: flex; align-items: stretch; }
+.pg-ui-row:has(> .pg-ui-row-tools) > button { flex: 1; min-width: 0; }
+.pg-ui-row-tools { flex: none; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 8px 0 0; }
+.pg-ui-row-tools > button:disabled { opacity: .35; cursor: default; }
 .pg-ui-row > button { width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px 13px; text-align: left; outline-offset: -2px; }
 .pg-ui-row > button:hover { background: var(--pg-hover); }
 .pg-ui-row > button[aria-current="true"] { background: var(--pg-row-current); box-shadow: inset 0 0 0 1px var(--pg-line-3); }
 .pg-ui-row[data-off] > button > * { opacity: .55; }
 .pg-ui-row-top { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--pg-text-5); }
-.pg-ui-row-top b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; color: var(--pg-text-1); }
+.pg-ui-row-top b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--pg-text-1); }
 .pg-ui-row-aside { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; }
 .pg-ui-row-sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: var(--pg-t-13); line-height: 1.4; color: var(--pg-text-5); text-wrap: pretty; }
 .pg-ui-row-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 10px; min-width: 0; font: var(--pg-t-11) var(--pg-mono); color: var(--pg-text-7); }
@@ -1726,7 +1731,7 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
 .pg-ui-sum-editor { grid-column: 2 / -1; display: flex; flex-direction: column; gap: 10px; padding: 14px 8px 4px 0; }
 .pg-ui-sum-editor .pg-ui-fields { margin-top: -10px; }
 .pg-ui-sum-label { margin-top: 6px; font-size: var(--pg-t-12); font-weight: 600; color: var(--pg-text-4); }
-.pg-ui-sum-editor .pg-ui-ask-input.pg-textarea { min-height: 72px; font-size: 14px; }
+.pg-ui-sum-editor .pg-ui-ask-input.pg-textarea { min-height: 72px; font-size: 13px; }
 
 /* An agent's trust: the Watch, Draft, Send track, what the current rung does, and the next rung. */
 .pg-ui-trust { border: 1px solid var(--pg-line-2); background: var(--pg-input); }
@@ -1864,3 +1869,14 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
 .pg-ui-code [data-tok="punct"] { color: var(--pg-text-8); }
 
 .pg-ui-quiet { color: var(--pg-text-6); }
+
+/* Window corners (WON-232). On macOS the window's bottom corners are round, so the controls that sit in them
+   follow the curve: the corner nearest the window edge gets the window radius minus the control's inset from
+   that edge, never under 6px. The agent input sits 10px in and its send button 17px (wrap 10 + border 1 +
+   padding 6), so the two stay concentric too. The sidebar's Console button keeps 6px.
+   Phone widths, other systems, full screen and a page with browser chrome beside it keep 6px (DESIGN.md, Radius). */
+:root { --window-corner: 26px; }
+@media (min-width: 768px) and (not (display-mode: fullscreen)) {
+  :root[data-os="mac"][data-window="normal"] .postal .pg-agent-input { border-bottom-right-radius: max(6px, calc(var(--window-corner) - 10px)) !important; }
+  :root[data-os="mac"][data-window="normal"] .postal .pg-agent-input .pg-return { border-bottom-right-radius: max(6px, calc(var(--window-corner) - 17px)) !important; }
+}

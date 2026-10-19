@@ -2,6 +2,45 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## 0.9.2
+
+### Added
+
+- `npm run smoke:mail` sends real mail between two of your addresses and checks it arrives: subject, HTML formatting, Cc, the attachment byte for byte, a reply threading on both sides and a forward keeping the attachment. Then it moves everything to Trash. It is opt-in and reaches the API with an Access service token (docs/setup.md, step 9).
+
+### Upgrading
+
+- D1 migration `0009_search_fold.sql` rebuilds the substring search tables (`messages_trigram`, `attachment_trigram`) from stored mail. It runs once, in one pass over every message.
+- Add `"global_fetch_strictly_public"` to `compatibility_flags` in a deployment's own Wrangler config. `wrangler.jsonc` has it. It lets MCP clients sign in with a Client ID Metadata Document URL, and `npm run smoke` fails without it.
+
+### Fixed
+
+- Forward carries the original's attachments. They show as files in the composer, where you can remove any of them, and the Worker copies the rest from R2 when it sends. The send and schedule APIs take `forward_attachments`, a list of the original's attachment ids.
+- Quotes the Worker writes into drafts ("On …, … wrote:") show the time in your time zone instead of unlabelled UTC. The browser saves its time zone in prefs as `timeZone`. Until one is saved, the quote says UTC.
+- Schedule send no longer lists Monday 8:00 AM twice on a Sunday.
+- Sent rows show who the mail went to: "To" and the first recipient, with a count of the others, instead of your own address. `/api/v1/mail` rows carry `recipient`.
+- Search folds accents in substring matches too, so `sume` finds Résumé, and folds letters Unicode doesn't split into a letter and an accent (ø, æ, œ, ß, ł, đ, ð, þ, ı), so `unicode` finds ünïcødé. Word search already matched `cafe` with café. Mail stored before this version gets the letter folding in subjects, addresses, attachment names and attachment text, not in body words.
+- `label:` matches a label's current name. After a rename, the old name no longer matches. Spaces in a name can be written as hyphens (`label:tax-2026`). The API's `label=` parameter still takes ids.
+- The Cancel button on a scheduled draft's row is named "Cancel scheduled send" for screen readers and browser agents.
+- An agent reply no longer offers Open draft for a draft it sent later in the same turn.
+- `/authorize` with a Client ID Metadata Document URL as `client_id` returned 500, because the OAuth library needs the `global_fetch_strictly_public` flag for those documents. The flag is now set. Any error `/authorize` doesn't recognise shows the "Can't connect this app" page and is logged.
+- The protected resource metadata (`/.well-known/oauth-protected-resource/mcp`) lists both scopes, `mail` and `mail.send`, as the authorization server metadata does. A client that builds its request from it can now ask for `mail.send`. `mail` stays the only required scope. docs/mcp.md says which document to read.
+- `npm run smoke` checks that both OAuth documents list the same scopes and that client ID metadata documents are supported.
+- Your agents: each agent row has Move up and Move down buttons, so the order can be changed from the keyboard, a screen reader or a browser agent. They use the same `PUT /api/v1/agents/order` as dragging.
+- The Send rung and the "To move to Send" gates show 0.10, the release Send arrives in, instead of 0.9. The Console and the API read it from one constant, `SEND_VERSION` in `shared/agent.ts`.
+- A watched run's reason is plain text of the reply the agent would have sent, without HTML entities or the quoted original. Reasons stored before this version are unchanged.
+- Console > Activity logs a `discard_draft` entry with the reason when a run throws its draft away: no agent's job fits, Watch mode, an earlier draft from the same run, or newer mail in the thread. A run that ended skipped no longer leaves a successful draft as the last word.
+- Delete agent's confirm button reads "Yes, delete <name>", focus moves to Keep, and clicks in the first 400 ms are ignored, so a double-click no longer deletes the agent.
+- `?console=preferences`, `settings` and `prefs` open Preferences. Any other page name the console doesn't know opens Overview instead of closing the console.
+- Writing a signature no longer turns on Add by default. A new signature starts off, as the guide says.
+- Sends per address on Overview, and Mail storage, show whole addresses (`hello@example.com`, not `hello@example`). A long one is cut with an ellipsis and shown in full on hover.
+- The agent chat gets 20 steps instead of 5, and the last one has no tools: a run that reaches the limit ends by saying it stopped after 19 steps, what it finished and what is left, instead of stopping mid-task. Auto-draft keeps its 5 steps.
+- Redraft keeps the quoted original of a draft the composer has saved. The composer leaves an empty paragraph after the quote, and the quote was only found when it was the last thing in the body. The "On …, … wrote:" line the composer writes outside the quote stays with it.
+- List rows, the signature and two console texts are 13px instead of 14px, and every icon is 10, 12, 14, 16 or 20px, the sizes DESIGN.md lists. `tests/design-rules.test.mjs` checks both.
+- On macOS, the agent input's and send button's bottom-right corners follow the window's round corner (`--window-corner`, 26px, less each one's inset). Other systems, phone widths, full screen and a page with vertical tabs, a side panel or docked DevTools beside it keep 6px. `<html>` carries `data-os="mac"` on a Mac.
+
+D1 migration: `0009_search_fold.sql` (folded substring search). `npm run deploy` applies it.
+
 ## 0.9.1
 
 ### Added

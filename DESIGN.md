@@ -28,6 +28,7 @@ One radius: 6px, from the global rule in `app/index.css`. The exceptions, enforc
 - 2px: domain swatches and search-highlight marks.
 - 0: scrollbar thumbs, the full-screen mobile composer, and anything with a border on one side only (row and table dividers, headers, footers, the side columns). A radius would curl a divider's ends, and dividers are straight. The `.postal :is(...)` rule near the top of `postal.css` lists them, and the design test fails when a new one is missing.
 - Split controls may square their inner corners (`6px 0 0 6px`).
+- Window corners: on macOS the window's bottom corners are round, and the controls in them follow the curve. The agent input's and send button's bottom-right corners get `--window-corner` (26px) minus their inset from the window edge, never under 6px. The sidebar's Console button keeps 6px. `data-os="mac"` on `<html>` turns it on (`app/lib/window-os.ts`); phone widths, other systems, full screen and a page narrower than its window (vertical tabs, a side panel, docked DevTools) keep 6px.
 
 ### Domain identity
 
@@ -97,7 +98,7 @@ Every console page is built from `ConsoleUI.tsx` and its `.pg-ui-*` styles. A ne
 | `Table` | Data on a panel: mono headers, right-aligned numbers, dim zeros, rose for a limit reached, rows that open. |
 | `Name` | First cell of a row: name, icon, tags, second line. |
 | `List` + `Item` | Stacked rows: drafts, log entries, signatures. Badge, title, time or aside, meta line, quote. An `Item` with children opens in place. `busy` dims the rows while a new filter loads, so a click never blanks the list. |
-| `Split` + `Row` | A list column beside a detail column, like mail's list and reader. A row has an icon, title, tags, a mark on the right (a mode), a second line and a mono meta line. |
+| `Split` + `Row` | A list column beside a detail column, like mail's list and reader. A row has an icon, title, tags, a mark on the right (a mode), a second line and a mono meta line. `tools` puts small buttons beside a row, outside its main button: Your agents uses them for Move up and Move down, the keyboard's way to reorder. |
 | `Stats` + `Stat` | Numbers in tiles; a tile can open where its number comes from. |
 | `Fields` + `Field` | Settings rows. `inline` for a switch, segmented control or number; otherwise a label column and a control column. |
 | `Track` | Steps left to right: the current one filled, the ones before it checked, later ones numbered. New agent's head (Job, Addresses, Name) and an agent's Trust (Watch, Draft, Send). |

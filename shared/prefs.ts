@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { isTimeZone } from "./dates";
 import { cleanOverrides, sameOverrides, type ShortcutOverrides } from "./shortcuts";
 
 /** Settings > General. Saved to the deployment (R2 config/prefs.json); each browser keeps a copy for a fast first paint. */
@@ -18,6 +19,8 @@ export interface Prefs {
 	activityDays: ActivityDays;
 	/** New mail no agent takes: left alone, or drafted by the PluraMail Agent. */
 	unmatched: Unmatched;
+	/** The reader's IANA time zone, for times the Worker writes into mail (quotes). Empty until a browser saves it. */
+	timeZone: string;
 }
 
 export const UNMATCHED = ["leave", "draft"] as const;
@@ -26,7 +29,7 @@ export type Unmatched = (typeof UNMATCHED)[number];
 export const ACTIVITY_DAYS = [90, 120, 180] as const;
 export type ActivityDays = (typeof ACTIVITY_DAYS)[number];
 
-export const DEFAULT_PREFS: Prefs = { theme: "dark", keys: false, markRead: true, images: "ask", replyFrom: true, shortcuts: {}, activityDays: 90, unmatched: "leave" };
+export const DEFAULT_PREFS: Prefs = { theme: "dark", keys: false, markRead: true, images: "ask", replyFrom: true, shortcuts: {}, activityDays: 90, unmatched: "leave", timeZone: "" };
 
 const THEMES = ["dark", "light", "system"] as const;
 const IMAGES = ["ask", "always", "never"] as const;
@@ -45,9 +48,10 @@ export function cleanPrefs(input: unknown, base: Prefs = DEFAULT_PREFS): Prefs {
 		shortcuts: o.shortcuts === undefined ? base.shortcuts : cleanOverrides(o.shortcuts),
 		activityDays: pick(o.activityDays, ACTIVITY_DAYS, base.activityDays),
 		unmatched: pick(o.unmatched, UNMATCHED, base.unmatched),
+		timeZone: isTimeZone(o.timeZone) ? o.timeZone : base.timeZone,
 	};
 }
 
 export function samePrefs(a: Prefs, b: Prefs): boolean {
-	return a.theme === b.theme && a.keys === b.keys && a.markRead === b.markRead && a.images === b.images && a.replyFrom === b.replyFrom && a.activityDays === b.activityDays && a.unmatched === b.unmatched && sameOverrides(a.shortcuts, b.shortcuts);
+	return a.theme === b.theme && a.keys === b.keys && a.markRead === b.markRead && a.images === b.images && a.replyFrom === b.replyFrom && a.activityDays === b.activityDays && a.unmatched === b.unmatched && a.timeZone === b.timeZone && sameOverrides(a.shortcuts, b.shortcuts);
 }

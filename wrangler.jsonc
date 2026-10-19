@@ -8,8 +8,10 @@
 	"observability": {
 		"enabled": true
 	},
+	// global_fetch_strictly_public lets MCP clients sign in with a Client ID Metadata Document URL (docs/mcp.md).
 	"compatibility_flags": [
-		"nodejs_compat"
+		"nodejs_compat",
+		"global_fetch_strictly_public"
 	],
 	"vars": {
 		// Display name in page titles. Icons and the link preview card live in public/brand/.

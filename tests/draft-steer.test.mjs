@@ -8,6 +8,7 @@ import { loadTs } from "./helpers/sqlite.mjs";
 const { redraft, redraftPrompt, htmlToLines } = await loadTs("workers/lib/redraft.ts");
 const { D1Mailbox } = await loadTs("workers/store/d1/mailbox.ts");
 const { app } = await loadTs("workers/index.ts");
+const { splitQuotedBlock } = await loadTs("workers/lib/ai.ts");
 
 const MAILBOX = "a@example.com";
 const QUOTE = `<br><blockquote style="border: 1px solid #ddd">On Monday, bob@example.org wrote:<br><br>Can we meet Thursday?</blockquote>`;
@@ -60,6 +61,28 @@ test("redraft replaces the draft, keeps the quote and records the instruction", 
 
 	const again = await redraft(box, MAILBOX, result.draft.id, "decline politely", deps);
 	assert.deepEqual(again.notes.instructions, ["shorter", "decline politely"]);
+});
+
+test("redraft keeps the quote of a draft the composer saved (#30)", async () => {
+	const { box, deps, prompts } = await setup();
+	// The composer saves paragraphs and leaves an empty one after the quote.
+	const quote = `<p></p><blockquote style="border: 1px solid #ddd"><p>On Monday, bob@example.org wrote:</p><p></p><p>Can we meet Thursday?</p></blockquote><p></p>`;
+	await box.createEmail("draft", {
+		id: "saved", subject: "Re: Meeting", sender: MAILBOX, recipient: "bob@example.org", date: "2026-10-01T10:06:00.000Z",
+		body: `<p>Hi Bob,</p><p>Thursday works. I can do 10am or 2pm.</p>${quote}`, in_reply_to: "orig", thread_id: "orig",
+	}, []);
+	await box.setDraftNotes("saved", { origin: "auto-draft", agent: "Meetings", instructions: [] });
+	const result = await redraft(box, MAILBOX, "saved", "shorter", deps);
+	assert.equal(result.ok, true);
+	assert.ok(result.draft.body.endsWith(quote));
+	assert.doesNotMatch(prompts[0].prompt.split("The email this draft answers")[0], /Can we meet Thursday/);
+});
+
+test("splitQuotedBlock takes the composer's attribution line with the quote", () => {
+	const quote = `<p><br></p><div>On Oct 1, bob@example.org wrote:</div><blockquote>Can we meet?</blockquote>`;
+	assert.deepEqual(splitQuotedBlock(`<p>Yes.</p>${quote}`), { reply: "<p>Yes.</p>", quoted: quote });
+	assert.deepEqual(splitQuotedBlock(`<p>Yes.</p>${quote}<p></p> \n<p><br></p>`), { reply: "<p>Yes.</p>", quoted: `${quote}<p></p> \n<p><br></p>` });
+	assert.deepEqual(splitQuotedBlock("<p>No quote</p><p></p>"), { reply: "<p>No quote</p><p></p>", quoted: "" });
 });
 
 test("a thread read carries the notes of its agent drafts", async () => {

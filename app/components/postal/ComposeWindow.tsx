@@ -22,6 +22,7 @@ import {
 import { Editor, FormatBar } from "./Editor";
 import { AddressText, buildIdentities, type Identities, Swatch } from "./identity";
 import { formatSize, sendTimeLabel } from "./model";
+import { scheduleSlots } from "./schedule-slots";
 import { usePrefs, useResolvedTheme } from "./prefs";
 import { useShortcuts } from "./shortcuts";
 import { TooltipLayer } from "./Tooltip";
@@ -123,19 +124,6 @@ export function RecipientField({ label, list, onChange, inputRef, autoFocus, ext
 			{extra}
 		</div>
 	);
-}
-
-function nextDay(add: number, hour: number) {
-	const d = new Date();
-	d.setDate(d.getDate() + add);
-	d.setHours(hour, 0, 0, 0);
-	return d;
-}
-
-function nextMonday() {
-	const d = new Date();
-	const days = (8 - d.getDay()) % 7 || 7;
-	return nextDay(days, 8);
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -420,7 +408,7 @@ export function Composer(props: ComposerProps) {
 						<div className="pg-modes" role="radiogroup" aria-label="Reply mode">
 							{MODES.map(({ mode: m, label, Icon }) => (
 								<button key={m} type="button" title={label} aria-label={label} role="radio" aria-checked={m === state.mode} onClick={() => m !== state.mode && props.onMode?.(m, stateRef.current)}>
-									<Icon size={13} />
+									<Icon size={14} />
 								</button>
 							))}
 						</div>
@@ -429,21 +417,21 @@ export function Composer(props: ComposerProps) {
 					<span className="pg-saved" aria-live="polite">{saved ? "Draft saved" : ""}</span>
 					{variant !== "standalone" && (
 						<button type="button" className="pg-cw-btn" title="Open in new window" aria-label="Open in new window" onMouseDown={(e) => { e.preventDefault(); done.current = true; props.onPopOut(stateRef.current); }}>
-							<ArrowSquareOutIcon size={15} />
+							<ArrowSquareOutIcon size={16} />
 						</button>
 					)}
 					{variant === "floating" && (
 						<>
 							<button type="button" className="pg-cw-btn" title={mode === "min" ? "Restore" : "Minimize"} aria-label={mode === "min" ? "Restore" : "Minimize"} onMouseDown={(e) => { e.preventDefault(); setMode(mode === "min" ? "normal" : "min"); }}>
-								{mode === "min" ? <CaretUpIcon size={15} /> : <MinusIcon size={15} />}
+								{mode === "min" ? <CaretUpIcon size={16} /> : <MinusIcon size={16} />}
 							</button>
 							<button type="button" className="pg-cw-btn pg-desktop-only" title="Full screen" aria-label="Full screen" onMouseDown={(e) => { e.preventDefault(); setMode(mode === "max" ? "normal" : "max"); }}>
-								{mode === "max" ? <ArrowsInSimpleIcon size={15} /> : <ArrowsOutSimpleIcon size={15} />}
+								{mode === "max" ? <ArrowsInSimpleIcon size={16} /> : <ArrowsOutSimpleIcon size={16} />}
 							</button>
 						</>
 					)}
 					<button type="button" className="pg-cw-btn" title="Save and close" aria-label="Save and close" onMouseDown={(e) => { e.preventDefault(); close(); }}>
-						<XIcon size={15} />
+						<XIcon size={16} />
 					</button>
 				</div>
 				<div className="pg-cw-body">
@@ -520,7 +508,7 @@ export function Composer(props: ComposerProps) {
 									<FileIcon size={14} color="var(--pg-text-5)" />
 									<span className="pg-file-name">{f.name}</span>
 									<span className="pg-file-size">{formatSize(f.size)}</span>
-									<button type="button" aria-label={`Remove ${f.name}`} onClick={() => patch({ files: state.files.filter((_, j) => j !== i) })}><XIcon size={11} /></button>
+									<button type="button" aria-label={`Remove ${f.name}`} onClick={() => patch({ files: state.files.filter((_, j) => j !== i) })}><XIcon size={12} /></button>
 								</span>
 							))}
 						</div>
@@ -561,14 +549,14 @@ export function Composer(props: ComposerProps) {
 								Send<PaperPlaneRightIcon size={12} weight="bold" />
 							</button>
 							<button type="button" className="pg-caret" title="Schedule send" aria-label="Schedule send" aria-expanded={schedOpen} onClick={() => { setSchedOpen((v) => !v); setCustom(false); }}>
-								<CaretDownIcon size={11} weight="bold" />
+								<CaretDownIcon size={12} weight="bold" />
 							</button>
 							{schedOpen && (
 								<>
 									<div className="pg-scrim-click" style={{ zIndex: 4 }} onClick={() => setSchedOpen(false)} />
 									<div className="pg-popover pg-sched" style={{ zIndex: 5 }} role="menu" aria-label="Schedule send">
 										<span className="pg-caption">SCHEDULE SEND</span>
-										{([["Tomorrow morning", nextDay(1, 8)], ["Tomorrow afternoon", nextDay(1, 13)], ["Monday morning", nextMonday()]] as const).map(([label, at]) => (
+										{scheduleSlots().map(([label, at]) => (
 											<button key={label} type="button" role="menuitem" className="pg-menu-item" onClick={() => schedule(at)}>
 												<ClockIcon size={14} color="var(--pg-text-6)" />
 												<span className="pg-flex">{label}</span>
@@ -604,7 +592,7 @@ export function Composer(props: ComposerProps) {
 							)}
 						</div>
 						<button type="button" className="pg-tool-btn" title="Attach files" aria-label="Attach files" onMouseDown={(e) => { e.preventDefault(); fileRef.current?.click(); }}>
-							<PaperclipIcon size={15} />
+							<PaperclipIcon size={16} />
 						</button>
 						<input
 							ref={fileRef}
@@ -643,7 +631,7 @@ export function Composer(props: ComposerProps) {
 							<FloppyDiskIcon size={14} /><span className="pg-save-label">Save draft</span>
 						</button>
 						<button type="button" className="pg-tool-btn" title="Discard draft" aria-label="Discard draft" onMouseDown={(e) => { e.preventDefault(); discard(); }}>
-							<TrashIcon size={15} />
+							<TrashIcon size={16} />
 						</button>
 					</div>
 				</div>

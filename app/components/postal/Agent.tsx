@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { openableDrafts, type ToolCall } from "./agent-drafts";
 import { ArrowElbowDownLeftIcon, CaretDoubleLeftIcon, CaretDoubleRightIcon, StopIcon, TrashIcon } from "@phosphor-icons/react";
 import { AgentIcon } from "./AgentIcon";
 import { useQueryClient } from "@tanstack/react-query";
@@ -300,7 +301,7 @@ function AgentChat({ hooks, open, reading, prefill, inert, onOpenDraft, onBusy }
 				<Reading subject={reading} />
 				{messages.length > 0 && !busy && (
 					<button type="button" className="pg-head-btn" title="Clear chat" aria-label="Clear chat" onClick={() => window.confirm("Clear this chat?") && setMessages([])}>
-						<TrashIcon size={13} />
+						<TrashIcon size={14} />
 					</button>
 				)}
 			</div>
@@ -359,7 +360,7 @@ function AgentChat({ hooks, open, reading, prefill, inert, onOpenDraft, onBusy }
 						id="pg-agent-input"
 					/>
 					{busy ? (
-						<button type="button" className="pg-return" title="Stop" aria-label="Stop" onClick={() => stop()}><StopIcon size={13} weight="fill" /></button>
+						<button type="button" className="pg-return" title="Stop" aria-label="Stop" onClick={() => stop()}><StopIcon size={14} weight="fill" /></button>
 					) : (
 						<button type="submit" className="pg-return" title="Send (↵)" aria-label="Send" disabled={!input.trim()}><ArrowElbowDownLeftIcon size={14} weight="bold" /></button>
 					)}
@@ -374,7 +375,7 @@ function ChatMessage({ message, onOpenDraft }: { message: UIMessage; onOpenDraft
 		const text = message.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
 		return <div className="pg-agent-q" role="article" aria-label="You">{text}</div>;
 	}
-	const drafts: { mailboxId: string; draftId: string }[] = [];
+	const calls: ToolCall[] = [];
 	const out: React.ReactNode[] = [];
 	message.parts.forEach((part, i) => {
 		const name = toolName(part);
@@ -386,9 +387,7 @@ function ChatMessage({ message, onOpenDraft }: { message: UIMessage; onOpenDraft
 					<span>{toolCount(part)}</span>
 				</div>,
 			);
-			const result = toolOutput(part) as { draftId?: string } | undefined;
-			const mailboxId = (part as { input?: { mailboxId?: string } }).input?.mailboxId;
-			if ((name === "draft_reply" || name === "draft_email") && result?.draftId && mailboxId) drafts.push({ mailboxId: mailboxId.toLowerCase(), draftId: result.draftId });
+			calls.push({ name, input: (part as { input?: ToolCall["input"] }).input, output: toolOutput(part) });
 			return;
 		}
 		if (part.type === "text" && part.text.trim()) {
@@ -402,6 +401,7 @@ function ChatMessage({ message, onOpenDraft }: { message: UIMessage; onOpenDraft
 			);
 		}
 	});
+	const drafts = openableDrafts(calls);
 	if (drafts.length) {
 		out.push(
 			<div key="actions" className="pg-agent-actions" style={{ paddingLeft: 28 }}>

@@ -1040,6 +1040,7 @@ const RADIUS_EXCEPTIONS = [
 	{ value: /^2px\s*!important$/, selector: /pg-swatch|mark/, why: "domain swatches and search highlights" },
 	{ value: /^10px\s*!important$/, selector: /^\.postal \.pg-switch$/, why: "the switch track, a pill at half its 20px height" },
 	{ value: /^0\s*!important$/, selector: /scrollbar-thumb|\.pg-cw/, why: "square scrollbars and the full-screen mobile composer" },
+	{ value: /^max\(6px, calc\(var\(--window-corner\) - \d+px\)\)\s*!important$/, selector: /^:root\[data-os="mac"\]/, why: "controls in macOS's round window corners (WON-232)" },
 ];
 
 test("postal styles use the 6px radius, with only the documented exceptions (DESIGN.md)", () => {
@@ -1093,3 +1094,30 @@ test("postal domain shapes come from clip-path on .pg-shape-* only, and none is 
 	for (const shape of ["diamond", "triangle", "hexagon"]) assert.ok(shapes.has(`.pg-shape-${shape}`), `missing .pg-shape-${shape}`);
 });
 
+
+// WON-399: text and icons stay on DESIGN.md's scales (type 10, 11, 12, 13, 15, 22, 26; icons 10, 12, 14, 16, 20).
+test("postal text is never 14px, between the 13 and 15 steps (DESIGN.md)", () => {
+	const problems = [];
+	for (const { selector, decls } of cssBlocks(POSTAL_CSS)) {
+		for (const [prop, value] of decls) if (prop === "font-size" && /^14px/.test(value)) problems.push(`${selector} { font-size: ${value} }`);
+	}
+	assert.deepEqual(problems, []);
+});
+
+test("Phosphor icons use the icon scale (DESIGN.md)", () => {
+	const ICON_SCALE = new Set([10, 12, 14, 16, 20]);
+	const problems = [];
+	const walk = (dir) => {
+		for (const name of readdirSync(dir)) {
+			const path = join(dir, name);
+			if (statSync(path).isDirectory()) walk(path);
+			else if (/\.tsx$/.test(name)) {
+				for (const m of readFileSync(path, "utf8").matchAll(/Icon size=\{(\d+)\}/g)) {
+					if (!ICON_SCALE.has(Number(m[1]))) problems.push(`${relative(ROOT, path)}: size={${m[1]}}`);
+				}
+			}
+		}
+	};
+	walk(join(ROOT, "app"));
+	assert.deepEqual(problems, []);
+});

@@ -24,6 +24,7 @@ import type { Route } from "./+types/root";
 import ErrorPage from "~/components/ErrorPage";
 import { DEFAULT_APP_NAME } from "~/lib/brand";
 import { shouldLogMutationError } from "~/lib/mutation-errors";
+import { WINDOW_OS_SCRIPT } from "~/lib/window-os";
 import { ApiError } from "~/services/api";
 import "./index.css";
 
@@ -95,9 +96,11 @@ export function shouldRevalidate() {
 export function Layout({ children }: { children: React.ReactNode }) {
 	const data = useRouteLoaderData<typeof loader>("root");
 	return (
-		<html lang="en">
+		// data-os and data-window are set by WINDOW_OS_SCRIPT before hydration.
+		<html lang="en" suppressHydrationWarning>
 			<head>
 				<meta charSet="UTF-8" />
+				<script dangerouslySetInnerHTML={{ __html: WINDOW_OS_SCRIPT }} />
 				<link
 					rel="icon"
 					type="image/x-icon"
