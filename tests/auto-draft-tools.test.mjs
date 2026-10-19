@@ -19,7 +19,7 @@ test("auto-draft gets only get_email, get_thread and draft_reply", () => {
 	const tools = createAutoDraftTools({}, TARGET, CONTEXT, fakeDraftReply());
 	assert.deepEqual(Object.keys(tools).sort(), ["draft_reply", "get_email", "get_thread"]);
 	assert.deepEqual([...AUTO_DRAFT_TOOLS].sort(), Object.keys(tools).sort());
-	for (const name of ["draft_email", "send_draft", "delete_label", "rename_label", "set_shortcut", "reset_shortcuts", "move_email", "discard_draft", "label_conversation", "search_emails", "search_all_mail"]) {
+	for (const name of ["draft_email", "send_draft", "delete_label", "rename_label", "set_shortcut", "reset_shortcuts", "move_email", "discard_draft", "label_conversation", "star_conversation", "search_emails", "search_all_mail"]) {
 		assert.equal(tools[name], undefined, `${name} must not reach auto-draft`);
 	}
 });

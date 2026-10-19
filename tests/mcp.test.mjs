@@ -147,7 +147,7 @@ test("the server lists every tool", async () => {
 		"create_draft", "create_label", "delete_email", "delete_label", "draft_reply", "get_email", "get_thread",
 		"label_conversation", "label_matching", "list_emails", "list_labels", "list_mailboxes", "list_shortcuts", "mark_email_read",
 		"move_email", "rename_label", "reply_to_email", "reset_shortcuts", "search_all_mail", "search_emails", "send_draft", "send_email",
-		"set_shortcut", "update_draft",
+		"set_shortcut", "star_conversation", "update_draft",
 	]);
 });
 
@@ -155,7 +155,7 @@ test("a grant without the send scope gets no tool that sends", async () => {
 	const names = (await reader.listTools()).tools.map((t) => t.name);
 	for (const sending of ["send_draft", "reply_to_email", "send_email"]) assert.ok(!names.includes(sending), sending);
 	assert.ok(names.includes("draft_reply") && names.includes("get_email"));
-	assert.equal(names.length, 21);
+	assert.equal(names.length, 22);
 });
 
 test("tools say whether they only read, and which ones send", async () => {
@@ -164,6 +164,8 @@ test("tools say whether they only read, and which ones send", async () => {
 	assert.equal(tools.send_email.destructiveHint, true);
 	assert.equal(tools.label_conversation.readOnlyHint, false);
 	assert.equal(tools.label_conversation.destructiveHint, false);
+	assert.equal(tools.star_conversation.readOnlyHint, false);
+	assert.equal(tools.star_conversation.destructiveHint, false);
 });
 
 test("without a token /mcp answers 401 and points at its OAuth metadata", async () => {
@@ -263,6 +265,20 @@ test("read state and folder changes stick", async () => {
 	await ok("move_email", { mailboxId: MAILBOX, emailId: "e2", folderId: "archive" });
 	assert.deepEqual(listOf(await ok("list_emails", { mailboxId: MAILBOX, folder: "archive" })).map((e) => e.id), ["e2"]);
 	await ok("move_email", { mailboxId: MAILBOX, emailId: "e2", folderId: "inbox" });
+});
+
+test("a conversation can be starred and unstarred", async () => {
+	const starred = await ok("star_conversation", { mailboxId: MAILBOX, emailId: "e1", starred: true });
+	assert.equal(starred.status, "starred");
+	assert.deepEqual(found(await ok("search_all_mail", { starred: true })), ["e1"]);
+	assert.equal(!!(await ok("get_email", { mailboxId: MAILBOX, emailId: "e1" })).starred, true);
+
+	await ok("star_conversation", { mailboxId: MAILBOX, emailId: "e1", starred: false });
+	assert.deepEqual(found(await ok("search_all_mail", { starred: true })), []);
+
+	const missing = await call("star_conversation", { mailboxId: MAILBOX, emailId: "nope", starred: true });
+	assert.equal(missing.isError, true);
+	assert.match(missing.data.error, /not found/);
 });
 
 test("a label can be created, applied, searched, renamed and deleted", async () => {

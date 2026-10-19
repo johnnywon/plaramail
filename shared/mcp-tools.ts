@@ -34,6 +34,7 @@ export const MCP_TOOLS = [
 	{ name: "rename_label", group: "write", summary: "Rename a label" },
 	{ name: "label_conversation", group: "write", summary: "Add or remove labels on a conversation" },
 	{ name: "label_matching", group: "write", summary: "Label everything a search matches" },
+	{ name: "star_conversation", group: "write", summary: "Star or unstar a conversation" },
 	{ name: "send_draft", group: "send", summary: "Send a saved draft" },
 	{ name: "reply_to_email", group: "send", summary: "Reply to an email now" },
 	{ name: "send_email", group: "send", summary: "Send a new email now" },

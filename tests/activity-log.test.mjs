@@ -21,6 +21,7 @@ test("every tool the agents and MCP expose has an action", () => {
 	const agent = readFileSync("workers/agent/index.ts", "utf8") + readFileSync("workers/agent/auto-draft.ts", "utf8");
 	const agentTools = [...agent.matchAll(/^\t+(\w+): defineTool\(/gm)].map((m) => m[1]);
 	assert.ok(mcpTools.length > 15 && agentTools.length > 15);
+	for (const name of ["label_conversation", "star_conversation"]) assert.ok(mcpTools.includes(name) && agentTools.includes(name), name);
 	for (const name of [...mcpTools, ...agentTools]) assert.ok(activity.TOOL_ACTIONS[name], `${name} has no action`);
 });
 
@@ -38,6 +39,11 @@ test("describeCall names the address, the target and what happened", () => {
 		{ mailboxId: MAILBOX, target: "e1", summary: "to archive · Email not found", ok: false },
 	);
 	assert.equal(activity.describeCall("search_all_mail", { query: "invoice" }, []).summary, "\"invoice\"");
+	assert.equal(activity.TOOL_ACTIONS.star_conversation, "label");
+	assert.deepEqual(
+		activity.describeCall("star_conversation", { mailboxId: MAILBOX, emailId: "e1", starred: false }, { status: "unstarred", emailId: "e1" }),
+		{ mailboxId: MAILBOX, target: "e1", summary: "unstarred", ok: true },
+	);
 });
 
 test("logged records the call and passes its result or error through", async () => {
