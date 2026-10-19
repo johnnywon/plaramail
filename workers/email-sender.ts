@@ -9,6 +9,7 @@
  *
  * See: https://developers.cloudflare.com/email-service/api/send-emails/workers-api/
  */
+import { htmlToTextAlternative } from "./lib/text-alternative";
 
 export interface SendEmailParams {
 	to: string | string[];
@@ -48,7 +49,9 @@ export async function sendEmail(
 	};
 
 	if (params.html) message.html = params.html;
-	if (params.text) message.text = params.text;
+	// HTML always goes with a text part for the mail service to send as its alternative (lib/text-alternative.ts).
+	const text = params.text || (params.html ? htmlToTextAlternative(params.html) : "");
+	if (text) message.text = text;
 	if (params.cc) message.cc = params.cc;
 	if (params.bcc) message.bcc = params.bcc;
 	if (params.replyTo) message.replyTo = params.replyTo;

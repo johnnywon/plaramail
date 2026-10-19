@@ -5,7 +5,8 @@
 import { type Context, Hono } from "hono";
 import pkg from "../package.json";
 import { cors } from "hono/cors";
-import PostalMime from "postal-mime";
+import { parseMail } from "./lib/parse-mail";
+import { bounceLink } from "./lib/bounce";
 import { z } from "zod";
 import { generateText } from "ai";
 import { deleteAttachmentFiles, type StoredAttachment } from "./lib/attachments";
@@ -801,7 +802,7 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 	}
 
 	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
-	const parsedEmail = await new PostalMime().parse(rawEmail);
+	const parsedEmail = await parseMail(rawEmail);
 	const extractMsgId = (s: string) => { const m = s.match(/<([^>]+)>/); return m ? m[1] : s.trim().split(/\s+/)[0]; };
 	const originalMessageId = parsedEmail.messageId ? extractMsgId(parsedEmail.messageId) : null;
 	const allRecipients = (parsedEmail.to || []).map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
@@ -844,10 +845,15 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 		}
 	}
 
-	const inReplyTo = parsedEmail.inReplyTo ? extractMsgId(parsedEmail.inReplyTo) : null;
+	// A bounce notice joins the conversation of the Sent message it is about (lib/bounce.ts).
+	const bounced = await bounceLink(recordsSql(env), mailboxId, parsedEmail).catch((e) => {
+		console.error("Bounce lookup failed:", (e as Error).message);
+		return null;
+	});
+	const inReplyTo = bounced?.link?.messageId ?? (parsedEmail.inReplyTo ? extractMsgId(parsedEmail.inReplyTo) : null);
 	const emailReferences = parsedEmail.references ? parsedEmail.references.split(/\s+/).filter(Boolean).map(extractMsgId) : [];
 	// Join a thread only through mail this mailbox already holds (lib/threading.ts).
-	const threadId = await withAttachmentCleanup(() => resolveThreadId(stub, {
+	const threadId = bounced?.link?.threadId ?? await withAttachmentCleanup(() => resolveThreadId(stub, {
 		messageId, inReplyTo, references: emailReferences,
 		subject: parsedEmail.subject || "", sender: (parsedEmail.from?.address || "").toLowerCase(),
 	}));
@@ -866,7 +872,7 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 	// Nothing drafts every email. New mail goes to the agent only when an enabled agent's
 	// addresses and rules take it, or the owner chose that the PluraMail Agent drafts what
 	// no agent takes. Rules only: no model call for mail nobody wants.
-	const automated = automatedMailReason(JSON.stringify(parsedEmail.headers), parsedEmail.from?.address);
+	const automated = bounced ? "bounce notice" : automatedMailReason(JSON.stringify(parsedEmail.headers), parsedEmail.from?.address);
 	const wanted = automated ? false : await agentsWant(env, {
 		mailboxId, from: (parsedEmail.from?.address || "").toLowerCase(), subject: parsedEmail.subject || "",
 		body: parsedEmail.text || (parsedEmail.html ? stripHtmlToText(parsedEmail.html) : ""),
