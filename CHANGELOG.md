@@ -37,7 +37,7 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 - The agent chat gets 20 steps instead of 5, and the last one has no tools: a run that reaches the limit ends by saying it stopped after 19 steps, what it finished and what is left, instead of stopping mid-task. Auto-draft keeps its 5 steps.
 - Redraft keeps the quoted original of a draft the composer has saved. The composer leaves an empty paragraph after the quote, and the quote was only found when it was the last thing in the body. The "On …, … wrote:" line the composer writes outside the quote stays with it.
 - List rows, the signature and two console texts are 13px instead of 14px, and every icon is 10, 12, 14, 16 or 20px, the sizes DESIGN.md lists. `tests/design-rules.test.mjs` checks both.
-- On macOS, the Console button's bottom-left corner and the agent input's and send button's bottom-right corners follow the window's round corner (`--window-corner`, 26px, less each one's inset). Other systems, phone widths, full screen and a page with vertical tabs, a side panel or docked DevTools beside it keep 6px. `<html>` carries `data-os="mac"` on a Mac.
+- On macOS, the agent input's and send button's bottom-right corners follow the window's round corner (`--window-corner`, 26px, less each one's inset). Other systems, phone widths, full screen and a page with vertical tabs, a side panel or docked DevTools beside it keep 6px. `<html>` carries `data-os="mac"` on a Mac.
 
 D1 migration: `0009_search_fold.sql` (folded substring search). `npm run deploy` applies it.
 

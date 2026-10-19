@@ -1872,12 +1872,11 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
 
 /* Window corners (WON-232). On macOS the window's bottom corners are round, so the controls that sit in them
    follow the curve: the corner nearest the window edge gets the window radius minus the control's inset from
-   that edge, never under 6px. The Console button sits 8px in (the footer's padding). The agent input sits
-   10px in and its send button 17px (wrap 10 + border 1 + padding 6), so the two stay concentric too.
+   that edge, never under 6px. The agent input sits 10px in and its send button 17px (wrap 10 + border 1 +
+   padding 6), so the two stay concentric too. The sidebar's Console button keeps 6px.
    Phone widths, other systems, full screen and a page with browser chrome beside it keep 6px (DESIGN.md, Radius). */
 :root { --window-corner: 26px; }
 @media (min-width: 768px) and (not (display-mode: fullscreen)) {
-  :root[data-os="mac"][data-window="normal"] .postal .pg-nav-foot > .pg-foot-btn:first-child { border-bottom-left-radius: max(6px, calc(var(--window-corner) - 8px)) !important; }
   :root[data-os="mac"][data-window="normal"] .postal .pg-agent-input { border-bottom-right-radius: max(6px, calc(var(--window-corner) - 10px)) !important; }
   :root[data-os="mac"][data-window="normal"] .postal .pg-agent-input .pg-return { border-bottom-right-radius: max(6px, calc(var(--window-corner) - 17px)) !important; }
 }
