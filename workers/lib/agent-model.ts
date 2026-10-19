@@ -12,7 +12,7 @@
  */
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModel } from "ai";
+import { extractReasoningMiddleware, type LanguageModel, type LanguageModelMiddleware, wrapLanguageModel } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import {
 	type CatalogModel, isFree, isProvider, KEYED_PROVIDERS, type KeyedProvider,
@@ -166,19 +166,35 @@ export async function openRouterZdr(env: Env, id: string): Promise<boolean> {
 }
 
 /**
- * Workers AI models that reason before answering by default and take
- * `reasoning_effort: "none"`. Kimi K2.6 spent about 38 s thinking before a
- * two-line email reply; without it the reply comes in a few seconds.
+ * Workers AI models that reason before answering by default, with the lowest
+ * `reasoning_effort` each takes. Kimi K2.6 spent about 38 s thinking before a
+ * two-line email reply; without it the reply comes in a few seconds. GLM 5.3
+ * Flash can't turn reasoning off ("none" means its highest level), only down.
  */
-export const REASONING_OPTIONAL = new Set(["@cf/moonshotai/kimi-k2.6"]);
+export const LOWEST_REASONING: Readonly<Record<string, string>> = {
+	"@cf/moonshotai/kimi-k2.6": "none",
+	"@cf/zai-org/glm-5.3-flash": "low",
+};
 
-/** The AI binding with reasoning off on every call. The provider can't pass model inputs it doesn't know. */
-function withoutReasoning(ai: Ai): Ai {
+/**
+ * Models whose chat replies carried their reasoning as answer text (#61).
+ * Chat runs them at their lowest effort too, which leaves less of it to leak.
+ */
+export const CHAT_LOW_REASONING = new Set(["@cf/zai-org/glm-5.3-flash"]);
+
+/** The `reasoning_effort` to send, or undefined for the model's default. */
+export function reasoningEffort(id: string, options: { reasoning?: boolean; chat?: boolean } = {}): string | undefined {
+	if (options.reasoning === false || (options.chat && CHAT_LOW_REASONING.has(id))) return LOWEST_REASONING[id];
+	return undefined;
+}
+
+/** The AI binding with `reasoning_effort` on every call. The provider can't pass model inputs it doesn't know. */
+function withReasoningEffort(ai: Ai, effort: string): Ai {
 	return new Proxy(ai, {
 		get(target, prop) {
 			if (prop === "run") {
 				return (model: string, inputs: Record<string, unknown>, options?: unknown) =>
-					(target.run as (...a: unknown[]) => unknown)(model, { ...inputs, reasoning_effort: "none" }, options);
+					(target.run as (...a: unknown[]) => unknown)(model, { ...inputs, reasoning_effort: effort }, options);
 			}
 			const value = (target as unknown as Record<PropertyKey, unknown>)[prop];
 			return typeof value === "function" ? value.bind(target) : value;
@@ -187,19 +203,62 @@ function withoutReasoning(ai: Ai): Ai {
 }
 
 /**
- * A language model for any provider. `reasoning: false` skips the thinking
- * step on models that allow it. `zdr` (OpenRouter) holds requests to zero
- * retention endpoints; it defaults to on.
+ * Earlier reasoning is left out of what goes back to a Workers AI model. The
+ * provider would send it as part of the assistant's reply text, and the model
+ * then writes its reasoning into the reply too (#61).
  */
-export function languageModel(env: Env, ref: ModelRef, key?: string, options: { reasoning?: boolean; zdr?: boolean } = {}): LanguageModel {
+export const dropReasoningInput: LanguageModelMiddleware = {
+	specificationVersion: "v3",
+	transformParams: async ({ params }) => {
+		const prompt: typeof params.prompt = [];
+		for (const message of params.prompt) {
+			if (message.role !== "assistant") {
+				prompt.push(message);
+				continue;
+			}
+			const content = message.content.filter((part) => part.type !== "reasoning");
+			if (content.length) prompt.push({ ...message, content });
+		}
+		return { ...params, prompt };
+	},
+};
+
+/**
+ * A step with no active tools (the chat run's last step, #29) goes out with
+ * no `tools` field rather than an empty list, which Workers AI may refuse.
+ */
+export const noEmptyTools: LanguageModelMiddleware = {
+	specificationVersion: "v3",
+	transformParams: async ({ params }) =>
+		params.tools && params.tools.length === 0 ? { ...params, tools: undefined, toolChoice: undefined } : params,
+};
+
+/**
+ * A language model for any provider. `reasoning: false` skips or lowers the
+ * thinking step on models that allow it; `chat` lowers it on models listed in
+ * CHAT_LOW_REASONING. `zdr` (OpenRouter) holds requests to zero retention
+ * endpoints; it defaults to on.
+ *
+ * Reasoning comes back as reasoning parts, not reply text: the providers read
+ * `reasoning_content`, and a reply that wraps it in <think> tags is split here.
+ */
+export function languageModel(env: Env, ref: ModelRef, key?: string, options: { reasoning?: boolean; chat?: boolean; zdr?: boolean } = {}): LanguageModel {
+	const think = extractReasoningMiddleware({ tagName: "think" });
 	switch (ref.provider) {
 		case "openrouter":
-			return createOpenAICompatible({
-				name: "openrouter", baseURL: OPENROUTER_BASE, apiKey: key, headers: { "X-Title": "PluraMail" }, fetch: privacyFetch(options.zdr ?? true),
-			}).chatModel(ref.id);
+			return wrapLanguageModel({
+				model: createOpenAICompatible({
+					name: "openrouter", baseURL: OPENROUTER_BASE, apiKey: key, headers: { "X-Title": "PluraMail" }, fetch: privacyFetch(options.zdr ?? true),
+				}).chatModel(ref.id),
+				middleware: think,
+			});
 		default: {
-			const binding = options.reasoning === false && REASONING_OPTIONAL.has(ref.id) ? withoutReasoning(env.AI) : env.AI;
-			return createWorkersAI({ binding })(ref.id as Parameters<ReturnType<typeof createWorkersAI>>[0]);
+			const effort = reasoningEffort(ref.id, options);
+			const binding = effort ? withReasoningEffort(env.AI, effort) : env.AI;
+			return wrapLanguageModel({
+				model: createWorkersAI({ binding })(ref.id as Parameters<ReturnType<typeof createWorkersAI>>[0]),
+				middleware: [dropReasoningInput, noEmptyTools, think],
+			});
 		}
 	}
 }
@@ -222,9 +281,10 @@ export async function quickModel(env: Env): Promise<LanguageModel> {
 
 /**
  * The model the agent should use right now. Drafts pass `reasoning: false`:
- * a short reply doesn't need the long thinking step chat gets.
+ * a short reply doesn't need the long thinking step chat gets. The chat panel
+ * passes `chat: true`.
  */
-export async function agentModel(env: Env, options: { reasoning?: boolean } = {}): Promise<LanguageModel> {
+export async function agentModel(env: Env, options: { reasoning?: boolean; chat?: boolean } = {}): Promise<LanguageModel> {
 	if (DEMO) return languageModel(env, { provider: "workers-ai", id: DEMO_AI_MODEL }, undefined, options);
 	const config = await readAgentModelConfig(env);
 	let active = activeModel(config);

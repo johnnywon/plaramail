@@ -7,13 +7,15 @@ import {
 	streamText,
 	generateText,
 	convertToModelMessages,
+	createUIMessageStreamResponse,
 	stepCountIs,
 } from "ai";
 import { z } from "zod";
 import { HeaderValueSchema } from "../lib/schemas";
 import { verifyDraft } from "../lib/ai";
 import { agentModel } from "../lib/agent-model";
-import { CHAT_STEP_LIMIT, chatPrepareStep } from "./chat-steps";
+import { CHAT_STEP_LIMIT, chatPrepareStep, withStepLimitLine } from "./chat-steps";
+import { pruneHistory } from "./chat-history";
 import { mailStore, recordsSql } from "../store";
 import { logActivity } from "../lib/activity";
 import {
@@ -401,7 +403,7 @@ export class EmailAgent extends AIChatAgent<any> {
 		// The chat panel uses the shared instance; per-address instances serve "Draft reply".
 		const bound = this.name === SHARED_AGENT ? null : this.name;
 		const known = (await mailStore(env).mailboxes.list()).map((m) => m.id.toLowerCase());
-		const model = await agentModel(env);
+		const model = await agentModel(env, { chat: true });
 		const tools = logTools(createEmailTools(env, bound, { crossAddress: true, known }), recordsSql(env), { actor: "chat", bound });
 		// Each address has its own prompt. The shared panel uses the open mail's address.
 		const prompt = await getSystemPrompt(env, promptAddress(bound, options?.body, known));
@@ -410,14 +412,16 @@ export class EmailAgent extends AIChatAgent<any> {
 		const result = streamText({
 			model,
 			system: systemPrompt,
-			messages: await convertToModelMessages(this.messages),
+			// Old tool output and reasoning are cut before the run; every step resends this (#65).
+			messages: pruneHistory(await convertToModelMessages(this.messages)),
 			tools,
 			stopWhen: stepCountIs(CHAT_STEP_LIMIT),
 			prepareStep: chatPrepareStep(systemPrompt),
 			onFinish,
 		});
 
-		return result.toUIMessageStreamResponse();
+		// Reasoning isn't shown or kept (#61). A run that ran out of steps says so in the panel (#29).
+		return createUIMessageStreamResponse({ stream: withStepLimitLine(result.toUIMessageStream({ sendReasoning: false })) });
 	}
 
 	/**
