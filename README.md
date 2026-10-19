@@ -10,7 +10,7 @@ Self-hosted webmail and MCP server for Cloudflare Email Routing. One Worker serv
 The interface is designed for the parts of email that still need a person: finding a verification code, opening a sign-in link, and working through what an agent has sorted and drafted.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/johnnywon/pluramail)
-[![Version 0.9.2](https://img.shields.io/badge/version-0.9.2-blue)](https://github.com/johnnywon/pluramail/releases)
+[![Version 0.9.3](https://img.shields.io/badge/version-0.9.3-blue)](https://github.com/johnnywon/pluramail/releases)
 [![CI](https://github.com/johnnywon/pluramail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/johnnywon/pluramail/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Runs on Cloudflare Workers](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/)
@@ -47,7 +47,7 @@ Pre-1.0. A minor release can require a D1 migration or a configuration change. [
 - Replies are sent from the address that received the message.
 - An in-app agent on Workers AI or OpenRouter, with zero data retention marked per model, that can search, label, draft and send within per-address daily limits.
 - An MCP server at `/mcp` with 24 tools. Clients sign in with OAuth 2.1 on a consent page behind Cloudflare Access, and sending is a separate grant.
-- Attachments, bulk actions with undo, scheduled send, signatures, rebindable keyboard shortcuts and a phone layout.
+- Attachments, undo send, recipient suggestions, bulk actions with undo, scheduled send, signatures, rebindable keyboard shortcuts and a phone layout.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/search-light.jpg">
@@ -112,7 +112,7 @@ A plain-text summary for language models is in [llms.txt](llms.txt).
                                   data retention)
 ```
 
-A single Worker handles inbound mail (`email()`), the HTTP API and UI, the MCP endpoint and a cron trigger for scheduled sends and attachment text. Mail metadata and search indexes are in one D1 database for all addresses; attachments and large bodies are in R2. The agent runs in a Durable Object. Details are in [docs/architecture.md](docs/architecture.md).
+A single Worker handles inbound mail (`email()`), the HTTP API and UI, the MCP endpoint and a cron trigger for scheduled sends, attachment text and, when set, Trash and Spam retention. Mail metadata and search indexes are in one D1 database for all addresses; attachments and large bodies are in R2. The agent runs in a Durable Object. Details are in [docs/architecture.md](docs/architecture.md).
 
 ## Security and data
 
@@ -159,7 +159,7 @@ Details are in [docs/roadmap.md](docs/roadmap.md). Use [issues](https://github.c
 
 ## Contributing
 
-Run `npm test`, `npm run typecheck` and `npm run build` before opening a pull request, and use `example.com`, `example.org` and `example.net` in config, docs and tests. See [docs/development.md](docs/development.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report security issues privately, as [SECURITY.md](SECURITY.md) describes.
 
 ## Credits and license
 

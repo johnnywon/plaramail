@@ -28,6 +28,7 @@ import {
 	saveUndoQuery,
 	takeUndoQuery,
 	threadKeyOfQuery,
+	planRetentionPurgeQuery,
 	trashCountQuery,
 	updateLabelQuery,
 	allLabelsQuery,
@@ -36,6 +37,7 @@ import {
 import { type MailFilter, type Query, folderViewsQuery, runAsync } from "../../lib/mail-index-sql";
 import { d1FacetsQuery, d1MailQuery, withSubstrings } from "../../lib/search-engine-sql";
 import {
+	contactsQuery,
 	createSavedSearchQuery,
 	deleteSavedSearchQuery,
 	listSavedSearchesQuery,
@@ -84,6 +86,10 @@ export class D1AllMail {
 
 	async suggest(filter: MailFilter, text: string, at: number) {
 		return this.#run(suggestQuery(filter, text, at));
+	}
+
+	async contacts(partial: string, exclude: string[]) {
+		return this.#run(contactsQuery(partial, exclude));
 	}
 
 	async listSavedSearches(counts?: { tzOffset: number }) {
@@ -152,6 +158,15 @@ export class D1AllMail {
 			throw e;
 		}
 		if (opSize(ops) === 0) return { deleted: 0, failed: [] };
+		const result = await applyOps(this.sql, ops);
+		await this.#deleteFiles(result.purged);
+		return { deleted: result.affected, failed: result.failed };
+	}
+
+	/** Purge mail that has been in Trash or Spam for more than `days` days, files included (WON-212). */
+	async purgeRetention(days: number, now = Date.now()) {
+		const ops = await this.#run(planRetentionPurgeQuery(days, now));
+		if (opSize(ops) === 0) return { deleted: 0, failed: [] as string[] };
 		const result = await applyOps(this.sql, ops);
 		await this.#deleteFiles(result.purged);
 		return { deleted: result.affected, failed: result.failed };

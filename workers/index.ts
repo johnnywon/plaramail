@@ -516,6 +516,14 @@ app.get("/api/v1/search/suggest", async (c) => {
 	}
 });
 
+/** Compose suggestions for a recipient field (WON-216): `q` is what is typed. Your own addresses are left out. */
+app.get("/api/v1/contacts", async (c) => {
+	const q = (new URL(c.req.url).searchParams.get("q") ?? "").slice(0, 100);
+	const store = mailStore(c.env);
+	const own = [...configuredAddresses(c.env), ...(await store.mailboxes.list()).map((m) => m.id)];
+	return c.json({ contacts: await store.all().contacts(q, own) });
+});
+
 /**
  * "Ask in plain words": one model call turns the request into search text.
  * The text comes back for the box; nothing runs here. A failure returns the

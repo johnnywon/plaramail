@@ -449,6 +449,8 @@ const api = {
 	emptyTrash: (expectedCount: number) => post<unknown>("/api/v1/mail/empty-trash", { expectedCount }),
 
 	// Search window
+	contacts: (q: string, opts?: { signal?: AbortSignal }) =>
+		request<{ contacts: SuggestPerson[] }>(`/api/v1/contacts?${new URLSearchParams({ q })}`, { method: "GET", signal: opts?.signal }),
 	suggest: (params: URLSearchParams, opts?: { signal?: AbortSignal }) =>
 		request<Suggestions>(`/api/v1/search/suggest?${params}`, { method: "GET", signal: opts?.signal }),
 	getSavedSearches: (tzOffset = new Date().getTimezoneOffset()) =>

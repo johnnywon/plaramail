@@ -93,7 +93,7 @@ const attachmentSchema = z.object({
 	contentBase64: z.string().describe("The file, base64 encoded"),
 });
 const attachmentsSchema = z.array(attachmentSchema).max(MCP_ATTACHMENTS_MAX).optional()
-	.describe(`Files to attach. Up to ${MCP_ATTACHMENTS_MAX}, ${MCP_ATTACHMENT_BYTES_MAX / 1024 / 1024} MB together.`);
+	.describe(`Files to attach. Up to ${MCP_ATTACHMENTS_MAX}, ${MCP_ATTACHMENT_BYTES_MAX / 1024 / 1024} MB together. The whole message, with files base64 encoded, must be 5 MB or less, so about 3.7 MB of files.`);
 const idempotencyKeySchema = z.string().regex(/^[A-Za-z0-9._:-]{8,80}$/)
 	.describe("A key you make up for this send, 8 to 80 letters, digits, or . _ : -. Retrying with the same key never sends twice.");
 
