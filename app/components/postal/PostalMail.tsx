@@ -502,9 +502,9 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 		return state;
 	};
 
-	const editDraft = async (mailboxId: string, draftId: string, cached?: Email) => {
+	const editDraft = async (mailboxId: string, draftId: string, cached?: Email, askAgent?: boolean) => {
 		try {
-			openCompose(draftState(mailboxId, cached ?? (await api.getEmail(mailboxId, draftId))));
+			openCompose({ ...draftState(mailboxId, cached ?? (await api.getEmail(mailboxId, draftId))), askAgent });
 		} catch {
 			showToast({ text: "Could not open the draft.", icon: <WarningIcon size={ICON} /> });
 		}
@@ -869,7 +869,7 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 										setInline(null);
 									}}
 									onEditSignatures={() => openConsole("signatures")}
-									onEditDraft={(draft) => open && editDraft(open.mailboxId, draft.id, draft)}
+									onEditDraft={(draft, askAgent) => open && editDraft(open.mailboxId, draft.id, draft, askAgent)}
 									draftWithAgent={draftWithAgent}
 									replyRequest={replyRequest}
 									labelRequest={labelRequest}

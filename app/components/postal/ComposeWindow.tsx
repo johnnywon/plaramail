@@ -15,6 +15,7 @@ import EmailIframe from "~/components/EmailIframe";
 import { DRAFT_ORIGIN_LABELS, REDRAFT_INSTRUCTION_MAX } from "shared/draft-notes";
 import api from "~/services/api";
 import { type DraftResult, useDraftWithAgent } from "./Agent";
+import { ownText, skipSave } from "./draft-start";
 import {
 	type AddressInfo, type ComposeMode, type ComposeState, composeSizeError, emptyCompose, sentText, isValidAddress, parseRecipient, readFiles, type Recipient, takeHandoff,
 	textToParagraphs, useAddressInfo, useMailSender, usesSignature,
@@ -228,7 +229,8 @@ export function Composer(props: ComposerProps) {
 	const [error, setError] = useState<string | null>(null);
 	const [saved, setSaved] = useState(false);
 	const [busy, setBusy] = useState(false);
-	const [agentBusy, setAgentBusy] = useState(false);
+	// Opened by Draft reply on the reply bar: "Drafting…" shows from the first paint (#60).
+	const [agentBusy, setAgentBusy] = useState(!!props.initial.askAgent);
 	const [instruction, setInstruction] = useState("");
 	const queryClient = useQueryClient();
 	const [editor, setEditor] = useState<TipTap | null>(null);
@@ -243,6 +245,8 @@ export function Composer(props: ComposerProps) {
 	// A redraft replaces the draft; a save with the old id meanwhile would leave a stray copy.
 	const redrafting = useRef(false);
 	const asked = useRef(false);
+	// Opened only for the agent to draft: an empty body is not a draft to save.
+	const openedToDraft = useRef(!!props.initial.askAgent);
 	const inline = variant === "inline";
 	const reply = state.mode !== "new";
 
@@ -271,7 +275,8 @@ export function Composer(props: ComposerProps) {
 	const [dropping, setDropping] = useState(false);
 	const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes("Files");
 
-	const hasContent = (s: ComposeState) => !!(s.to.length || s.cc.length || s.bcc.length || s.html.replace(/<[^>]+>/g, "").trim() || (s.mode === "new" && s.subject.trim()));
+	// A reply opened for the agent has its recipients filled in, but isn't a draft until its body has text.
+	const hasContent = (s: ComposeState) => !skipSave(openedToDraft.current, s.html) && !!(s.to.length || s.cc.length || s.bcc.length || s.html.replace(/<[^>]+>/g, "").trim() || (s.mode === "new" && s.subject.trim()));
 
 	const saveNow = () => {
 		saving.current = saving.current.then(async () => {
@@ -368,12 +373,16 @@ export function Composer(props: ComposerProps) {
 		finish("Draft discarded");
 	};
 
-	const askAgent = async () => {
-		if (agentBusy) return;
+	/** `opening`: the ask the reply bar's Draft reply makes on open, which starts out busy. */
+	const askAgent = async (opening = false) => {
+		if (agentBusy && !opening) return;
 		setAgentBusy(true);
 		setError(null);
 		try {
 			const r = await props.draftWithAgent(stateRef.current);
+			// The agent saves its own draft. An empty draft this composer reopened is deleted.
+			const before = stateRef.current;
+			if (r.draftId && before.draftId && before.draftId !== r.draftId && !ownText(before.html)) sender.discard(before);
 			const html = r.text ? textToParagraphs(r.text) : r.html ?? "";
 			if (html) patch({ html, ...(r.draftId ? { draftId: r.draftId, notes: { origin: "chat", agent: null, instructions: [] } } : {}) });
 		} catch (e) {
@@ -425,7 +434,7 @@ export function Composer(props: ComposerProps) {
 		if (!props.initial.askAgent || asked.current) return;
 		asked.current = true;
 		setState((s) => ({ ...s, askAgent: false }));
-		askAgent();
+		askAgent(true);
 	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 	const customAt = new Date(`${customDate}T${customTime}`);

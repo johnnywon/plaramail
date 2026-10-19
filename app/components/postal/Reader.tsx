@@ -17,6 +17,7 @@ import type { Email } from "~/types";
 import type { DraftResult } from "./Agent";
 import type { AddressInfo, ComposeMode, ComposeState, useMailSender } from "./compose";
 import { Composer } from "./ComposeWindow";
+import { ownText } from "./draft-start";
 import { AddressText, type Identities, LabelTag, Swatch } from "./identity";
 import { formatSize, fullDate, type MailAction, nameFromHeaders } from "./model";
 import type { Prefs } from "./prefs";
@@ -48,7 +49,8 @@ export interface ReaderProps {
 	startReply: (mode: Exclude<ComposeMode, "new">, original: Email, keep?: ComposeState, askAgent?: boolean) => void;
 	sender: Sender;
 	onPopOut: (state: ComposeState) => void;
-	onEditDraft: (draft: Email) => void;
+	/** `askAgent`: open it and have the agent draft into it. */
+	onEditDraft: (draft: Email, askAgent?: boolean) => void;
 	onEditSignatures: () => void;
 	draftWithAgent: (state: ComposeState) => Promise<DraftResult>;
 	replyRequest: { mode: Exclude<ComposeMode, "new">; id: number } | null;
@@ -247,10 +249,28 @@ export function Reader(props: ReaderProps) {
 						)}
 					</div>
 					{draft && !props.inline ? (
-						<button type="button" className="pg-reply-bar" onClick={() => props.onEditDraft(draft)}>
-							<PencilSimpleLineIcon size={16} style={{ flex: "none" }} />
-							<span className="pg-flex pg-ellipsis">Edit draft</span>
-						</button>
+						// A draft with no text of its own, such as an empty reply left by a failed Draft reply (#60), keeps Draft reply beside it.
+						ownText(draft.body ?? "") ? (
+							<button type="button" className="pg-reply-bar" onClick={() => props.onEditDraft(draft)}>
+								<PencilSimpleLineIcon size={16} style={{ flex: "none" }} />
+								<span className="pg-flex pg-ellipsis">Edit draft</span>
+							</button>
+						) : (
+							<div className="pg-reply-bar">
+								<button type="button" className="pg-reply-main" onClick={() => props.onEditDraft(draft)}>
+									<PencilSimpleLineIcon size={16} style={{ flex: "none" }} />
+									<span className="pg-flex pg-ellipsis">Edit draft</span>
+								</button>
+								<button
+									type="button"
+									className="pg-btn pg-btn-agent"
+									title="Draft reply · The agent writes a first draft. Nothing is sent."
+									onClick={() => props.onEditDraft(draft, true)}
+								>
+									<AgentIcon size={14} weight="fill" />Draft reply
+								</button>
+							</div>
+						)
 					) : props.inline ? (
 						<Composer
 							key={props.inline.key}
