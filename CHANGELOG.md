@@ -154,7 +154,7 @@ The Console is a page of its own, with hired agents, and MCP clients sign in wit
 - `/mcp` takes OAuth bearer tokens only. Anything that reached it with an Access service token must reconnect through OAuth.
 - Bind a KV namespace as `OAUTH_KV` (`npx wrangler kv namespace create OAUTH_KV`, id into `kv_namespaces`).
 - Add an Access application with a **Bypass** policy for `/mcp` and `/.well-known` on the same hostname. `/authorize` stays behind Access. Console > MCP warns with these paths until clients can get through.
-- `AUTO_DRAFT_ENABLED` is removed. A deployment that relied on it drafting every email now drafts only through agents, or through the PlaraMail Agent if you turn on drafting for mail no agent takes.
+- `AUTO_DRAFT_ENABLED` is removed. A deployment that relied on it drafting every email now drafts only through agents, or through the PluraMail Agent if you turn on drafting for mail no agent takes.
 
 ### Console
 
@@ -168,7 +168,7 @@ The Console is a page of its own, with hired agents, and MCP clients sign in wit
 - Each agent has one job on the addresses you choose and runs in Watch or Draft. Send arrives in 0.10. New agents start in Watch. Agents take mail in list order: when two agents' jobs fit, the higher one takes it. Drag to reorder.
 - New agent is three steps: Job (with starting points: decline pitches, ask for missing details, acknowledge, answer FAQs), Addresses, Name.
 - Each agent has a daily limit (25 by default) and two replies a day to one sender, and replies only to the sender of the message it took.
-- Nothing drafts every email. New mail goes to the agent only when an enabled agent's addresses and rules take it, or you choose that the PlaraMail Agent drafts mail no agent takes. "When no agent matches" defaults to leaving it. Rules are checked before any model call.
+- Nothing drafts every email. New mail goes to the agent only when an enabled agent's addresses and rules take it, or you choose that the PluraMail Agent drafts mail no agent takes. "When no agent matches" defaults to leaving it. Rules are checked before any model call.
 - Draft review shows drafts waiting for you as mail rows.
 - Agent drafts and Redraft run Kimi K2.6 with `reasoning_effort: "none"`: a draft takes 8 to 9 s instead of 45 to 50. Chat keeps full reasoning.
 
@@ -206,7 +206,7 @@ Motion. Everything that opens and closes moves on one curve.
 - Reduced motion turns all of it off.
 - Key hints next to controls are off by default; turn them on in Settings > General. A deployment that already saved its settings keeps its choice. Tooltips and Settings > Shortcuts show keys either way; before, turning hints off emptied the keys in both.
 - The agent panel names the open email while you search, even when the search leaves that email out of the list; it said "(no subject)".
-- The MCP server reports its name as `plaramail` and the app's version; it said `agentic-inbox` 1.0.0.
+- The MCP server reports its name as `pluramail` and the app's version; it said `agentic-inbox` 1.0.0.
 - README: When it fits and For agents sections, and an `llms.txt` summary. The roadmap adds sign-in and roles for teams. `AGENTS.md` sets the writing voice.
 
 No D1 migration.
@@ -236,7 +236,7 @@ The app is readable to browser agents, and a demo build fills itself with sample
 
 ### Upgrading
 
-- Build env vars are `PLARAMAIL_WRANGLER_CONFIG` and `PLARAMAIL_PUBLIC_DIR`. Set them in a deploy repo's scripts.
+- Build env vars are `PLURAMAIL_WRANGLER_CONFIG` and `PLURAMAIL_PUBLIC_DIR`. Set them in a deploy repo's scripts.
 - Browser layout (collapsed panels) starts from the defaults once.
 
 ### Readable to browser agents
@@ -256,8 +256,8 @@ Agents that drive a browser, such as Aside, gstack browse, Playwright and Claude
 
 ### Demo build
 
-- `PLARAMAIL_DEMO=1 npm run build` makes a demo build. On its first API request it writes the sample inbox (about 470 messages, 62 attachments, 12 labels, 3 saved searches) into an empty database, with the newest message minutes old. A normal build carries none of it.
-- A demo sends nothing and needs no sign-in. Send, reply, forward and scheduled send return 403. The PlaraMail Agent, Draft, auto-draft and the MCP server are off, and their controls are hidden. Settings are read-only. Incoming mail is rejected. Cloudflare Access is skipped.
+- `PLURAMAIL_DEMO=1 npm run build` makes a demo build. On its first API request it writes the sample inbox (about 470 messages, 62 attachments, 12 labels, 3 saved searches) into an empty database, with the newest message minutes old. A normal build carries none of it.
+- A demo sends nothing and needs no sign-in. Send, reply, forward and scheduled send return 403. The PluraMail Agent, Draft, auto-draft and the MCP server are off, and their controls are hidden. Settings are read-only. Incoming mail is rejected. Cloudflare Access is skipped.
 - Visitors can read, search, archive, delete, star, label and save drafts. The cron writes the sample inbox again every hour on the hour, over everything visitors changed.
 - `GET /api/v1/config` returns `demo`.
 - `npm run test:build` builds both ways and checks that only the demo build carries the sample inbox. CI runs it in place of `npm run build`.
@@ -341,7 +341,7 @@ D1 migration: `0006_agent_reliability.sql`. `npm run deploy` applies it. Deploy 
 
 Durable Object mail storage removed.
 
-- **Breaking:** mail is stored only in D1. A deployment still on `"STORAGE": "do"` must move to D1 on 0.5.x first ([Moving to D1 in the v0.5.1 docs](https://github.com/johnnywon/plaramail/blob/v0.5.1/docs/setup.md#moving-to-d1)). 0.6 adds the `v5` Durable Object migration with `deleted_classes: ["MailboxDO", "MailIndexDO"]`, which deletes the mail still in them when it deploys.
+- **Breaking:** mail is stored only in D1. A deployment still on `"STORAGE": "do"` must move to D1 on 0.5.x first ([Moving to D1 in the v0.5.1 docs](https://github.com/johnnywon/pluramail/blob/v0.5.1/docs/setup.md#moving-to-d1)). 0.6 adds the `v5` Durable Object migration with `deleted_classes: ["MailboxDO", "MailIndexDO"]`, which deletes the mail still in them when it deploys.
 - A deploy config that supplies its own `migrations` must append `{ "tag": "v5", "deleted_classes": ["MailboxDO", "MailIndexDO"] }` and drop the `MAILBOX` and `MAIL_INDEX` bindings.
 - Removed: the `STORAGE` and `INDEX_SYNC_ENABLED` vars, the `MAILBOX` and `MAIL_INDEX` bindings, the copy to D1 with its cron step and `/api/v1/admin/migrate-to-d1` routes, and `/api/v1/index/status` and `/api/v1/index/rebuild`. The Storage tab's counts come from `/api/v1/storage/status`.
 - The R2 `mailboxes/*.json` records are no longer read; D1's `mailboxes` table has held mailbox settings since 0.5. They can be deleted from the bucket.
@@ -360,7 +360,7 @@ No D1 migration.
 D1 by default.
 
 - A new deployment stores mail in D1. `wrangler.jsonc` binds a `DB` database and sets `"STORAGE": "d1"`. The Deploy to Cloudflare button creates the database; by hand, run `npx wrangler d1 create <name>` and copy the id into `d1_databases`.
-- **Upgrading a deployment that still stores mail in Durable Objects:** set `"STORAGE": "do"` in `vars` before you deploy 0.5.0, or the app opens on an empty D1 database. Nothing is lost; setting `do` and deploying brings the mail back. Then move with [Moving to D1](https://github.com/johnnywon/plaramail/blob/v0.5.1/docs/setup.md#moving-to-d1). The Durable Object store is removed in 0.6.
+- **Upgrading a deployment that still stores mail in Durable Objects:** set `"STORAGE": "do"` in `vars` before you deploy 0.5.0, or the app opens on an empty D1 database. Nothing is lost; setting `do` and deploying brings the mail back. Then move with [Moving to D1](https://github.com/johnnywon/pluramail/blob/v0.5.1/docs/setup.md#moving-to-d1). The Durable Object store is removed in 0.6.
 - `npm run deploy` applies D1 migrations before it deploys.
 - Each address has its own agent prompt. Settings > Agent edits one address at a time, with "Use for every address" to copy one. Draft reply and auto-draft use their address's prompt; the chat panel uses the prompt of the address whose mail is open, or the default when nothing is open.
 - The deploy button's form asks for `EMAIL_ADDRESSES` and explains the Access placeholders. `EMAIL_ADDRESSES` can be a list or a comma-separated string.

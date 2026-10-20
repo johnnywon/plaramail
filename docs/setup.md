@@ -183,7 +183,7 @@ To rename a deployment, do it in two steps. The first moves the Worker and copie
 
 The Worker's Durable Objects hold the chat agent's conversations and MCP sessions. A transfer migration moves them to the new Worker with their storage. Mail, labels and settings are in D1 and stay where they are.
 
-1. In your config, set `name` to `<new>`. Leave the D1, R2 and KV entries as they are: bindings use the ids, so the new Worker reads the same data.
+1. In your config, set `name` to `<new>`. Leave the D1, R2 and KV entries as they are, so the new Worker reads the same data: D1 and KV bind by id, R2 by `bucket_name`.
 2. Replace the whole `migrations` list with one transfer. The new Worker has no migration history, so it must not run the create migrations again:
    ```jsonc
    "migrations": [
@@ -211,7 +211,7 @@ The Worker's Durable Objects hold the chat agent's conversations and MCP session
 
 ### 2. R2, queues and D1
 
-R2 buckets and D1 databases cannot be renamed. Bindings use ids, so the names are labels in your config and the dashboard.
+R2 buckets and D1 databases cannot be renamed. A D1 binding uses `database_id`, so `database_name` is only a label. An R2 binding uses `bucket_name`, so a new name means a new bucket.
 
 R2: create the new bucket, copy, switch, copy again.
 
