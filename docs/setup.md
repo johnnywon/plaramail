@@ -4,7 +4,7 @@ Everything needed to run PlaraMail on your own Cloudflare account. Back to the [
 
 ## Deploy with the button
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/johnnywon/pluramail)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/johnnywon/plaramail)
 
 The button copies this repo to your GitHub account, creates the R2 bucket, the D1 database, the KV namespace and the Durable Objects, then builds, applies the D1 migrations and deploys. Its form asks for `DOMAINS` and `EMAIL_ADDRESSES`. Enter the addresses comma-separated; every address must belong to a domain in `DOMAINS`. Leave the `POLICY_AUD` and `TEAM_DOMAIN` placeholders: every request returns the "Access must be configured" error until step 5 below replaces them. Then do steps 5 to 8 below: Access, Email Routing, Email Sending, and the check.
 
@@ -137,7 +137,7 @@ Then uncomment `queues` in `wrangler.jsonc` and deploy. Keep `max_retries` at 3.
 
 ## Upgrading from Durable Object storage
 
-Before 0.5, mail was stored in one Durable Object per address, with a combined index in another. 0.6 deletes that storage and the mail in it. A deployment still on it (`"STORAGE": "do"`) must upgrade to 0.5.x first, copy its mail to D1 ([Moving to D1 in the v0.5.1 docs](https://github.com/johnnywon/pluramail/blob/v0.5.1/docs/setup.md#moving-to-d1)) and switch to `"STORAGE": "d1"`, then install 0.6.
+Before 0.5, mail was stored in one Durable Object per address, with a combined index in another. 0.6 deletes that storage and the mail in it. A deployment still on it (`"STORAGE": "do"`) must upgrade to 0.5.x first, copy its mail to D1 ([Moving to D1 in the v0.5.1 docs](https://github.com/johnnywon/plaramail/blob/v0.5.1/docs/setup.md#moving-to-d1)) and switch to `"STORAGE": "d1"`, then install 0.6.
 
 ## Demo build
 

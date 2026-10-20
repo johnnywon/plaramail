@@ -341,7 +341,7 @@ D1 migration: `0006_agent_reliability.sql`. `npm run deploy` applies it. Deploy 
 
 Durable Object mail storage removed.
 
-- **Breaking:** mail is stored only in D1. A deployment still on `"STORAGE": "do"` must move to D1 on 0.5.x first ([Moving to D1 in the v0.5.1 docs](https://github.com/johnnywon/pluramail/blob/v0.5.1/docs/setup.md#moving-to-d1)). 0.6 adds the `v5` Durable Object migration with `deleted_classes: ["MailboxDO", "MailIndexDO"]`, which deletes the mail still in them when it deploys.
+- **Breaking:** mail is stored only in D1. A deployment still on `"STORAGE": "do"` must move to D1 on 0.5.x first ([Moving to D1 in the v0.5.1 docs](https://github.com/johnnywon/plaramail/blob/v0.5.1/docs/setup.md#moving-to-d1)). 0.6 adds the `v5` Durable Object migration with `deleted_classes: ["MailboxDO", "MailIndexDO"]`, which deletes the mail still in them when it deploys.
 - A deploy config that supplies its own `migrations` must append `{ "tag": "v5", "deleted_classes": ["MailboxDO", "MailIndexDO"] }` and drop the `MAILBOX` and `MAIL_INDEX` bindings.
 - Removed: the `STORAGE` and `INDEX_SYNC_ENABLED` vars, the `MAILBOX` and `MAIL_INDEX` bindings, the copy to D1 with its cron step and `/api/v1/admin/migrate-to-d1` routes, and `/api/v1/index/status` and `/api/v1/index/rebuild`. The Storage tab's counts come from `/api/v1/storage/status`.
 - The R2 `mailboxes/*.json` records are no longer read; D1's `mailboxes` table has held mailbox settings since 0.5. They can be deleted from the bucket.
@@ -360,7 +360,7 @@ No D1 migration.
 D1 by default.
 
 - A new deployment stores mail in D1. `wrangler.jsonc` binds a `DB` database and sets `"STORAGE": "d1"`. The Deploy to Cloudflare button creates the database; by hand, run `npx wrangler d1 create <name>` and copy the id into `d1_databases`.
-- **Upgrading a deployment that still stores mail in Durable Objects:** set `"STORAGE": "do"` in `vars` before you deploy 0.5.0, or the app opens on an empty D1 database. Nothing is lost; setting `do` and deploying brings the mail back. Then move with [Moving to D1](https://github.com/johnnywon/pluramail/blob/v0.5.1/docs/setup.md#moving-to-d1). The Durable Object store is removed in 0.6.
+- **Upgrading a deployment that still stores mail in Durable Objects:** set `"STORAGE": "do"` in `vars` before you deploy 0.5.0, or the app opens on an empty D1 database. Nothing is lost; setting `do` and deploying brings the mail back. Then move with [Moving to D1](https://github.com/johnnywon/plaramail/blob/v0.5.1/docs/setup.md#moving-to-d1). The Durable Object store is removed in 0.6.
 - `npm run deploy` applies D1 migrations before it deploys.
 - Each address has its own agent prompt. Settings > Agent edits one address at a time, with "Use for every address" to copy one. Draft reply and auto-draft use their address's prompt; the chat panel uses the prompt of the address whose mail is open, or the default when nothing is open.
 - The deploy button's form asks for `EMAIL_ADDRESSES` and explains the Access placeholders. `EMAIL_ADDRESSES` can be a list or a comma-separated string.

@@ -9,9 +9,9 @@ Self-hosted webmail and MCP server for Cloudflare Email Routing. One Worker serv
 
 The interface is designed for the parts of email that still need a person: finding a verification code, opening a sign-in link, and working through what an agent has sorted and drafted.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/johnnywon/pluramail)
-[![Version 0.9.5](https://img.shields.io/badge/version-0.9.5-blue)](https://github.com/johnnywon/pluramail/releases)
-[![CI](https://github.com/johnnywon/pluramail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/johnnywon/pluramail/actions/workflows/ci.yml)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/johnnywon/plaramail)
+[![Version 0.9.5](https://img.shields.io/badge/version-0.9.5-blue)](https://github.com/johnnywon/plaramail/releases)
+[![CI](https://github.com/johnnywon/plaramail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/johnnywon/plaramail/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Runs on Cloudflare Workers](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/)
 
@@ -38,7 +38,7 @@ It does not fit yet if you need separate logins and roles for a team, IMAP or SM
 
 ## Status
 
-Pre-1.0. A minor release can require a D1 migration or a configuration change. [CHANGELOG.md](CHANGELOG.md) lists the required steps for each release, and `npm run deploy` applies D1 migrations before it deploys. Pin a [release](https://github.com/johnnywon/pluramail/releases) tag to control when you upgrade.
+Pre-1.0. A minor release can require a D1 migration or a configuration change. [CHANGELOG.md](CHANGELOG.md) lists the required steps for each release, and `npm run deploy` applies D1 migrations before it deploys. Pin a [release](https://github.com/johnnywon/plaramail/releases) tag to control when you upgrade.
 
 ## Features
 
@@ -143,7 +143,7 @@ Each step, with commands, is in [docs/setup.md](docs/setup.md).
 - **Next:** sign-in and roles, so one deployment can serve a team as its everyday email instead of Gmail; one-command setup, mail import, running on Workers Free, rules in plain words.
 - **Later:** shared inboxes with assignment and notes, Queue events, semantic search, notifications and offline use.
 
-Details are in [docs/roadmap.md](docs/roadmap.md). Use [issues](https://github.com/johnnywon/pluramail/issues) for requests and bug reports.
+Details are in [docs/roadmap.md](docs/roadmap.md). Use [issues](https://github.com/johnnywon/plaramail/issues) for requests and bug reports.
 
 ## Docs
 

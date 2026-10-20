@@ -9,7 +9,7 @@ import { queryKeys } from "~/queries/keys";
 import api from "~/services/api";
 
 /** The source the GitHub glyph links to. The repo is public, so every deployment points here. */
-const REPO_URL = "https://github.com/johnnywon/pluramail";
+const REPO_URL = "https://github.com/johnnywon/plaramail";
 
 type Kind = "msg" | "sto" | "adr" | "upt";
 

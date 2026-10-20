@@ -20,7 +20,7 @@ const CLIENTS: { value: Client; label: string }[] = [
 	{ value: "other", label: "Other" },
 ];
 
-const REFERENCE = "https://github.com/johnnywon/pluramail/blob/main/docs/mcp.md";
+const REFERENCE = "https://github.com/johnnywon/plaramail/blob/main/docs/mcp.md";
 /** Zero Trust › Access › Applications. `:account` lets the dashboard ask which account. */
 const ACCESS_APPS = "https://dash.cloudflare.com/?to=/:account/one/access-controls/apps";
 
