@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-// Builds the app twice: PLURAMAIL_DEMO=1 must carry the sample inbox and the demo gate, a normal build must carry
+// Builds the app twice: PLARAMAIL_DEMO=1 must carry the sample inbox and the demo gate, a normal build must carry
 // neither. The normal build runs last, so build/ is left as a normal build. Run with npm run test:build.
 
 const SEED = /Cobalt Cloud|seed-mail-v|seed-alex-v|Partwell|sample-link|ensureDevMail|dev\/seed/;
@@ -18,14 +18,14 @@ function build(env) {
 const matching = (files, re) => files.filter(({ text }) => re.test(text)).map(({ f }) => f);
 
 test("a demo build carries the sample inbox and the demo gate", () => {
-	const files = build({ PLURAMAIL_DEMO: "1" });
+	const files = build({ PLARAMAIL_DEMO: "1" });
 	assert.ok(matching(files, SEED).length > 0, "sample inbox missing");
 	assert.ok(matching(files, /seed-alex-v/).length > 0, "Alex profile missing");
 	assert.ok(matching(files, GATE).length > 0, "demo gate missing");
 });
 
 test("a normal build carries neither", () => {
-	const files = build({ PLURAMAIL_DEMO: "" });
+	const files = build({ PLARAMAIL_DEMO: "" });
 	assert.deepEqual(matching(files, SEED), []);
 	assert.deepEqual(matching(files, GATE), []);
 });

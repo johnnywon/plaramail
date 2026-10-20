@@ -22,7 +22,7 @@ export default defineConfig({
 		{ name: "375px", use: { browserName: "chromium", viewport: { width: 375, height: 812 }, hasTouch: true } },
 	],
 	webServer: {
-		command: `npx wrangler d1 migrations apply DB --local -c ${CONFIG} --persist-to ${STATE} && PLURAMAIL_WRANGLER_CONFIG=${CONFIG} PLURAMAIL_PERSIST=${STATE} npx react-router dev --port ${PORT} --strictPort`,
+		command: `npx wrangler d1 migrations apply DB --local -c ${CONFIG} --persist-to ${STATE} && PLARAMAIL_WRANGLER_CONFIG=${CONFIG} PLARAMAIL_PERSIST=${STATE} npx react-router dev --port ${PORT} --strictPort`,
 		url: `http://localhost:${PORT}/health`,
 		reuseExistingServer: !process.env.CI,
 		timeout: 180_000,

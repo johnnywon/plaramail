@@ -117,7 +117,7 @@ function mcpView(response: { content?: { type: string; text?: string }[]; isErro
  */
 export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 	server = new McpServer({
-		name: "pluramail",
+		name: "plaramail",
 		version: pkg.version,
 	});
 

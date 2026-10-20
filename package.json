@@ -1,11 +1,11 @@
 {
-	"name": "pluramail",
+	"name": "plaramail",
 	"version": "0.9.5",
 	"private": true,
 	"license": "Apache-2.0",
 	"type": "module",
 	"cloudflare": {
-		"label": "PluraMail",
+		"label": "PlaraMail",
 		"products": [
 			"Workers",
 			"Durable Objects",
@@ -31,11 +31,11 @@
 	"scripts": {
 		"build": "react-router build",
 		"cf-typegen": "wrangler types",
-		"deploy": "[ -f build/server/wrangler.json ] || (echo 'Run npm run build first.' >&2; exit 1) && wrangler d1 migrations apply DB --remote -c \"${PLURAMAIL_WRANGLER_CONFIG:-wrangler.jsonc}\" && wrangler deploy",
+		"deploy": "[ -f build/server/wrangler.json ] || (echo 'Run npm run build first.' >&2; exit 1) && wrangler d1 migrations apply DB --remote -c \"${PLARAMAIL_WRANGLER_CONFIG:-wrangler.jsonc}\" && wrangler deploy",
 		"smoke": "bash scripts/smoke.sh",
 		"smoke:mail": "node scripts/smoke-mail.mjs",
 		"dev": "react-router dev",
-		"dev:local": "PLURAMAIL_WRANGLER_CONFIG=wrangler.local.jsonc react-router dev",
+		"dev:local": "PLARAMAIL_WRANGLER_CONFIG=wrangler.local.jsonc react-router dev",
 		"preview": "npm run build && vite preview",
 		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b",
 		"test": "node --test tests/*.test.mjs",

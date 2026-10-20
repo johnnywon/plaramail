@@ -7,9 +7,9 @@ import { statements } from "./helpers/schema.mjs";
 import { D1_SCHEMA } from "./helpers/d1-schema.mjs";
 import { loadTs } from "./helpers/sqlite.mjs";
 
-// A demo build (PLURAMAIL_DEMO=1): sample mail, no sends, two capped AI actions, no MCP, read-only settings, no sign-in, hourly reset.
+// A demo build (PLARAMAIL_DEMO=1): sample mail, no sends, two capped AI actions, no MCP, read-only settings, no sign-in, hourly reset.
 
-const DEMO_DEFINE = { __PLURAMAIL_DEMO__: "true" };
+const DEMO_DEFINE = { __PLARAMAIL_DEMO__: "true" };
 const asModule = (bundle) => import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 
 const { demoRefusal, demoBlocksPath, DEMO, demoAiCall, demoAiCap, claimDemoAiCall, DEMO_AI_DAILY } = await loadTs("workers/lib/demo.ts");
@@ -178,7 +178,7 @@ test("a demo needs no sign-in and has no MCP server or agent socket", async () =
 });
 
 test("a normal production build still fails closed without Access; /mcp answers with OAuth instead", async () => {
-	const fetchProd = await appWith({ __PLURAMAIL_DEMO__: "false" });
+	const fetchProd = await appWith({ __PLARAMAIL_DEMO__: "false" });
 	assert.equal((await fetchProd("/")).status, 500);
 	assert.equal((await fetchProd("/authorize")).status, 500, "the consent page is behind Access");
 	assert.equal((await fetchProd("/mcp")).status, 401, "MCP clients bring an OAuth token, not an Access sign-in");

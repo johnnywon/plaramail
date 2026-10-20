@@ -48,7 +48,7 @@ function providerFor(origin: string, web: Handler): OAuthProvider<Env> {
 		resourceMetadata: {
 			resource: `${origin}${MCP_ROUTE}`,
 			authorization_servers: [origin],
-			resource_name: "PluraMail",
+			resource_name: "PlaraMail",
 			bearer_methods_supported: ["header"],
 		},
 		clientIdMetadataDocumentEnabled: true,

@@ -1,6 +1,6 @@
 # Setup
 
-Everything needed to run PluraMail on your own Cloudflare account. Back to the [README](../README.md).
+Everything needed to run PlaraMail on your own Cloudflare account. Back to the [README](../README.md).
 
 ## Deploy with the button
 
@@ -20,8 +20,8 @@ Requirements: a domain on Cloudflare, R2, and Workers Paid for outbound email. T
 2. **Configure `wrangler.jsonc`.** Set `name`, `account_id`, `vars.APP_NAME`, `vars.DOMAINS`, and `vars.EMAIL_ADDRESSES`. Every address must belong to a domain in `DOMAINS`.
 3. **Create the R2 bucket, the D1 database and the KV namespace** named in `r2_buckets`, `d1_databases` and `kv_namespaces`:
    ```sh
-   npx wrangler r2 bucket create pluramail
-   npx wrangler d1 create pluramail
+   npx wrangler r2 bucket create plaramail
+   npx wrangler d1 create plaramail
    npx wrangler kv namespace create OAUTH_KV
    ```
    Copy the `database_id` that `d1 create` prints into the `DB` entry under `d1_databases`, and the `id` that `kv namespace create` prints into the `OAUTH_KV` entry under `kv_namespaces`. The KV namespace holds the MCP server's OAuth clients and tokens.
@@ -53,7 +53,7 @@ Requirements: a domain on Cloudflare, R2, and Workers Paid for outbound email. T
    npx wrangler@latest email routing enable example.com
    npx wrangler@latest email routing rules create example.com \
      --match-type literal --match-field to --match-value hello@example.com \
-     --action-type worker --action-value pluramail
+     --action-type worker --action-value plaramail
    ```
    `email routing enable` adds and locks Cloudflare MX records at the root of the domain. If that domain already receives mail elsewhere, such as Google Workspace, use a subdomain instead: add it under Email Routing > Settings > Subdomains in the dashboard, since Wrangler only enables whole domains. Rules for subdomain addresses are created on the parent domain.
 7. **Enable Email Sending** so the Worker can send replies. Cloudflare adds the SPF, DKIM and DMARC records:
@@ -95,7 +95,7 @@ _dmarc.example.com.  TXT  "v=DMARC1; p=none; rua=mailto:dmarc-reports@example.co
 
 The `rua` address can be one of your addresses in `EMAIL_ADDRESSES`. Once the reports show only your own sending passing, move to `p=quarantine`, then `p=reject`. The same applies to a subdomain you send from, under `_dmarc.mail.example.com`; without its own record a subdomain follows the parent's `sp=` or `p=`.
 
-Bounces: because Email Sending sets the Return-Path, most bounces for mail sent from PluraMail go to Cloudflare, not to your mailbox. When a bounce notice (a delivery status report) does reach a mailbox, PluraMail files it in the conversation of the Sent message it is about.
+Bounces: because Email Sending sets the Return-Path, most bounces for mail sent from PlaraMail go to Cloudflare, not to your mailbox. When a bounce notice (a delivery status report) does reach a mailbox, PlaraMail files it in the conversation of the Sent message it is about.
 
 ## Configuration
 
@@ -125,11 +125,11 @@ Console > MCP lists the apps you connected, with what each may do, and revokes t
 A queue retries an agent's draft that failed, for example on a model timeout. It is optional: without it each draft is tried once.
 
 ```bash
-npx wrangler queues create pluramail-drafts
-npx wrangler queues create pluramail-drafts-dlq
+npx wrangler queues create plaramail-drafts
+npx wrangler queues create plaramail-drafts-dlq
 ```
 
-Then uncomment `queues` in `wrangler.jsonc` and deploy. Keep `max_retries` at 3. Messages that fail every retry wait in `pluramail-drafts-dlq`, and their runs show as Failed in Console > Activity.
+Then uncomment `queues` in `wrangler.jsonc` and deploy. Keep `max_retries` at 3. Messages that fail every retry wait in `plaramail-drafts-dlq`, and their runs show as Failed in Console > Activity.
 
 ## D1 migrations
 
@@ -144,11 +144,11 @@ Before 0.5, mail was stored in one Durable Object per address, with a combined i
 A demo build comes up filled with the [sample inbox](development.md#sample-inbox) on an empty, migrated database, so you can show the app without real mail. Anyone who opens it can read, search, file, label, star, delete and save drafts.
 
 ```sh
-PLURAMAIL_DEMO=1 npm run build
+PLARAMAIL_DEMO=1 npm run build
 npm run deploy
 ```
 
-`PLURAMAIL_DEMO=1` is read at build time. A build without it carries none of the sample inbox or the demo code. A demo build:
+`PLARAMAIL_DEMO=1` is read at build time. A build without it carries none of the sample inbox or the demo code. A demo build:
 
 - Sends nothing. Send, reply, forward and scheduled send return 403 `Sending is off in the demo`. The cron sends no scheduled mail. Incoming mail is rejected.
 - Allows two AI actions, on a daily cap: turning plain words into a search, and Redraft on an agent's draft. Both use one Workers AI model that runs on the Workers Free plan (`DEMO_AI_MODEL` in `workers/lib/demo.ts`) whatever the model settings say. Together they stop after `DEMO_AI_DAILY` calls per UTC day across all visitors (default 200; `0` turns them off), then return 429 `The demo's AI calls for today are used up`. The count is in D1 (`ai_budget`), and the hourly reset keeps it. The agent, its panel, Draft and Draft reply, auto-draft and the model test stay off. `/agents/*`, `/mcp`, `/authorize` and the OAuth metadata return 403.
@@ -158,7 +158,7 @@ npm run deploy
 
 Sample times follow the time zone of the machine that ran the build.
 
-Give a demo its own Worker, D1 database and R2 bucket. Its Wrangler config keeps the cron trigger (the hourly reset runs on it) and leaves out `send_email`, so no real send can happen even if the demo gate were bypassed. Keep the `ai` binding for the two AI actions; without it they fail and nothing else changes. Set `EMAIL_ADDRESSES` to six addresses named `hello`, `billing`, `support`, `legal`, `ops` and `press` so every part of the sample inbox has its own mailbox. Run it locally with `PLURAMAIL_DEMO=1 npm run build && npx vite preview` against a migrated local database.
+Give a demo its own Worker, D1 database and R2 bucket. Its Wrangler config keeps the cron trigger (the hourly reset runs on it) and leaves out `send_email`, so no real send can happen even if the demo gate were bypassed. Keep the `ai` binding for the two AI actions; without it they fail and nothing else changes. Set `EMAIL_ADDRESSES` to six addresses named `hello`, `billing`, `support`, `legal`, `ops` and `press` so every part of the sample inbox has its own mailbox. Run it locally with `PLARAMAIL_DEMO=1 npm run build && npx vite preview` against a migrated local database.
 
 For the [Alex profile](demo-alex.md), set `SEED_PROFILE` to `alex` in the demo's `vars`, `EMAIL_ADDRESSES` to its nine addresses (`hello`, `support`, `billing`, `partners` and `ops` at `partwell.dev`, `alex` and `league` at `alexrivera.me`, `booking@latecommits.band` and `alex@riverbendcode.org`) and `DOMAINS` to `partwell.dev,alexrivera.me,latecommits.band,riverbendcode.org`. Its times are New York times on any machine, and links in its mail open a page in the app instead of leaving it.
 
@@ -167,8 +167,59 @@ For the [Alex profile](demo-alex.md), set `SEED_PROFILE` to `alex` in the demo's
 A deployment can keep its config and brand files outside this checkout, for example in a private repo that includes this one as a submodule. Build with:
 
 ```sh
-PLURAMAIL_WRANGLER_CONFIG=../wrangler.jsonc PLURAMAIL_PUBLIC_DIR=../public npm run build
+PLARAMAIL_WRANGLER_CONFIG=../wrangler.jsonc PLARAMAIL_PUBLIC_DIR=../public npm run build
 npm run deploy
 ```
 
-`PLURAMAIL_WRANGLER_CONFIG` replaces `wrangler.jsonc`. Paths inside it, such as `main` and the D1 `migrations_dir`, are relative to that file; with this repo as `engine/`, that is `"migrations_dir": "engine/migrations"`. `PLURAMAIL_PUBLIC_DIR` replaces `public/`, so it must hold the full set of brand files. `npm run deploy` then applies D1 migrations and deploys with the config the build wrote to `build/server/`.
+`PLARAMAIL_WRANGLER_CONFIG` replaces `wrangler.jsonc`. Paths inside it, such as `main` and the D1 `migrations_dir`, are relative to that file; with this repo as `engine/`, that is `"migrations_dir": "engine/migrations"`. `PLARAMAIL_PUBLIC_DIR` replaces `public/`, so it must hold the full set of brand files. `npm run deploy` then applies D1 migrations and deploys with the config the build wrote to `build/server/`.
+
+## Renaming a deployment
+
+A release that changes the names in the example `wrangler.jsonc` does not rename anything already deployed. Keep `name`, `bucket_name`, `database_name`, `database_id`, the KV `id` and any queue names from your current config, and nothing moves.
+
+To rename a deployment, do it in two steps. The first moves the Worker and copies no data. The second moves R2 and the draft queues. Each step is one deploy. The D1 database keeps its name. `<old>` and `<new>` below are the Worker names.
+
+### 1. The Worker
+
+The Worker's Durable Objects hold the chat agent's conversations and MCP sessions. A transfer migration moves them to the new Worker with their storage. Mail, labels and settings are in D1 and stay where they are.
+
+1. In your config, set `name` to `<new>`. Leave the D1, R2 and KV entries as they are: bindings use the ids, so the new Worker reads the same data.
+2. Replace the whole `migrations` list with one transfer. The new Worker has no migration history, so it must not run the create migrations again:
+   ```jsonc
+   "migrations": [
+   	{
+   		"tag": "v1",
+   		"transferred_classes": [
+   			{ "from": "EmailAgent", "from_script": "<old>", "to": "EmailAgent" },
+   			{ "from": "EmailMCP", "from_script": "<old>", "to": "EmailMCP" }
+   		]
+   	}
+   ]
+   ```
+   Keep this list in your config from now on. When a later release adds a Durable Object migration, append it here with a new tag.
+3. With a custom domain, remove it from `<old>` (Settings > Domains & Routes) so the deploy can attach it to `<new>`.
+4. `npm run build && npm run deploy`. Until the next step the new Worker answers with an Access error.
+5. Set the secrets again on the new Worker. Worker secrets do not move. `npx wrangler secret list --name <old>` lists them; `POLICY_AUD` and `TEAM_DOMAIN` at least:
+   ```sh
+   npx wrangler secret put POLICY_AUD
+   npx wrangler secret put TEAM_DOMAIN
+   ```
+   On a custom domain the Access applications are tied to the hostname and stay. On workers.dev the hostname changes with the Worker name: turn on Access for `<new>` (step 5 of Deploy by hand), add the bypass paths for the new hostname, put the new `POLICY_AUD`, and reconnect MCP clients.
+6. Point every Email Routing rule at `<new>`: Email Routing > Routing rules, edit each rule's action. Mail goes to `<old>` until you do.
+7. Check: `npm run smoke -- https://<your host>`, open a chat with the agent and see the earlier conversation, send yourself a message and see it arrive.
+8. In the dashboard, check that the `EmailAgent` and `EmailMCP` namespaces (Durable Objects) now list `<new>` as their Worker. Then delete `<old>`: `npx wrangler delete --name <old>`.
+
+### 2. R2, queues and D1
+
+R2 buckets and D1 databases cannot be renamed. Bindings use ids, so the names are labels in your config and the dashboard.
+
+R2: create the new bucket, copy, switch, copy again.
+
+1. `npx wrangler r2 bucket create <new bucket>`
+2. Copy with any S3 client and an R2 API token with Object Read & Write on both buckets, for example `rclone copy r2:<old bucket> r2:<new bucket>`. The copy only adds objects, so you can run it again.
+3. Set `bucket_name` to the new bucket and `npm run deploy`.
+4. Run the copy once more for attachments that arrived in between, then delete the old bucket.
+
+Queues (only with the draft queue): create `<new>-drafts` and `<new>-drafts-dlq`, rename them in `queues`, let the old queue empty (`npx wrangler queues info <old queue>`), deploy, then delete the old queues.
+
+D1: keep the database. `wrangler d1 export` does not support databases with virtual tables, and this one has its full-text search tables, so there is no supported copy. A new database starts empty.

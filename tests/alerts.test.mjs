@@ -23,7 +23,7 @@ before(async () => {
 		script: bundle.outputFiles[0].text,
 		compatibilityDate: "2025-11-28",
 		compatibilityFlags: ["nodejs_compat"],
-		bindings: { EMAIL_ADDRESSES: [A], APP_NAME: "PluraMail" },
+		bindings: { EMAIL_ADDRESSES: [A], APP_NAME: "PlaraMail" },
 		r2Buckets: ["BUCKET"],
 		d1Databases: ["DB"],
 	});
@@ -60,7 +60,7 @@ test("the alert lists errors since the last one, once", async () => {
 	assert.equal(rest.length, 0);
 	assert.equal(mail.to, TO);
 	assert.equal(mail.from, A);
-	assert.equal(mail.subject, "PluraMail: 2 errors");
+	assert.equal(mail.subject, "PlaraMail: 2 errors");
 	assert.match(mail.text, /fetch  GET \/x: boom/);
 	assert.match(mail.text, /email  to a@example.com: parse failed/);
 
@@ -72,7 +72,7 @@ test("a failed health check mails even with no errors recorded", async () => {
 	const result = await call("alert", [T0 + 10_800_000], { ALERT_TO: TO, brokenBucket: true });
 	assert.equal(result.healthy, false);
 	const [mail] = await call("sent");
-	assert.equal(mail.subject, "PluraMail: health check failed");
+	assert.equal(mail.subject, "PlaraMail: health check failed");
 	assert.match(mail.text, /R2 failed: R2 unreachable/);
 });
 

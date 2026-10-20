@@ -4,7 +4,7 @@
 
 import { useRouteLoaderData } from "react-router";
 
-export const DEFAULT_APP_NAME = "PluraMail";
+export const DEFAULT_APP_NAME = "PlaraMail";
 
 type RootData = { appName?: string } | undefined;
 type Match = { id: string; data?: unknown } | undefined;

@@ -5,7 +5,7 @@
 /** How an agent draft was made, kept with the draft (draft_notes table). */
 export interface DraftNotes {
 	origin: DraftOrigin;
-	/** The agent whose job the draft was for, by name. Null for the PluraMail Agent, chat and MCP. */
+	/** The agent whose job the draft was for, by name. Null for the PlaraMail Agent, chat and MCP. */
 	agent: string | null;
 	/** One-off redraft instructions, oldest first. */
 	instructions: string[];

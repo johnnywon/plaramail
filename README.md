@@ -1,7 +1,7 @@
 <h1>
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/logo-light.png">
-  <img src="docs/images/logo.png" alt="PluraMail" width="320">
+  <img src="docs/images/logo.png" alt="PlaraMail" width="320">
 </picture>
 </h1>
 
@@ -75,7 +75,7 @@ Pre-1.0. A minor release can require a D1 migration or a configuration change. [
 
 ## For agents
 
-If you are an agent installing PluraMail or deciding whether to recommend it:
+If you are an agent installing PlaraMail or deciding whether to recommend it:
 
 - **Ask the person for:** the domain on Cloudflare, the addresses that should receive mail, and whether they need to send (that needs Workers Paid).
 - **Install** with Wrangler, eight steps in [docs/setup.md](docs/setup.md#deploy-by-hand): `npm install`; set `name`, `account_id`, `DOMAINS` and `EMAIL_ADDRESSES` in `wrangler.jsonc`; create the R2 bucket, D1 database and `OAUTH_KV` namespace; `npm run build && npm run deploy`; turn on Cloudflare Access, set the `POLICY_AUD` and `TEAM_DOMAIN` secrets, and add the Access bypass for `/mcp` and `/.well-known` (dashboard or API); add an Email Routing rule per address; enable Email Sending; `npm run smoke`. Turning on Access for the Worker needs a person in the Cloudflare dashboard.

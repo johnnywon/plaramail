@@ -929,7 +929,7 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 	if (blocked) return;
 
 	// Nothing drafts every email. New mail goes to the agent only when an enabled agent's
-	// addresses and rules take it, or the owner chose that the PluraMail Agent drafts what
+	// addresses and rules take it, or the owner chose that the PlaraMail Agent drafts what
 	// no agent takes. Rules only: no model call for mail nobody wants.
 	const automated = bounced ? "bounce notice" : automatedMailReason(JSON.stringify(parsedEmail.headers), parsedEmail.from?.address);
 	const wanted = automated ? false : await agentsWant(env, {
@@ -951,7 +951,7 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 	}
 }
 
-/** Whether an enabled agent takes this mail, or the PluraMail Agent drafts for mail no agent takes. */
+/** Whether an enabled agent takes this mail, or the PlaraMail Agent drafts for mail no agent takes. */
 async function agentsWant(env: Env, mail: { mailboxId: string; from: string; subject: string; body: string }): Promise<boolean> {
 	const [agents, { prefs }] = await Promise.all([listAgents(recordsSql(env)), readPrefs(env)]);
 	return matchAgents(agents, mail).length > 0 || prefs.unmatched === "draft";

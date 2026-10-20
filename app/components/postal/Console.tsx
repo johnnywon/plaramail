@@ -152,7 +152,7 @@ export function ConsolePage(props: {
 			id: `a-${a.id}`, section: "Agents", label: a.name, detail: a.job, words: a.mode, icon: <AgentIcon size={14} />, run: () => { setNavOpen(false); props.onAgent(a.id); },
 		})),
 		...(review.data ?? []).map((d): ConsoleHit => ({
-			id: `d-${d.emailId}`, section: "Review", label: d.subject || "(no subject)", detail: `to ${d.recipient}`, words: d.agent ?? "PluraMail Agent",
+			id: `d-${d.emailId}`, section: "Review", label: d.subject || "(no subject)", detail: `to ${d.recipient}`, words: d.agent ?? "PlaraMail Agent",
 			icon: <TrayIcon size={14} />, run: () => props.onOpenDraft(d.mailboxId, d.emailId),
 		})),
 	];
@@ -224,8 +224,8 @@ export function ConsolePage(props: {
 
 type PageProps = Parameters<typeof ConsolePage>[0];
 
-/** The PluraMail Agent's row, first in every list of agents. */
-const MAILROOM_ROW = { id: "mailroom", name: "PluraMail Agent", builtin: true } as const;
+/** The PlaraMail Agent's row, first in every list of agents. */
+const MAILROOM_ROW = { id: "mailroom", name: "PlaraMail Agent", builtin: true } as const;
 type AgentRow = Agent | typeof MAILROOM_ROW;
 const isBuiltin = (r: AgentRow): r is typeof MAILROOM_ROW => "builtin" in r;
 
@@ -255,7 +255,7 @@ function HomePage({ identities, autoDraft, onTab, onAgent }: PageProps) {
 	);
 }
 
-/** Your agents: the list column (PluraMail Agent first, then the crew in order) beside the picked agent. */
+/** Your agents: the list column (PlaraMail Agent first, then the crew in order) beside the picked agent. */
 function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 	const { tab, agentId, identities, addresses, prefs, setPrefs, onTab, onAgent } = props;
 	const { data } = useAgents();
@@ -299,7 +299,7 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 		if (el) arrows.current.set(key, el);
 		else arrows.current.delete(key);
 	};
-	// With nothing picked, the detail shows the PluraMail Agent; on a phone the list shows instead.
+	// With nothing picked, the detail shows the PlaraMail Agent; on a phone the list shows instead.
 	const picked = tab === "mailroom" || !!agentId;
 	const shown = tab === "agents" && agentId ? agentId : MAILROOM_ROW.id;
 
@@ -362,7 +362,7 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 									label="When no agent matches"
 									value={prefs.unmatched}
 									onChange={(unmatched) => setPrefs({ ...prefs, unmatched })}
-									options={[{ value: "leave", label: "Leave it" }, { value: "draft", label: "PluraMail Agent drafts" }]}
+									options={[{ value: "leave", label: "Leave it" }, { value: "draft", label: "PlaraMail Agent drafts" }]}
 								/>
 							</div>
 						</Section>
@@ -925,7 +925,7 @@ function ReviewPage({ identities, onOpenDraft, onSendDraft }: PageProps) {
 									</div>
 									<p className="pg-review-body">{d.text || d.snippet}</p>
 									<div className="pg-review-foot" onClick={(e) => e.stopPropagation()}>
-										<span className="pg-row-badge"><AgentIcon size={12} />{d.agent ?? "PluraMail Agent"}</span>
+										<span className="pg-row-badge"><AgentIcon size={12} />{d.agent ?? "PlaraMail Agent"}</span>
 										{error?.id === d.emailId && <span className="pg-review-error">{error.text}</span>}
 										<span className="pg-flex" />
 										{confirming === d.emailId ? (

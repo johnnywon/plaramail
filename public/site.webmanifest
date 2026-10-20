@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "PluraMail",
-  "short_name": "PluraMail",
+  "name": "PlaraMail",
+  "short_name": "PlaraMail",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

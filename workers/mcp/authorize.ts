@@ -92,7 +92,7 @@ button[value="approve"] { background: var(--primary); border-color: var(--primar
 </head>
 <body>
 <main>
-<p class="code">PluraMail · MCP</p>
+<p class="code">PlaraMail · MCP</p>
 <h1>Connect ${name}?</h1>
 <p>${origin} Access goes to <b>${escape(details.redirectHost)}</b>. Signed in as <b>${escape(userId)}</b>.</p>
 ${details.redirectIsLoopback ? '<p class="warn">This app runs on your computer. Continue only if you just started connecting it.</p>' : ""}

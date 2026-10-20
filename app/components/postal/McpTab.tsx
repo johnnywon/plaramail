@@ -43,13 +43,13 @@ async function reachableWithoutAccess(): Promise<boolean> {
 function setup(client: Client, url: string): { lang: "sh" | "json"; title: string; code: string } {
 	switch (client) {
 		case "claude-code":
-			return { lang: "sh", title: "terminal", code: `claude mcp add --transport http pluramail ${url}` };
+			return { lang: "sh", title: "terminal", code: `claude mcp add --transport http plaramail ${url}` };
 		case "claude-desktop":
 			return { lang: "sh", title: "Settings › Connectors › Add custom connector", code: url };
 		case "codex":
-			return { lang: "sh", title: "terminal", code: `codex mcp add pluramail --url ${url}\ncodex mcp login pluramail` };
+			return { lang: "sh", title: "terminal", code: `codex mcp add plaramail --url ${url}\ncodex mcp login plaramail` };
 		case "cursor":
-			return { lang: "json", title: "~/.cursor/mcp.json", code: JSON.stringify({ mcpServers: { pluramail: { url } } }, null, 2) };
+			return { lang: "json", title: "~/.cursor/mcp.json", code: JSON.stringify({ mcpServers: { plaramail: { url } } }, null, 2) };
 		case "grok":
 			return { lang: "sh", title: "grok.com/connectors › New Connector › Custom", code: url };
 		case "other":

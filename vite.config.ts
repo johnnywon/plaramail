@@ -11,10 +11,10 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 // A deployment kept in another repo can point at its own Wrangler config and
 // public/ folder (brand files) without copying them into this checkout.
-const wranglerConfig = process.env.PLURAMAIL_WRANGLER_CONFIG;
-const publicDir = process.env.PLURAMAIL_PUBLIC_DIR;
+const wranglerConfig = process.env.PLARAMAIL_WRANGLER_CONFIG;
+const publicDir = process.env.PLARAMAIL_PUBLIC_DIR;
 // The browser check keeps its local D1, R2 and KV apart from the dev server's (playwright.config.mjs).
-const persistPath = process.env.PLURAMAIL_PERSIST;
+const persistPath = process.env.PLARAMAIL_PERSIST;
 
 // Dependencies Vite otherwise discovers only after the first request. Re-optimizing them
 // mid-load gives the open page a second copy of React ("Invalid hook call").
@@ -40,14 +40,14 @@ const PREBUNDLE = [
   "zustand",
 ];
 
-// PLURAMAIL_DEMO=1 makes a demo build: filled with the sample inbox, no sends, no AI, no sign-in (workers/lib/demo.ts).
-const demo = process.env.PLURAMAIL_DEMO === "1";
+// PLARAMAIL_DEMO=1 makes a demo build: filled with the sample inbox, no sends, no AI, no sign-in (workers/lib/demo.ts).
+const demo = process.env.PLARAMAIL_DEMO === "1";
 
 export default defineConfig({
   // The sample inbox arrives in the developer's working hours. Workers run in UTC, so the build hands over this machine's offset.
   define: {
-    __PLURAMAIL_TZ_OFFSET__: JSON.stringify(new Date().getTimezoneOffset()),
-    __PLURAMAIL_DEMO__: JSON.stringify(demo),
+    __PLARAMAIL_TZ_OFFSET__: JSON.stringify(new Date().getTimezoneOffset()),
+    __PLARAMAIL_DEMO__: JSON.stringify(demo),
   },
   publicDir: publicDir ? resolve(publicDir) : "public",
   optimizeDeps: { include: PREBUNDLE },

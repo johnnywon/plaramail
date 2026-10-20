@@ -86,7 +86,7 @@ export async function sendAlerts(env: Env, now = Date.now()) {
 	}
 	if (health.ok && total === 0) return null;
 
-	const { subject, text } = alertMail(String(env.APP_NAME || "PluraMail"), health, rows, total);
+	const { subject, text } = alertMail(String(env.APP_NAME || "PlaraMail"), health, rows, total);
 	await sendEmail(env.EMAIL, { to, from, subject, text });
 	if (health.d1.ok) {
 		await sql.run(`UPDATE error_log SET alerted_at = ? WHERE alerted_at IS NULL AND id <= ?`, new Date(now).toISOString(), last);

@@ -3,17 +3,17 @@
 // agent and sending fail if a test reaches them. The first API request writes the sample inbox.
 {
 	"$schema": "../../node_modules/wrangler/config-schema.json",
-	"name": "pluramail-ci",
+	"name": "plaramail-ci",
 	"compatibility_date": "2025-11-28",
 	"main": "../../workers/app.ts",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"vars": {
-		"APP_NAME": "PluraMail",
+		"APP_NAME": "PlaraMail",
 		"DOMAINS": "example.com",
 		"EMAIL_ADDRESSES": ["hello@example.com", "billing@example.com", "support@example.com"]
 	},
-	"r2_buckets": [{ "binding": "BUCKET", "bucket_name": "pluramail-ci" }],
-	"d1_databases": [{ "binding": "DB", "database_name": "pluramail-ci", "database_id": "local", "migrations_dir": "../../migrations" }],
+	"r2_buckets": [{ "binding": "BUCKET", "bucket_name": "plaramail-ci" }],
+	"d1_databases": [{ "binding": "DB", "database_name": "plaramail-ci", "database_id": "local", "migrations_dir": "../../migrations" }],
 	"kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local" }],
 	"durable_objects": {
 		"bindings": [

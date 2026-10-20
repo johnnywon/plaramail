@@ -17,7 +17,7 @@ export interface Prefs {
 	shortcuts: ShortcutOverrides;
 	/** Days the activity log keeps agent and MCP actions. */
 	activityDays: ActivityDays;
-	/** New mail no agent takes: left alone, or drafted by the PluraMail Agent. */
+	/** New mail no agent takes: left alone, or drafted by the PlaraMail Agent. */
 	unmatched: Unmatched;
 	/** Days mail stays in Trash and Spam before the hourly cron deletes it, with its files. 0 keeps it until Empty Trash. */
 	trashDays: TrashDays;

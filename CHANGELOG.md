@@ -12,6 +12,11 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 
 ### Changed
 
+- The app is PlaraMail. `APP_NAME` defaults to PlaraMail, the lockups and the link preview card carry the new wordmark, and the MCP server reports its name as `plaramail`. The Fold mark and the app icons are unchanged.
+- Build env vars are `PLARAMAIL_WRANGLER_CONFIG`, `PLARAMAIL_PUBLIC_DIR`, `PLARAMAIL_DEMO` and `PLARAMAIL_PERSIST`. The earlier names are not read.
+- The example `wrangler.jsonc` names the Worker, the D1 database and the R2 bucket `plaramail`, and the draft queues `plaramail-drafts` and `plaramail-drafts-dlq`.
+- `public/brand/lockup-dark.png` and `lockup-light.png` are 332 × 74. A deployment with its own lockups makes them that size (public/brand/README.md).
+- docs/setup.md has a section on renaming a deployment: the Worker moves with its Durable Objects through a transfer migration; R2 and the queues are copied; the D1 database keeps its name.
 - Every source file carries the license header, and `tests/public-scrub.test.mjs` keeps it so. Tests use example hosts for Cloudflare Access, and the search prompt names no real company.
 
 ### Fixed
@@ -21,6 +26,9 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 ### Upgrading
 
 - Add `/health` to the deployment's Access bypass application, or `npm run smoke` fails on it.
+- A deploy repo renames its build env vars before it builds 0.9.5. A build that sets only the earlier names uses this repo's example config and brand, and `npm run deploy` would then deploy a new Worker named `plaramail`.
+- Keep your own Worker, D1, R2, KV and queue names in your config. Nothing has to be renamed. To rename anyway, follow Renaming a deployment in docs/setup.md.
+- If your config sets `APP_NAME` to the previous default, set it to `PlaraMail`.
 
 D1 migration: `0012_error_log.sql`. `npm run deploy` applies it.
 
@@ -146,7 +154,7 @@ The Console is a page of its own, with hired agents, and MCP clients sign in wit
 - `/mcp` takes OAuth bearer tokens only. Anything that reached it with an Access service token must reconnect through OAuth.
 - Bind a KV namespace as `OAUTH_KV` (`npx wrangler kv namespace create OAUTH_KV`, id into `kv_namespaces`).
 - Add an Access application with a **Bypass** policy for `/mcp` and `/.well-known` on the same hostname. `/authorize` stays behind Access. Console > MCP warns with these paths until clients can get through.
-- `AUTO_DRAFT_ENABLED` is removed. A deployment that relied on it drafting every email now drafts only through agents, or through the PluraMail Agent if you turn on drafting for mail no agent takes.
+- `AUTO_DRAFT_ENABLED` is removed. A deployment that relied on it drafting every email now drafts only through agents, or through the PlaraMail Agent if you turn on drafting for mail no agent takes.
 
 ### Console
 
@@ -160,7 +168,7 @@ The Console is a page of its own, with hired agents, and MCP clients sign in wit
 - Each agent has one job on the addresses you choose and runs in Watch or Draft. Send arrives in 0.10. New agents start in Watch. Agents take mail in list order: when two agents' jobs fit, the higher one takes it. Drag to reorder.
 - New agent is three steps: Job (with starting points: decline pitches, ask for missing details, acknowledge, answer FAQs), Addresses, Name.
 - Each agent has a daily limit (25 by default) and two replies a day to one sender, and replies only to the sender of the message it took.
-- Nothing drafts every email. New mail goes to the agent only when an enabled agent's addresses and rules take it, or you choose that the PluraMail Agent drafts mail no agent takes. "When no agent matches" defaults to leaving it. Rules are checked before any model call.
+- Nothing drafts every email. New mail goes to the agent only when an enabled agent's addresses and rules take it, or you choose that the PlaraMail Agent drafts mail no agent takes. "When no agent matches" defaults to leaving it. Rules are checked before any model call.
 - Draft review shows drafts waiting for you as mail rows.
 - Agent drafts and Redraft run Kimi K2.6 with `reasoning_effort: "none"`: a draft takes 8 to 9 s instead of 45 to 50. Chat keeps full reasoning.
 
@@ -198,7 +206,7 @@ Motion. Everything that opens and closes moves on one curve.
 - Reduced motion turns all of it off.
 - Key hints next to controls are off by default; turn them on in Settings > General. A deployment that already saved its settings keeps its choice. Tooltips and Settings > Shortcuts show keys either way; before, turning hints off emptied the keys in both.
 - The agent panel names the open email while you search, even when the search leaves that email out of the list; it said "(no subject)".
-- The MCP server reports its name as `pluramail` and the app's version; it said `agentic-inbox` 1.0.0.
+- The MCP server reports its name as `plaramail` and the app's version; it said `agentic-inbox` 1.0.0.
 - README: When it fits and For agents sections, and an `llms.txt` summary. The roadmap adds sign-in and roles for teams. `AGENTS.md` sets the writing voice.
 
 No D1 migration.
@@ -228,7 +236,7 @@ The app is readable to browser agents, and a demo build fills itself with sample
 
 ### Upgrading
 
-- Build env vars are `PLURAMAIL_WRANGLER_CONFIG` and `PLURAMAIL_PUBLIC_DIR`. Set them in a deploy repo's scripts.
+- Build env vars are `PLARAMAIL_WRANGLER_CONFIG` and `PLARAMAIL_PUBLIC_DIR`. Set them in a deploy repo's scripts.
 - Browser layout (collapsed panels) starts from the defaults once.
 
 ### Readable to browser agents
@@ -248,8 +256,8 @@ Agents that drive a browser, such as Aside, gstack browse, Playwright and Claude
 
 ### Demo build
 
-- `PLURAMAIL_DEMO=1 npm run build` makes a demo build. On its first API request it writes the sample inbox (about 470 messages, 62 attachments, 12 labels, 3 saved searches) into an empty database, with the newest message minutes old. A normal build carries none of it.
-- A demo sends nothing and needs no sign-in. Send, reply, forward and scheduled send return 403. The PluraMail Agent, Draft, auto-draft and the MCP server are off, and their controls are hidden. Settings are read-only. Incoming mail is rejected. Cloudflare Access is skipped.
+- `PLARAMAIL_DEMO=1 npm run build` makes a demo build. On its first API request it writes the sample inbox (about 470 messages, 62 attachments, 12 labels, 3 saved searches) into an empty database, with the newest message minutes old. A normal build carries none of it.
+- A demo sends nothing and needs no sign-in. Send, reply, forward and scheduled send return 403. The PlaraMail Agent, Draft, auto-draft and the MCP server are off, and their controls are hidden. Settings are read-only. Incoming mail is rejected. Cloudflare Access is skipped.
 - Visitors can read, search, archive, delete, star, label and save drafts. The cron writes the sample inbox again every hour on the hour, over everything visitors changed.
 - `GET /api/v1/config` returns `demo`.
 - `npm run test:build` builds both ways and checks that only the demo build carries the sample inbox. CI runs it in place of `npm run build`.

@@ -1,4 +1,4 @@
-# PluraMail
+# PlaraMail
 
 > Self-hosted webmail and MCP server for Cloudflare Email Routing. One Cloudflare Worker serves the mail UI, an HTTP API and an MCP endpoint for every address on your domains. Mail is stored in D1 and R2 in your own Cloudflare account. Apache-2.0. Pre-1.0.
 

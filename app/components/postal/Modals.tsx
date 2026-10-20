@@ -42,7 +42,7 @@ function Setting({ title, sub, children }: { title: string; sub?: React.ReactNod
 
 /**
  * The console pages that edit saved settings: the mail client's settings, the
- * PluraMail Agent, Models and Logs. Changes save on their own: switches and choices
+ * PlaraMail Agent, Models and Logs. Changes save on their own: switches and choices
  * at once, typing once it pauses.
  */
 export function ConsoleSettings({ tab, onTab, prefs, setPrefs, addresses, identities, info, autoDraft }: {

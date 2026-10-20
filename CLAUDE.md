@@ -1,4 +1,4 @@
-# PluraMail
+# PlaraMail
 
 Self-hosted multi-address email on Cloudflare Workers. React Router v7 UI in `app/`, Worker backend in `workers/`, shared code in `shared/`.
 
@@ -9,7 +9,7 @@ Self-hosted multi-address email on Cloudflare Workers. React Router v7 UI in `ap
 ## Run and check
 
 - `npm run dev:local` with a gitignored `wrangler.local.jsonc` (see README, Local development). The dev server fills an empty inbox with sample mail on its first API request (`DEV_SEED=off` in `.dev.vars` skips it). `POST /api/v1/dev/seed` wipes the sample mail and writes it again.
-- `npm test`, `npm run typecheck`, `npm run build` before every commit. `npm run test:build` checks the demo build (`PLURAMAIL_DEMO=1`, docs/setup.md) and that a normal build has no sample inbox.
+- `npm test`, `npm run typecheck`, `npm run build` before every commit. `npm run test:build` checks the demo build (`PLARAMAIL_DEMO=1`, docs/setup.md) and that a normal build has no sample inbox.
 - Browser QA: open the dev server and check the console, at desktop and 375px widths.
 
 ## Design
@@ -25,5 +25,5 @@ Every shortcut lives in `shared/shortcuts.ts`; nothing else names a key. To add 
 ## Rules
 
 - This repo is generic and will be public. Never commit a real domain, address, account ID, worker name or brand from any deployment. Use `example.com`, `example.org` and `example.net` in config, docs and tests.
-- Deployments supply their own config and brand with `PLURAMAIL_WRANGLER_CONFIG` and `PLURAMAIL_PUBLIC_DIR`. Brand art is only in `public/`.
+- Deployments supply their own config and brand with `PLARAMAIL_WRANGLER_CONFIG` and `PLARAMAIL_PUBLIC_DIR`. Brand art is only in `public/`.
 - Durable Object class names and migration tags are permanent. Migrations are append-only.

@@ -141,7 +141,7 @@ const listOf = (data) => (Array.isArray(data) ? data : data.emails);
 const found = (data) => data.conversations.map((c) => c.emailId);
 
 test("the server lists every tool", async () => {
-	assert.equal(client.getServerVersion().name, "pluramail");
+	assert.equal(client.getServerVersion().name, "plaramail");
 	const { tools } = await client.listTools();
 	assert.deepEqual(tools.map((t) => t.name).sort(), [
 		"create_draft", "create_label", "delete_email", "delete_label", "draft_reply", "get_email", "get_thread",
