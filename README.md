@@ -19,7 +19,7 @@ Demo: [plaramail-demo.plaramail.workers.dev](https://plaramail-demo.plaramail.wo
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/inbox-light.jpg">
-  <img src="docs/images/inbox.jpg" alt="The inbox: every address in one list, a conversation open, the agent on the right">
+  <img src="docs/images/inbox.jpg" alt="The inbox: every address in one list, a vendor notice open, the agent on the right">
 </picture>
 
 ## Requirements
@@ -62,7 +62,7 @@ Pre-1.0. A minor release can require a D1 migration or a configuration change. [
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/mcp-light.jpg">
-  <img src="docs/images/mcp.jpg" alt="The Console's Connections tab: the MCP server URL and its tools" width="700">
+  <img src="docs/images/mcp.jpg" alt="The Console MCP page: the server URL and the command that connects a client" width="700">
 </picture>
 </p>
 

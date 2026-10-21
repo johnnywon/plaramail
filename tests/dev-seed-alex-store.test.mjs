@@ -58,7 +58,7 @@ test("the Alex profile writes nine mailboxes and 100 messages, whatever EMAIL_AD
 	assert.equal(await db.one(`SELECT COUNT(*) FROM mailboxes WHERE id LIKE '%example%'`), 0, "no default addresses made up");
 
 	const folders = Object.fromEntries((await db.rows(`SELECT folder_id AS f, COUNT(*) AS n FROM messages GROUP BY folder_id`)).map((r) => [r.f, r.n]));
-	assert.deepEqual(folders, { inbox: 29, archive: 50, sent: 15, draft: 3, spam: 2, trash: 1 });
+	assert.deepEqual(folders, { inbox: 30, archive: 49, sent: 15, draft: 3, spam: 2, trash: 1 });
 	assert.deepEqual((await db.rows(`SELECT email_id FROM messages WHERE read = 0 ORDER BY email_id`)).map((r) => r.email_id.replace("seed-alex-v2-", "")), ["A-06", "B-04", "BAND-06", "BAND-07", "BAND-08", "H-04", "H-05", "L-06", "O-08", "P-10", "P-11", "RCC-07"]);
 	assert.deepEqual((await db.rows(`SELECT email_id FROM messages WHERE starred = 1 ORDER BY email_id`)).map((r) => r.email_id.replace("seed-alex-v2-", "")), ["A-07", "B-04", "BAND-01", "H-01", "L-01", "O-08", "P-04", "RCC-02", "RCC-07"]);
 

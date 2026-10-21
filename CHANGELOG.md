@@ -19,6 +19,8 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 - docs/setup.md has a section on renaming a deployment: the Worker moves with its Durable Objects through a transfer migration; R2 and the queues are copied; the D1 database keeps its name.
 - Every source file carries the license header, and `tests/public-scrub.test.mjs` keeps it so. Tests use example hosts for Cloudflare Access, and the search prompt names no real company.
 
+- README screenshots are retaken on 0.9.5 in both themes. The Alex sample inbox keeps the Supabase compute notice (O-19) in the Inbox instead of Archive, and it is the open message in the hero shot.
+
 ### Fixed
 
 - Enter in search opens the first result only once the results for what you typed have arrived. Before, a quick Enter opened the first conversation of the list you were on, which at phone width covered the results.

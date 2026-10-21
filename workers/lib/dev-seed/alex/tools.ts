@@ -411,7 +411,7 @@ ${button("linear", "Open issue", "https://linear.app/partwell/issue/PW-212")}`,
 			}),
 		},
 		{
-			key: "O-19", box: "ops", folder: "archive", at: "2026-10-09T09:12", from: P.supabaseNotice, to: [box("ops")],
+			key: "O-19", box: "ops", folder: "inbox", at: "2026-10-09T09:12", from: P.supabaseNotice, to: [box("ops")],
 			subject: "Compute upgrade scheduled for partwell-prod", read: true, labels: ["Incident"], thread: "O-19", auto: true,
 			html: mail("supabase", {
 				preheader: `partwell-prod moves from Small to Medium compute today at 11:00 AM. Expect a reconnect of about two minutes.`,
