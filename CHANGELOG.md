@@ -28,7 +28,7 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 ### Upgrading
 
 - Add `/health` to the deployment's Access bypass application, or `npm run smoke` fails on it.
-- A deploy repo renames its build env vars before it builds 0.9.5. A build that sets only the earlier names uses this repo's example config and brand, and `npm run deploy` would then deploy a new Worker named `plaramail`.
+- A deploy repo renames its build env vars before it builds 0.9.5. A build or `npm run deploy` that sets only an earlier name stops and names the new one (`scripts/check-env.mjs`), instead of using this repo's example config and deploying a new Worker named `plaramail`.
 - Keep your own Worker, D1, R2, KV and queue names in your config. Nothing has to be renamed. To rename anyway, follow Renaming a deployment in docs/setup.md.
 - If your config sets `APP_NAME` to the previous default, set it to `PlaraMail`.
 

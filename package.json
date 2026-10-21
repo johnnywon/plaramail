@@ -31,7 +31,7 @@
 	"scripts": {
 		"build": "react-router build",
 		"cf-typegen": "wrangler types",
-		"deploy": "[ -f build/server/wrangler.json ] || (echo 'Run npm run build first.' >&2; exit 1) && wrangler d1 migrations apply DB --remote -c \"${PLARAMAIL_WRANGLER_CONFIG:-wrangler.jsonc}\" && wrangler deploy",
+		"deploy": "node scripts/check-env.mjs && ([ -f build/server/wrangler.json ] || (echo 'Run npm run build first.' >&2; exit 1)) && wrangler d1 migrations apply DB --remote -c \"${PLARAMAIL_WRANGLER_CONFIG:-wrangler.jsonc}\" && wrangler deploy",
 		"smoke": "bash scripts/smoke.sh",
 		"smoke:mail": "node scripts/smoke-mail.mjs",
 		"dev": "react-router dev",

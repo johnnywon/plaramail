@@ -8,6 +8,10 @@ import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { renamedEnvError } from "./scripts/check-env.mjs";
+
+const envError = renamedEnvError(process.env);
+if (envError) throw new Error(envError);
 
 // A deployment kept in another repo can point at its own Wrangler config and
 // public/ folder (brand files) without copying them into this checkout.
