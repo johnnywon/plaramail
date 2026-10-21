@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-// A demo build (PLURAMAIL_DEMO=1 npm run build) comes up filled with the sample
+// A demo build (PLARAMAIL_DEMO=1 npm run build) comes up filled with the sample
 // inbox and lets anyone read, file and label it. It never sends mail, keeps
 // settings read-only and needs no sign-in. The cron writes the sample inbox
 // again every hour.
@@ -14,14 +14,14 @@
 // the rewrite and the draft check.
 // The agent chat, auto-draft, MCP and the model test stay off.
 //
-// vite.config.ts defines __PLURAMAIL_DEMO__ as a literal, so in a normal build DEMO
+// vite.config.ts defines __PLARAMAIL_DEMO__ as a literal, so in a normal build DEMO
 // is false and every branch on it, with the sample inbox, is left out.
 
 import type { Sql } from "../store/sql";
 
-declare const __PLURAMAIL_DEMO__: boolean | undefined;
+declare const __PLARAMAIL_DEMO__: boolean | undefined;
 
-export const DEMO: boolean = typeof __PLURAMAIL_DEMO__ === "boolean" && __PLURAMAIL_DEMO__;
+export const DEMO: boolean = typeof __PLARAMAIL_DEMO__ === "boolean" && __PLARAMAIL_DEMO__;
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 

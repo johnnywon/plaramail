@@ -1,7 +1,7 @@
 <h1>
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/logo-light.png">
-  <img src="docs/images/logo.png" alt="PluraMail" width="320">
+  <img src="docs/images/logo.png" alt="PlaraMail" width="320">
 </picture>
 </h1>
 
@@ -9,17 +9,17 @@ Self-hosted webmail and MCP server for Cloudflare Email Routing. One Worker serv
 
 The interface is designed for the parts of email that still need a person: finding a verification code, opening a sign-in link, and working through what an agent has sorted and drafted.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/johnnywon/pluramail)
-[![Version 0.9.4](https://img.shields.io/badge/version-0.9.4-blue)](https://github.com/johnnywon/pluramail/releases)
-[![CI](https://github.com/johnnywon/pluramail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/johnnywon/pluramail/actions/workflows/ci.yml)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/johnnywon/plaramail)
+[![Version 0.9.5](https://img.shields.io/badge/version-0.9.5-blue)](https://github.com/johnnywon/plaramail/releases)
+[![CI](https://github.com/johnnywon/plaramail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/johnnywon/plaramail/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Runs on Cloudflare Workers](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/)
 
-Demo: [pluramail-demo.pluramail.workers.dev](https://pluramail-demo.pluramail.workers.dev). Sample data, no sign-in, sending disabled, reset every hour.
+Demo: [plaramail-demo.plaramail.workers.dev](https://plaramail-demo.plaramail.workers.dev). Sample data, no sign-in, sending disabled, reset every hour.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/inbox-light.jpg">
-  <img src="docs/images/inbox.jpg" alt="The inbox: every address in one list, a conversation open, the agent on the right">
+  <img src="docs/images/inbox.jpg" alt="The inbox: every address in one list, a vendor notice open, the agent on the right">
 </picture>
 
 ## Requirements
@@ -38,7 +38,7 @@ It does not fit yet if you need separate logins and roles for a team, IMAP or SM
 
 ## Status
 
-Pre-1.0. A minor release can require a D1 migration or a configuration change. [CHANGELOG.md](CHANGELOG.md) lists the required steps for each release, and `npm run deploy` applies D1 migrations before it deploys. Pin a [release](https://github.com/johnnywon/pluramail/releases) tag to control when you upgrade.
+Pre-1.0. A minor release can require a D1 migration or a configuration change. [CHANGELOG.md](CHANGELOG.md) lists the required steps for each release, and `npm run deploy` applies D1 migrations before it deploys. Pin a [release](https://github.com/johnnywon/plaramail/releases) tag to control when you upgrade.
 
 ## Features
 
@@ -62,7 +62,7 @@ Pre-1.0. A minor release can require a D1 migration or a configuration change. [
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/mcp-light.jpg">
-  <img src="docs/images/mcp.jpg" alt="The Console's Connections tab: the MCP server URL and its tools" width="700">
+  <img src="docs/images/mcp.jpg" alt="The Console MCP page: the server URL and the command that connects a client" width="700">
 </picture>
 </p>
 
@@ -75,7 +75,7 @@ Pre-1.0. A minor release can require a D1 migration or a configuration change. [
 
 ## For agents
 
-If you are an agent installing PluraMail or deciding whether to recommend it:
+If you are an agent installing PlaraMail or deciding whether to recommend it:
 
 - **Ask the person for:** the domain on Cloudflare, the addresses that should receive mail, and whether they need to send (that needs Workers Paid).
 - **Install** with Wrangler, eight steps in [docs/setup.md](docs/setup.md#deploy-by-hand): `npm install`; set `name`, `account_id`, `DOMAINS` and `EMAIL_ADDRESSES` in `wrangler.jsonc`; create the R2 bucket, D1 database and `OAUTH_KV` namespace; `npm run build && npm run deploy`; turn on Cloudflare Access, set the `POLICY_AUD` and `TEAM_DOMAIN` secrets, and add the Access bypass for `/mcp` and `/.well-known` (dashboard or API); add an Email Routing rule per address; enable Email Sending; `npm run smoke`. Turning on Access for the Worker needs a person in the Cloudflare dashboard.
@@ -143,7 +143,7 @@ Each step, with commands, is in [docs/setup.md](docs/setup.md).
 - **Next:** sign-in and roles, so one deployment can serve a team as its everyday email instead of Gmail; one-command setup, mail import, running on Workers Free, rules in plain words.
 - **Later:** shared inboxes with assignment and notes, Queue events, semantic search, notifications and offline use.
 
-Details are in [docs/roadmap.md](docs/roadmap.md). Use [issues](https://github.com/johnnywon/pluramail/issues) for requests and bug reports.
+Details are in [docs/roadmap.md](docs/roadmap.md). Use [issues](https://github.com/johnnywon/plaramail/issues) for requests and bug reports.
 
 ## Docs
 

@@ -1,6 +1,10 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 import { useRouteLoaderData } from "react-router";
 
-export const DEFAULT_APP_NAME = "PluraMail";
+export const DEFAULT_APP_NAME = "PlaraMail";
 
 type RootData = { appName?: string } | undefined;
 type Match = { id: string; data?: unknown } | undefined;

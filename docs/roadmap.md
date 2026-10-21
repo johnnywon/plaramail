@@ -4,7 +4,7 @@ Where the project stands and what to know before deploying is in the [README](..
 
 Shipped: one list for every address, one search language with ranked results, the in-app agent and the MCP server, a choice of agent model limited to providers that don't keep or train on your mail, labels and bulk actions with undo, scheduled send, D1 storage with attachment search, and keyboard shortcuts that people and agents can rebind.
 
-[Open an issue](https://github.com/johnnywon/pluramail/issues) to argue for one of these or propose another.
+[Open an issue](https://github.com/johnnywon/plaramail/issues) to argue for one of these or propose another.
 
 ## Now: control over what agents do
 
@@ -27,4 +27,4 @@ Shipped: one list for every address, one search language with ranked results, th
 - [ ] **Search by meaning.** Opt-in Vectorize search alongside full-text, for "the email where they offered a discount".
 - [ ] **Notifications and offline.** Web push for new mail and an installable app that reads cached mail offline.
 
-Underneath: D1 becomes the only store, so there is one storage model to learn and upgrade, and CI gains a browser check against a seeded dev server.
+Underneath: D1 becomes the only store, so there is one storage model to learn and upgrade.

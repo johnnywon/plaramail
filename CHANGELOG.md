@@ -2,6 +2,38 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## 0.9.5
+
+### Added
+
+- `GET /health` checks D1 and R2 and answers `{"ok":true,"d1":"ok","r2":"ok"}`, or 503 naming the store that failed. The Worker answers it before the Access check. Add `/health` to the Access bypass next to `/mcp` and `/.well-known` (docs/setup.md, step 5); `npm run smoke` checks it and fails until it's there.
+- Error alerts. Requests that throw, inbound mail the Worker can't store and failed cron steps are recorded. With `ALERT_TO` set in `vars`, the hourly cron mails that address the errors since the last alert, and a failed health check, from the first address in `EMAIL_ADDRESSES`. Unset sends nothing. Recorded errors are kept 30 days.
+- `npm run test:browser` opens the mail view in Chromium at desktop width and at 375px against a dev server with local bindings and the sample inbox. CI runs it as the `browser` job.
+
+### Changed
+
+- The app is PlaraMail. `APP_NAME` defaults to PlaraMail, the lockups and the link preview card carry the new wordmark, and the MCP server reports its name as `plaramail`. The Fold mark and the app icons are unchanged.
+- Build env vars are `PLARAMAIL_WRANGLER_CONFIG`, `PLARAMAIL_PUBLIC_DIR`, `PLARAMAIL_DEMO` and `PLARAMAIL_PERSIST`. The earlier names are not read.
+- The example `wrangler.jsonc` names the Worker, the D1 database and the R2 bucket `plaramail`, and the draft queues `plaramail-drafts` and `plaramail-drafts-dlq`.
+- `public/brand/lockup-dark.png` and `lockup-light.png` are 332 × 74. A deployment with its own lockups makes them that size (public/brand/README.md).
+- docs/setup.md has a section on renaming a deployment: the Worker moves with its Durable Objects through a transfer migration; R2 and the queues are copied; the D1 database keeps its name.
+- Every source file carries the license header, and `tests/public-scrub.test.mjs` keeps it so. Tests use example hosts for Cloudflare Access, and the search prompt names no real company.
+
+- README screenshots are retaken on 0.9.5 in both themes. The Alex sample inbox keeps the Supabase compute notice (O-19) in the Inbox instead of Archive, and it is the open message in the hero shot.
+
+### Fixed
+
+- Enter in search opens the first result only once the results for what you typed have arrived. Before, a quick Enter opened the first conversation of the list you were on, which at phone width covered the results.
+
+### Upgrading
+
+- Add `/health` to the deployment's Access bypass application, or `npm run smoke` fails on it.
+- A deploy repo renames its build env vars before it builds 0.9.5. A build or `npm run deploy` that sets only an earlier name stops and names the new one (`scripts/check-env.mjs`), instead of using this repo's example config and deploying a new Worker named `plaramail`.
+- Keep your own Worker, D1, R2, KV and queue names in your config. Nothing has to be renamed. To rename anyway, follow Renaming a deployment in docs/setup.md.
+- If your config sets `APP_NAME` to the previous default, set it to `PlaraMail`.
+
+D1 migration: `0012_error_log.sql`. `npm run deploy` applies it.
+
 ## 0.9.4
 
 ### Added

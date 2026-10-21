@@ -13,12 +13,12 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number];
 /** Each page's name, on the rail, its page head and in console search. */
 export const CONSOLE_LABELS: Record<ConsoleTab, string> = {
 	home: "Overview", agents: "Your agents", review: "Draft review", logs: "Activity log",
-	models: "AI models", mcp: "MCP", mailroom: "PluraMail Agent",
+	models: "AI models", mcp: "MCP", mailroom: "PlaraMail Agent",
 	addresses: "Addresses", signatures: "Signatures", labels: "Labels",
 	general: "Preferences", shortcuts: "Keyboard shortcuts", storage: "Mail storage",
 };
 
-/** The rail, top to bottom. The PluraMail Agent page sits under Your agents. */
+/** The rail, top to bottom. The PlaraMail Agent page sits under Your agents. */
 export const CONSOLE_RAIL: { group: string | null; tabs: ConsoleTab[] }[] = [
 	{ group: null, tabs: ["home"] },
 	{ group: "Agents", tabs: ["agents", "review", "logs"] },

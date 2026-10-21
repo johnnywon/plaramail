@@ -8,9 +8,9 @@ import { loadTs } from "./helpers/sqlite.mjs";
 const { badgeText, unreadTitle } = await loadTs("app/lib/unread-tab.ts");
 
 test("the title carries the count in front", () => {
-	assert.equal(unreadTitle("PluraMail", 12), "(12) PluraMail");
-	assert.equal(unreadTitle("(12) PluraMail", 3), "(3) PluraMail", "an old count is replaced");
-	assert.equal(unreadTitle("(99+) PluraMail", 0), "PluraMail", "no unread mail, no count");
+	assert.equal(unreadTitle("PlaraMail", 12), "(12) PlaraMail");
+	assert.equal(unreadTitle("(12) PlaraMail", 3), "(3) PlaraMail", "an old count is replaced");
+	assert.equal(unreadTitle("(99+) PlaraMail", 0), "PlaraMail", "no unread mail, no count");
 });
 
 test("the badge says 99+ past 99", () => {

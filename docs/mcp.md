@@ -1,6 +1,6 @@
 # MCP server
 
-PluraMail serves a [Model Context Protocol](https://modelcontextprotocol.io) server at `https://<your host>/mcp`. Agents such as Claude Code, Claude Desktop, Codex, Cursor, Grok or your own use it to read, search, label, draft and send mail on every address the deployment has. This page is the reference for connecting a client and for the agent that uses the tools. Back to the [README](../README.md).
+PlaraMail serves a [Model Context Protocol](https://modelcontextprotocol.io) server at `https://<your host>/mcp`. Agents such as Claude Code, Claude Desktop, Codex, Cursor, Grok or your own use it to read, search, label, draft and send mail on every address the deployment has. This page is the reference for connecting a client and for the agent that uses the tools. Back to the [README](../README.md).
 
 ## Connect
 
@@ -8,10 +8,10 @@ The server signs clients in with OAuth 2.1. There are no keys to copy: add the U
 
 | Client | How |
 | --- | --- |
-| Claude Code | `claude mcp add --transport http pluramail https://<your host>/mcp` |
+| Claude Code | `claude mcp add --transport http plaramail https://<your host>/mcp` |
 | Claude Desktop | Settings › Connectors › Add custom connector, then the URL |
-| Codex | `codex mcp add pluramail --url https://<your host>/mcp`, then `codex mcp login pluramail` |
-| Cursor | `~/.cursor/mcp.json`: `{ "mcpServers": { "pluramail": { "url": "https://<your host>/mcp" } } }` |
+| Codex | `codex mcp add plaramail --url https://<your host>/mcp`, then `codex mcp login plaramail` |
+| Cursor | `~/.cursor/mcp.json`: `{ "mcpServers": { "plaramail": { "url": "https://<your host>/mcp" } } }` |
 | Grok | grok.com/connectors › New Connector › Custom, then the URL. Grok connects from xAI's servers, so the host must be public. Not yet tested with this server's OAuth sign-in. |
 | Any other client | The URL. A client that supports MCP authorization finds the rest itself. |
 

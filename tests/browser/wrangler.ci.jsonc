@@ -1,0 +1,31 @@
+// The dev server for the browser check (npm run test:browser): local D1, R2 and KV only,
+// so it runs without a Cloudflare account. No AI binding and no send_email, so the
+// agent and sending fail if a test reaches them. The first API request writes the sample inbox.
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "plaramail-ci",
+	"compatibility_date": "2025-11-28",
+	"main": "../../workers/app.ts",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"vars": {
+		"APP_NAME": "PlaraMail",
+		"DOMAINS": "example.com",
+		"EMAIL_ADDRESSES": ["hello@example.com", "billing@example.com", "support@example.com"]
+	},
+	"r2_buckets": [{ "binding": "BUCKET", "bucket_name": "plaramail-ci" }],
+	"d1_databases": [{ "binding": "DB", "database_name": "plaramail-ci", "database_id": "local", "migrations_dir": "../../migrations" }],
+	"kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local" }],
+	"durable_objects": {
+		"bindings": [
+			{ "name": "EMAIL_AGENT", "class_name": "EmailAgent" },
+			{ "name": "EMAIL_MCP", "class_name": "EmailMCP" }
+		]
+	},
+	"migrations": [
+		{ "tag": "v1", "new_sqlite_classes": ["MailboxDO"] },
+		{ "tag": "v2", "new_sqlite_classes": ["EmailAgent"] },
+		{ "tag": "v3", "new_sqlite_classes": ["EmailMCP"] },
+		{ "tag": "v4", "new_sqlite_classes": ["MailIndexDO"] },
+		{ "tag": "v5", "deleted_classes": ["MailboxDO", "MailIndexDO"] }
+	]
+}

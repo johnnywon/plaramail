@@ -277,7 +277,7 @@ export interface AgentDraft {
 	snippet: string;
 	/** The reply as written, quoted original left out; the snippet when the body is stored elsewhere. */
 	text: string;
-	/** The agent's name when the draft was written, or null for a PluraMail Agent draft. */
+	/** The agent's name when the draft was written, or null for a PlaraMail Agent draft. */
 	agent: string | null;
 }
 

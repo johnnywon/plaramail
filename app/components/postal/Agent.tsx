@@ -169,10 +169,10 @@ function DemoAgentPanel({ reading, prefill, onCollapse, overlay, inert }: AgentP
 		setMessages((m) => [...m, { id: `q${id}`, text: t }]);
 	};
 	return (
-		<aside className="pg-agent" aria-label="PluraMail Agent" data-overlay={overlay || undefined} inert={inert}>
+		<aside className="pg-agent" aria-label="PlaraMail Agent" data-overlay={overlay || undefined} inert={inert}>
 			<button type="button" className="pg-rail-head" onClick={onCollapse} title={tip("agent", "Collapse agent panel")}>
 				<CaretDoubleRightIcon size={14} weight="bold" />
-				<span className="pg-head-label">PLURAMAIL AGENT</span>
+				<span className="pg-head-label">PLARAMAIL AGENT</span>
 				<AgentIcon size={14} weight="fill" color="var(--pg-green)" />
 			</button>
 			<div className="pg-agent-sub">
@@ -226,10 +226,10 @@ function LiveAgentPanel(props: AgentPanelProps) {
 	const { hooks, error } = useAgentHooks();
 	const { tip } = useShortcuts();
 	return (
-		<aside className="pg-agent" aria-label="PluraMail Agent" data-overlay={props.overlay || undefined} inert={props.inert}>
+		<aside className="pg-agent" aria-label="PlaraMail Agent" data-overlay={props.overlay || undefined} inert={props.inert}>
 			<button type="button" className="pg-rail-head" onClick={props.onCollapse} title={tip("agent", "Collapse agent panel")}>
 				<CaretDoubleRightIcon size={14} weight="bold" />
-				<span className="pg-head-label">PLURAMAIL AGENT</span>
+				<span className="pg-head-label">PLARAMAIL AGENT</span>
 				<AgentIcon size={14} weight="fill" color="var(--pg-green)" />
 			</button>
 			{hooks ? (
@@ -444,7 +444,7 @@ export function AgentRail({ onOpen, busy, inert }: { onOpen: () => void; busy: b
 				<AgentIcon size={14} weight="fill" color="var(--pg-green)" />
 			</span>
 			<span className="pg-vert">
-				<span className="pg-vert-label">PLURAMAIL AGENT</span>
+				<span className="pg-vert-label">PLARAMAIL AGENT</span>
 				{busy && <span className="pg-dot pg-round" title="Agent working" />}
 			</span>
 			<span style={{ flex: 1 }} />

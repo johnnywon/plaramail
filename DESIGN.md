@@ -1,6 +1,6 @@
-# PluraMail design
+# PlaraMail design
 
-PluraMail has one mail view, the postal view, described here. The Console takes the mail's place inside the same frame, and errors are a page in the same look.
+PlaraMail has one mail view, the postal view, described here. The Console takes the mail's place inside the same frame, and errors are a page in the same look.
 
 ## Postal
 
@@ -38,12 +38,12 @@ An address always renders as **bold handle**, muted `@`, then the domain in its 
 
 ### Layout
 
-- Left column 236px (collapses to a 52px rail), centre, and the agent column 328px (collapses to a 44px rail: its head mirrors the left rail's, the caret then the robot on the outer edge, over "PLURAMAIL AGENT" set vertically in mono). Both rail states persist per browser.
+- Left column 236px (collapses to a 52px rail), centre, and the agent column 328px (collapses to a 44px rail: its head mirrors the left rail's, the caret then the robot on the outer edge, over "PLARAMAIL AGENT" set vertically in mono). Both rail states persist per browser.
 - The reader takes what the other columns leave and never slides under the agent rail. When it is under 560px wide (a small window with both rails), its toolbar wraps to a second row and the sender line breaks, name and address over the date.
-- Every column starts with a 38px header bar on one line: PLURAMAIL, the search bar, PLURAMAIL AGENT.
+- Every column starts with a 38px header bar on one line: PLARAMAIL, the search bar, PLARAMAIL AGENT.
 - While search is focused, the bar and its window lift off the columns beside them: a soft side shadow (`--pg-shadow-lift`) falls onto the sidebar and the agent panel.
 - Mail is always which addresses plus which folder, and the list header reads them in that order, each with its own icon: the address picker as its mark and a caret (the PO-box wall for All addresses, a domain's or address's swatch otherwise; the name is in its title and the menu), a caret-right, then the folder with its sidebar icon and name (or a label with its tag). The folder is a menu too, with no caret. The two are one unit: the folder menu lists exactly what the sidebar shows under the picked parent (`ALL_FOLDERS` then the labels for All addresses, `ADDRESS_FOLDERS` for a domain or address, both in `NavIcons.tsx`, which the sidebar also reads), and switching address keeps the folder when the new parent has it.
-- One meaning per icon. The PluraMail mark (the Fold: three flaps, the last in Signal `#E46F2C`, `FoldMark`) sits only in the top-left corner: the sidebar header and the collapsed rail. The PO-box wall is every address at once: the All addresses choice. The tray is the Inbox folder, everywhere. `VIEW_ICONS` in `NavIcons.tsx` maps each folder to its icon.
+- One meaning per icon. The PlaraMail mark (the Fold: three flaps, the last in Signal `#E46F2C`, `FoldMark`) sits only in the top-left corner: the sidebar header and the collapsed rail. The PO-box wall is every address at once: the All addresses choice. The tray is the Inbox folder, everywhere. `VIEW_ICONS` in `NavIcons.tsx` maps each folder to its icon.
 - There is no logo in the app. The name appears only in the page title.
 - The list column is `clamp(280px, 30vw, 430px)`. Nothing may overflow at 280px.
 - At 1100 to 1300px the left column starts as its rail and opens as an overlay; the agent panel overlays the reader.
@@ -80,8 +80,8 @@ Mail renders in the sandboxed iframe, and every message is a page: a 1px-bordere
 The Console holds the agents, their review and log, AI models, MCP, and the mail client's settings. It opens with `?console=<page>` and takes the mail's place between the edges: its rail replaces the mailbox column, its search replaces the mail search, and the agent panel stays on the right. All three heads are the same 38px bar. A demo build shows only the Mail and App pages, read-only apart from Labels.
 
 - **Colour.** A darker black built from the mail's neutrals (`--pg-con-*` in `app/index.css`: base `#0c0d0f`, rail `#08090a`, raised `#131417`). Purple (`--pg-con-accent`) marks the console's own highlights: the current page, the search icon, focus, the "Console" word, and the Draft mode. Orange stays mail and the Send mode. Light theme keeps the off-white surfaces with the same purple.
-- **Rail.** Defined once in `console-tabs.ts` (`CONSOLE_RAIL`, `CONSOLE_LABELS`); the rail, page titles and console search read the same labels. Overview; Agents: Your agents, Draft review, Activity log; Connections: AI models, MCP; Mail: Addresses, Signatures, Labels; App: Preferences, Keyboard shortcuts, Mail storage. The PluraMail Agent's page sits under Your agents.
-- **Your agents.** Three panels, like mail: the rail, a list column (PluraMail Agent first, then the agents in the order they take mail; drag to reorder), and the picked agent beside it. With nothing picked the detail shows the PluraMail Agent, which also holds "When no agent matches". Below 760px one column shows: the list, then the agent with a trail back.
+- **Rail.** Defined once in `console-tabs.ts` (`CONSOLE_RAIL`, `CONSOLE_LABELS`); the rail, page titles and console search read the same labels. Overview; Agents: Your agents, Draft review, Activity log; Connections: AI models, MCP; Mail: Addresses, Signatures, Labels; App: Preferences, Keyboard shortcuts, Mail storage. The PlaraMail Agent's page sits under Your agents.
+- **Your agents.** Three panels, like mail: the rail, a list column (PlaraMail Agent first, then the agents in the order they take mail; drag to reorder), and the picked agent beside it. With nothing picked the detail shows the PlaraMail Agent, which also holds "When no agent matches". Below 760px one column shows: the list, then the agent with a trail back.
 - **Draft review.** Mail's list, not a console panel: the same rows as the inbox (date column, from swatch and address to the recipient, subject), then the agent's reply in full (up to six lines, quoted original left out), the agent's chip, and Discard, Edit, Send. Send is one click and sends the draft as written. Clicking a row opens the draft in the compose window over the console, bottom right, with its notes and Redraft.
 - **Search.** Searches pages (with extra words, so "key" finds AI models and MCP), agents and drafts waiting for review. `/` and ⌘K focus it.
 
@@ -104,7 +104,7 @@ Every console page is built from `ConsoleUI.tsx` and its `.pg-ui-*` styles. A ne
 | `Track` | Steps left to right: the current one filled, the ones before it checked, later ones numbered. New agent's head (Job, Addresses, Name) and an agent's Trust (Watch, Draft, Send). |
 | `Summary` + `SummaryRow` | Label, value, Edit (a small `Button` with a pencil; Done is primary). A row with an `editor` opens in place under its value; Done closes it. New agent's last step and an agent's How it works. |
 | `InlineText` | A value that edits where it sits: plain text at rest, a field outline on hover, the focus ring on click. Autosaves. Use it for a single field; keep `editor` for rows that hold several controls. |
-| PluraMail Agent page | Same shape as an agent's: When no agent matches (Leave it or PluraMail Agent drafts) in the Trust card's place, then How it works as Summary rows: Prompt (per address), Model (Change opens AI models), New mail (the config switch), Limits. |
+| PlaraMail Agent page | Same shape as an agent's: When no agent matches (Leave it or PlaraMail Agent drafts) in the Trust card's place, then How it works as Summary rows: Prompt (per address), Model (Change opens AI models), New mail (the config switch), Limits. |
 | Agent page | One column in the order you decide: Trust, Activity (the latest six runs, Show all), How it works (Reads with rules behind Edit; Job, Reply, Limits and Name edit in place), then Delete Agent <name>, set apart by a rule. The head holds Working (or Paused) and Pause / Turn on Agent <name>; both agent buttons carry the agent mark. No tabs or stat cards. |
 | Trust (`.pg-ui-rungs`, `.pg-ui-gate`) | Three rungs as columns, Watch, Draft, Send, each listing what it lets the agent do and what it never does. The current rung is ringed with a Now badge, earlier ones checked, Send locked until 0.9; a rung is a button that moves the agent. Under them, the gate to the next rung: its criteria with a meter each (Draft: 10 matched messages and none failed this week, `TRUST_GATE`; Send: Test on past mail and unedited drafts, both 0.9), the move (primary when the gate is met, "anyway" when not), Back to the rung below, and a 7-day bar chart of handled, skipped and failed runs. Meters and bars are SVG, so no inline styles. |
 | `Chips` + `Chip` | Pick several from a short list. A picked chip has a purple check and ring. |

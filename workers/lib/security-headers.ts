@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 export function withSecurityHeaders(res: Response): Response {
 	if (res.status === 101 || (res as Response & { webSocket?: unknown }).webSocket) return res;
 

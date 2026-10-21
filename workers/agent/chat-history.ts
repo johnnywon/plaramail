@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 /**
  * What the chat agent sends of its stored conversation (#65). The panel keeps
  * every message, old tool output included, and the model gets the history on

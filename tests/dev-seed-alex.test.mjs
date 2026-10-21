@@ -104,7 +104,7 @@ const SPEC = {
 	"O-16": ["ops", "archive", true, false, ["Dev"], "2026-09-25 15:10"],
 	"O-17": ["ops", "archive", true, false, ["Dev"], "2026-09-22 10:30"],
 	"O-18": ["ops", "archive", true, false, [], "2026-09-22 14:06"],
-	"O-19": ["ops", "archive", true, false, ["Incident"], "2026-10-09 09:12"],
+	"O-19": ["ops", "inbox", true, false, ["Incident"], "2026-10-09 09:12"],
 	"O-20": ["ops", "inbox", true, false, ["Incident"], "2026-10-10 16:45"],
 	"O-21": ["ops", "inbox", true, false, ["Cedar"], "2026-10-10 11:40"],
 	"O-22": ["ops", "sent", true, false, ["Cedar"], "2026-10-10 13:15"],

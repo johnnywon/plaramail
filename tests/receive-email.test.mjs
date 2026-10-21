@@ -120,7 +120,7 @@ test("new mail goes to the agent only when an agent's rules take it", async () =
 	assert.equal(await agentAsked(message("Invoice 42"), env), true);
 });
 
-test("mail no agent takes is drafted only when the PluraMail Agent is set to draft it", async () => {
+test("mail no agent takes is drafted only when the PlaraMail Agent is set to draft it", async () => {
 	const leave = await freshEnvironment(["jane@example.org"]);
 	assert.equal(await agentAsked(message("Hello"), leave.env), false, "the default leaves it");
 	const draft = await freshEnvironment(["jane@example.org"], { unmatched: "draft" });

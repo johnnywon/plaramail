@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 /**
  * Undo send (WON-213). Send holds the message in the browser for
  * UNDO_SEND_MS, then sends it. Undo in that time cancels it. The draft is

@@ -248,7 +248,7 @@ export function languageModel(env: Env, ref: ModelRef, key?: string, options: { 
 		case "openrouter":
 			return wrapLanguageModel({
 				model: createOpenAICompatible({
-					name: "openrouter", baseURL: OPENROUTER_BASE, apiKey: key, headers: { "X-Title": "PluraMail" }, fetch: privacyFetch(options.zdr ?? true),
+					name: "openrouter", baseURL: OPENROUTER_BASE, apiKey: key, headers: { "X-Title": "PlaraMail" }, fetch: privacyFetch(options.zdr ?? true),
 				}).chatModel(ref.id),
 				middleware: think,
 			});

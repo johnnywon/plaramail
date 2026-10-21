@@ -1,11 +1,11 @@
 {
-	"name": "pluramail",
-	"version": "0.9.4",
+	"name": "plaramail",
+	"version": "0.9.5",
 	"private": true,
 	"license": "Apache-2.0",
 	"type": "module",
 	"cloudflare": {
-		"label": "PluraMail",
+		"label": "PlaraMail",
 		"products": [
 			"Workers",
 			"Durable Objects",
@@ -31,15 +31,16 @@
 	"scripts": {
 		"build": "react-router build",
 		"cf-typegen": "wrangler types",
-		"deploy": "[ -f build/server/wrangler.json ] || (echo 'Run npm run build first.' >&2; exit 1) && wrangler d1 migrations apply DB --remote -c \"${PLURAMAIL_WRANGLER_CONFIG:-wrangler.jsonc}\" && wrangler deploy",
+		"deploy": "node scripts/check-env.mjs && ([ -f build/server/wrangler.json ] || (echo 'Run npm run build first.' >&2; exit 1)) && wrangler d1 migrations apply DB --remote -c \"${PLARAMAIL_WRANGLER_CONFIG:-wrangler.jsonc}\" && wrangler deploy",
 		"smoke": "bash scripts/smoke.sh",
 		"smoke:mail": "node scripts/smoke-mail.mjs",
 		"dev": "react-router dev",
-		"dev:local": "PLURAMAIL_WRANGLER_CONFIG=wrangler.local.jsonc react-router dev",
+		"dev:local": "PLARAMAIL_WRANGLER_CONFIG=wrangler.local.jsonc react-router dev",
 		"preview": "npm run build && vite preview",
 		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b",
 		"test": "node --test tests/*.test.mjs",
-		"test:build": "node --test --test-concurrency=1 tests/builds/*.test.mjs"
+		"test:build": "node --test --test-concurrency=1 tests/builds/*.test.mjs",
+		"test:browser": "playwright test"
 	},
 	"dependencies": {
 		"@ai-sdk/openai-compatible": "^2.0.81",
@@ -111,6 +112,7 @@
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "1.49.0",
 		"@cloudflare/workers-types": "^5.20260730.1",
+		"@playwright/test": "1.62.1",
 		"@react-router/dev": "^7.5.3",
 		"@tailwindcss/vite": "^4.1.4",
 		"@types/dompurify": "^3.0.5",

@@ -43,7 +43,7 @@ curl -X POST http://localhost:5173/api/v1/dev/seed \
   -d '{"extra": 2000}'
 ```
 
-Apply the D1 migrations first. Without them the seed logs a warning and skips. The code is in `workers/lib/dev-seed/`. It is left out of production builds, except a demo build (`PLURAMAIL_DEMO=1`, see [Demo build](setup.md#demo-build)). `npm run test:build` builds both ways and checks.
+Apply the D1 migrations first. Without them the seed logs a warning and skips. The code is in `workers/lib/dev-seed/`. It is left out of production builds, except a demo build (`PLARAMAIL_DEMO=1`, see [Demo build](setup.md#demo-build)). `npm run test:build` builds both ways and checks.
 
 `vite.config.ts` pre-bundles the UI libraries so the first page load after a fresh start works. If a new dependency brings back "Invalid hook call" on a first load, the dev log names it under "new dependencies optimized": add it to `PREBUNDLE`.
 
@@ -60,6 +60,9 @@ curl -X POST 'http://localhost:5173/cdn-cgi/handler/email?from=sender@example.ne
 npm test
 npm run typecheck
 npm run build
+npm run test:browser
 ```
+
+`npm run test:browser` opens the mail view in Chromium at desktop width and at 375px (`tests/browser/`). It starts a dev server on port 5199 with `tests/browser/wrangler.ci.jsonc`, which has local bindings only, so it needs no Cloudflare account; the sample inbox fills it. Install the browser once with `npx playwright install --only-shell chromium`. CI runs it as the `browser` job.
 
 Design rules live in [`DESIGN.md`](../DESIGN.md). `tests/design-rules.test.mjs` enforces the ones that can be checked.

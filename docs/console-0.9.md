@@ -13,7 +13,7 @@ The console replaces the mail with its own rail, opened at `?console=<page>`.
 | Page | What's on it |
 |---|---|
 | Overview | The last 24 hours: agent actions, sends, auto-drafts, failures, each agent's count today, sends per address |
-| Your agents | Every agent: name, job, addresses, mode, in the order they take mail. The PluraMail Agent is the built-in one. |
+| Your agents | Every agent: name, job, addresses, mode, in the order they take mail. The PlaraMail Agent is the built-in one. |
 | Draft review | Drafts waiting for you, as mail rows |
 | Activity log | Every action by an agent, an MCP client or you, kept 90, 120 or 180 days |
 | AI models | The agent model and its facts, and Cloudflare and OpenRouter side by side: training, retention, models, key |
@@ -40,7 +40,7 @@ New agents start in Watch.
 ## From 0.7
 
 - Playbooks were cut before 0.7 shipped, so there is nothing to migrate. 0008 adds agents and `draft_notes.agent`.
-- Auto-draft becomes the PluraMail Agent's fallback for mail no agent takes.
+- Auto-draft becomes the PlaraMail Agent's fallback for mail no agent takes.
 - Runs, draft notes, redraft, logs, safety checks and send limits stay as built.
 
 ## First agents to ship

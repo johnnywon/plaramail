@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "pluramail",
+	"name": "plaramail",
 	// Set to your Cloudflare account ID, or remove to have wrangler ask.
 	// "account_id": "<your-account-id>",
 	"compatibility_date": "2025-11-28",
@@ -15,7 +15,7 @@
 	],
 	"vars": {
 		// Display name in page titles. Icons and the link preview card live in public/brand/.
-		"APP_NAME": "PluraMail",
+		"APP_NAME": "PlaraMail",
 		// Production deploys must also define POLICY_AUD and TEAM_DOMAIN.
 		// TEAM_DOMAIN must include https://; it may be the base Access URL or full /cdn-cgi/access/certs URL.
 		// The worker now fails closed outside local development if Access is not configured.
@@ -37,16 +37,16 @@
 	"r2_buckets": [
 		{
 			"binding": "BUCKET",
-			"bucket_name": "pluramail",
-			"preview_bucket_name": "pluramail"
+			"bucket_name": "plaramail",
+			"preview_bucket_name": "plaramail"
 		}
 	],
 	// npm run deploy applies the migrations before it deploys. The Deploy to Cloudflare button
-	// creates the database and fills in database_id; by hand, run npx wrangler d1 create pluramail.
+	// creates the database and fills in database_id; by hand, run npx wrangler d1 create plaramail.
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "pluramail",
+			"database_name": "plaramail",
 			"migrations_dir": "migrations"
 		}
 	],
@@ -64,11 +64,11 @@
 	],
 	// Optional: run agent drafts on a queue that retries a failed draft
 	// three times with backoff, then moves it to a dead-letter queue. Without it, each draft is
-	// tried once. Create both queues (npx wrangler queues create pluramail-drafts, and
-	// pluramail-drafts-dlq), then uncomment. Keep max_retries at 3 (workers/agent/runs.ts).
+	// tried once. Create both queues (npx wrangler queues create plaramail-drafts, and
+	// plaramail-drafts-dlq), then uncomment. Keep max_retries at 3 (workers/agent/runs.ts).
 	// "queues": {
-	// 	"producers": [{ "binding": "DRAFT_QUEUE", "queue": "pluramail-drafts" }],
-	// 	"consumers": [{ "queue": "pluramail-drafts", "max_batch_size": 5, "max_retries": 3, "dead_letter_queue": "pluramail-drafts-dlq" }]
+	// 	"producers": [{ "binding": "DRAFT_QUEUE", "queue": "plaramail-drafts" }],
+	// 	"consumers": [{ "queue": "plaramail-drafts", "max_batch_size": 5, "max_retries": 3, "dead_letter_queue": "plaramail-drafts-dlq" }]
 	// },
 	"durable_objects": {
 		"bindings": [

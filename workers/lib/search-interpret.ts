@@ -68,7 +68,7 @@ export function interpretPrompt(text: string, ctx: InterpretContext): string {
 		"",
 		"Rules:",
 		`- Today is ${localToday(ctx.now, ctx.tzOffset)}. Dates are YYYY-MM-DD; before: is exclusive. "last month" is after: the 1st of last month and before: the 1st of this month. A range that runs to today, such as "this week", has no before:.`,
-		"- from: and to: take a name, an address or a domain. A company name becomes its domain if you know it, such as stripe.com.",
+		"- from: and to: take a name, an address or a domain. A company name becomes the company's own mail domain if you know it.",
 		"- Newsletters and mailing lists: has:unsubscribe. Mail the user sent: in:sent.",
 		"- Use label: only with a label from the list below, and to: for the user's own addresses.",
 		"- Leave out what the search language can't express, such as amounts or meaning, and say so in the explanation.",

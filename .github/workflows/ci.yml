@@ -26,3 +26,26 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run test:build
+
+  # The mail view in Chromium at desktop and 375px, against a dev server with local bindings
+  # and the sample inbox (playwright.config.mjs, tests/browser/).
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps --only-shell chromium
+      - run: npm run test:browser
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7

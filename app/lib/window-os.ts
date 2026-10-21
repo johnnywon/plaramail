@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
 /**
  * Runs in <head> before the first paint (WON-232). On macOS it sets
  * `data-os="mac"` on <html>, so the controls in the window's round bottom

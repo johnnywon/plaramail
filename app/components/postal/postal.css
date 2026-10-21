@@ -1455,8 +1455,8 @@ button.pg-model-row:hover { background: var(--pg-hover); }
 .pg-console-colophon-mark { display: grid; align-items: center; height: 24px; }
 .pg-console-colophon-mark > img { grid-area: 1 / 1; }
 /* The lockup PNG is 3x with transparent room around the art, so the round flap ends never touch its edge.
-   21.33px tall shows the art at 18px; the negative margin puts the art, not the padding, on the 20px inset. */
-.pg-console-colophon-logo { display: block; flex: none; height: calc(64px / 3); width: auto; max-width: none; margin: -1.71px; }
+   24.67px tall is the 18px lockup from plara-design, 11px of 3x padding on each side; the negative margin puts the art, not the padding, on the 20px inset. */
+.pg-console-colophon-logo { display: block; flex: none; height: calc(74px / 3); width: auto; max-width: none; margin: calc(-11px / 3); }
 /* Both grounds stay laid out in one cell and the other theme's is only invisible: display: none would restart
    the logo's animation on a theme switch. */
 .pg-console-colophon-logo[data-ground="light"], .postal[data-theme="light"] .pg-console-colophon-logo[data-ground="dark"] { visibility: hidden; }

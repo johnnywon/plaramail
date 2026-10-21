@@ -10,9 +10,11 @@ import { runCron } from "./cron";
 import { consumeAutoDrafts } from "./agent/queue";
 import type { AutoDraftJob } from "./agent/runs";
 import { accessConfigError, accessJwks, getAccessUrls } from "./lib/access-config";
+import { recordError } from "./lib/alerts";
 import { DEMO, demoBlocksPath } from "./lib/demo";
 import { errorResponse } from "./lib/error-page";
 import { foreignOrigin } from "./lib/csrf";
+import { checkHealth, healthResponse } from "./lib/health";
 import { withSecurityHeaders } from "./lib/security-headers";
 import { app as apiApp, receiveEmail } from "./index";
 import { authorize } from "./mcp/authorize";
@@ -41,6 +43,20 @@ const app = new Hono<{ Bindings: Env; Variables: { viewer: string } }>();
 app.use("*", async (c, next) => {
 	await next();
 	c.res = withSecurityHeaders(c.res);
+});
+
+// A request that throws is recorded for the alert mail, then answered with the error page.
+app.onError((err, c) => {
+	console.error("request failed:", c.req.method, c.req.path, err.message, err.stack);
+	c.executionCtx.waitUntil(recordError(c.env, "fetch", `${c.req.method} ${c.req.path}: ${err.message}`));
+	return errorResponse(c.req.raw, 500, "Something went wrong", "The Worker hit an error. It has been logged.");
+});
+
+// Before the Access check: smoke and uptime monitors reach it through the deployment's Access bypass.
+app.get("/health", async (c) => {
+	const health = await checkHealth(c.env);
+	if (!health.ok) console.error("health check failed:", JSON.stringify(health));
+	return healthResponse(health);
 });
 
 // Cloudflare Access JWT validation middleware (production only)
@@ -125,6 +141,7 @@ export default {
 			await receiveEmail(event, env, ctx);
 		} catch (e) {
 			console.error("Failed to process incoming email:", (e as Error).message, (e as Error).stack);
+			ctx.waitUntil(recordError(env, "email", `to ${event.to}: ${(e as Error).message}`));
 			// Re-throw so Cloudflare's email routing can retry delivery or bounce the message.
 			// Swallowing the error would silently drop the email.
 			throw e;
@@ -132,7 +149,10 @@ export default {
 	},
 	async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
 		// The scheduled time, not the clock: a run that starts a minute late still counts as on the hour.
-		ctx.waitUntil(runCron(env, controller.scheduledTime).catch((e) => console.error("cron failed:", (e as Error).message)));
+		ctx.waitUntil(runCron(env, controller.scheduledTime).catch((e) => {
+			console.error("cron failed:", (e as Error).message);
+			return recordError(env, "cron", e);
+		}));
 	},
 	async queue(batch: MessageBatch<AutoDraftJob>, env: Env) {
 		await consumeAutoDrafts(batch, env);

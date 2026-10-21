@@ -29,7 +29,7 @@ import { StoryClock } from "./alex/clock";
 import { type Restored, restoreSnapshot, takeSnapshot } from "./snapshot";
 import { DEMO } from "../demo";
 
-declare const __PLURAMAIL_TZ_OFFSET__: number | undefined;
+declare const __PLARAMAIL_TZ_OFFSET__: number | undefined;
 
 export type SeedProfile = "default" | "alex";
 
@@ -97,7 +97,7 @@ export async function seedMail(env: Env, opts: { tzOffset?: number; extra?: numb
 	const name = opts.profile ?? seedProfile(env);
 	const profile = PROFILES[name];
 	const now = opts.now ?? Date.now();
-	const tz = opts.tzOffset ?? (typeof __PLURAMAIL_TZ_OFFSET__ === "number" ? __PLURAMAIL_TZ_OFFSET__ : 0);
+	const tz = opts.tzOffset ?? (typeof __PLARAMAIL_TZ_OFFSET__ === "number" ? __PLARAMAIL_TZ_OFFSET__ : 0);
 	const inbox = await profile.build(env, { now, tzOffset: tz, extra: opts.extra });
 	const stored = toStored(inbox, profile.prefix);
 
