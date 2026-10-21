@@ -27,3 +27,7 @@ A developer explaining their own project to another developer. Facts, requiremen
 - Present tense for what the code does today. Future plans go in the roadmap, not in feature lists.
 - When something is uncertain or untested, say so once, plainly.
 - Use `example.com`, `example.org` and `example.net` for any domain or address.
+
+## Ticket naming
+
+Plara is the umbrella for PlaraMail and Plara Design. Owner-tracked mail work belongs in `Plara · Mail`, design work in `Plara · Design`, and rename work in `Plara · Rename`. Use registry slugs `plara` and `plara-design`. Mailroom, Open Mailroom and Plura are legacy aliases; do not create separate projects or initiatives under them. Local tracking commands and private pointers stay in the gitignored `CLAUDE.local.md`.
