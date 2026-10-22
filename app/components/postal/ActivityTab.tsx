@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ACTIVITY_DAYS, type ActivityDays } from "shared/prefs";
 import api, { type ActivityActor, type ActivityEntry, type AutoDraftRun } from "~/services/api";
@@ -50,6 +50,23 @@ export function RunBadge({ state }: { state: keyof typeof RUN_LABELS }) {
 	return <Badge tone={tone} dot live={state === "running" || state === "queued"}>{RUN_LABELS[state]}</Badge>;
 }
 
+/** Undo for an action agent's action: unstar, remove the label, back to the inbox, mark unread. */
+export function UndoAction({ actionId }: { actionId: string }) {
+	const queryClient = useQueryClient();
+	const undo = useMutation({
+		mutationFn: () => api.undoAgentAction(actionId),
+		onSettled: () => {
+			queryClient.invalidateQueries({ queryKey: ["activity"] });
+			queryClient.invalidateQueries({ queryKey: ["agent-actions"] });
+		},
+	});
+	return (
+		<Button size="sm" variant="quiet" disabled={undo.isPending} title={undo.error?.message} onClick={() => undo.mutate()}>
+			{undo.isPending ? "Undoing" : undo.isError ? "Retry undo" : "Undo"}
+		</Button>
+	);
+}
+
 export function ActivityEntryRow({ entry, identities }: { entry: ActivityEntry; identities: Identities }) {
 	return (
 		<Item
@@ -57,6 +74,7 @@ export function ActivityEntryRow({ entry, identities }: { entry: ActivityEntry; 
 			badge={<Badge tone={entry.ok ? (entry.action === "send" ? "send" : entry.action === "draft" ? "draft" : "neutral") : "danger"}>{entry.ok ? ACTION_LABELS[entry.action] : "Failed"}</Badge>}
 			title={entry.summary ?? entry.tool}
 			time={when(entry.at)}
+			aside={entry.undo ? <UndoAction actionId={entry.undo} /> : undefined}
 			meta={<>
 				<span>{ACTOR_LABELS[entry.actor]}{entry.client ? ` · ${entry.client}` : ""}</span>
 				{entry.mailboxId && <AddressText address={entry.mailboxId} identity={identities.of(entry.mailboxId)} bold={false} short />}

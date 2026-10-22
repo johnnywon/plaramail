@@ -31,6 +31,7 @@ const WRITES = {
 	"PUT /api/v1/agents/order": SETTINGS,
 	"PUT /api/v1/agents/:id": SETTINGS,
 	"DELETE /api/v1/agents/:id": SETTINGS,
+	"POST /api/v1/agent-actions/:id/undo": SETTINGS,
 	"DELETE /api/v1/mcp/apps/:id": SETTINGS,
 	"PUT /api/v1/prefs": SETTINGS,
 	"PUT /api/v1/agent-model": SETTINGS,

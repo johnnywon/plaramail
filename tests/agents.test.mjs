@@ -54,10 +54,10 @@ test("migration 0008 adds agents, the run's agent and the draft's agent on top o
 	const before = readdirSync("migrations").filter((f) => /^\d{4}_.*\.sql$/.test(f) && f < "0008").sort();
 	await sql.schema(before.map((f) => readFileSync(`migrations/${f}`, "utf8")).join("\n"));
 	await sql.schema(readFileSync("migrations/0008_agents.sql", "utf8"));
-	assert.deepEqual(await agents.listAgents(sql), []);
 	const columns = async (table) => (await sql.all(`SELECT name FROM pragma_table_info('${table}')`)).map((r) => r.name);
 	assert.ok((await columns("auto_draft_runs")).includes("agent_id"));
 	assert.ok((await columns("draft_notes")).includes("agent"));
+	assert.ok((await columns("agents")).includes("job"));
 });
 
 test("the version Send arrives in is one constant, and the Console shows it from there (#45)", () => {

@@ -13,6 +13,9 @@
  * - The model gets three tools: get_email and get_thread return that scanned
  *   snapshot and nothing else, and draft_reply replies to the new email, to
  *   its Reply-To or else its sender. The model can't change the recipient.
+ * - An action agent with no rules adds one tool for what it does (star_email,
+ *   label_email, archive_email or mark_read). It acts on the new email only,
+ *   once, as that agent. With no reply agent, draft_reply is left out.
  *
  * The chat agent's tools are in ./index.ts.
  */
@@ -25,7 +28,8 @@ import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { parseSender } from "../lib/message-meta";
 import { HeaderValueSchema } from "../lib/schemas";
 import type { EmailFull } from "../lib/schemas";
-import { type Agent, agentPrompt, findAgent, firstFitting } from "../lib/agents";
+import { type Agent, type AgentAction, actionAgentPrompt, agentPrompt, findAgent, firstFitting } from "../lib/agents";
+import { ACTION_TOOLS, type ActionDeps, type ActionResult, runAgentAction } from "../lib/agent-actions";
 import { toolDraftReply } from "../lib/tools";
 import type { MailboxStore } from "../store/types";
 import type { Sql } from "../store/sql";
@@ -33,6 +37,8 @@ import type { Env } from "../types";
 import { defineTool } from "./tool-def";
 
 export const AUTO_DRAFT_TOOLS = ["get_email", "get_thread", "draft_reply"] as const;
+/** The action tools an action agent with no rules can add, one per Does. */
+export const AUTO_ACTION_TOOLS = Object.values(ACTION_TOOLS);
 
 /** The inbound email auto-draft answers, and who the reply goes to. */
 export interface AutoDraftTarget {
@@ -129,10 +135,19 @@ export async function prepareAutoDraft(
 /** Characters of each earlier message quoted in the prompt. get_thread has them in full. */
 const PROMPT_HISTORY_CHARS = 500;
 
-export function autoDraftPrompt(mailboxId: string, threadId: string, context: AutoDraftContext, agents: readonly Agent[] = []): string {
+/**
+ * The drafting run's prompt. `actions` are the action agents with no rules,
+ * whose jobs the model checks. With `reply` false no reply is asked for: the
+ * run only decides which actions fit.
+ */
+export function autoDraftPrompt(
+	mailboxId: string, threadId: string, context: AutoDraftContext, agents: readonly Agent[] = [],
+	options: { actions?: readonly Agent[]; reply?: boolean } = {},
+): string {
 	const { email, thread } = context;
+	const reply = options.reply ?? true;
 	const from = email.sender_name ? `${email.sender_name} <${email.sender}>` : email.sender;
-	let prompt = `A new email just arrived. Draft an appropriate response using draft_reply.
+	let prompt = `A new email just arrived. ${reply ? "Draft an appropriate response using draft_reply." : "Do not reply to it."}
 
 Email details:
 - Mailbox: ${mailboxId}
@@ -153,9 +168,11 @@ ${email.body_text || "(empty)"}`;
 	} else {
 		prompt += `\n\nThis is the first message in the thread (no prior conversation).`;
 	}
-	prompt += `\n\nBased on the email content and thread context above, draft a reply using draft_reply. If you need more context, use get_thread.`;
-	const section = agentPrompt(agents);
+	if (reply) prompt += `\n\nBased on the email content and thread context above, draft a reply using draft_reply. If you need more context, use get_thread.`;
+	const section = reply ? agentPrompt(agents) : "";
 	if (section) prompt += `\n\n${section}`;
+	const actions = actionAgentPrompt(options.actions ?? [], ACTION_TOOLS);
+	if (actions) prompt += `\n\n${actions}`;
 	return prompt;
 }
 
@@ -164,11 +181,11 @@ export function createAutoDraftTools(
 	target: AutoDraftTarget,
 	context: Pick<AutoDraftContext, "thread">,
 	draftReply: typeof toolDraftReply = toolDraftReply,
-	options: { agents?: readonly Agent[]; onDraft?: (draftId: string, agent: string | null) => void } = {},
+	options: { agents?: readonly Agent[]; onDraft?: (draftId: string, agent: string | null) => void; reply?: boolean } = {},
 ) {
 	const { mailboxId, emailId, threadId, to } = target;
 	const agents = options.agents ?? [];
-	return {
+	const tools = {
 		get_email: defineTool({
 			description: "Get an email in this conversation with its full body. Only the new email and the emails in its thread can be read.",
 			parameters: z.object({
@@ -215,6 +232,47 @@ export function createAutoDraftTools(
 				return result;
 			},
 		}),
+	};
+	if (options.reply === false) {
+		const { draft_reply: _left, ...rest } = tools;
+		return rest;
+	}
+	return tools;
+}
+
+/**
+ * One tool per action the given agents do, for action agents with no rules.
+ * The model names the agent; the tool acts on the new email as that agent,
+ * once, and logs it (workers/lib/agent-actions.ts). Not wrapped in logTools.
+ */
+export function createActionTools(
+	target: Pick<AutoDraftTarget, "mailboxId" | "emailId">,
+	agents: readonly Agent[],
+	deps: ActionDeps,
+	onAct: (result: ActionResult) => void = () => {},
+) {
+	const tool = (does: AgentAction, verb: string) => {
+		const own = agents.filter((a) => a.does === does);
+		if (own.length === 0) return {};
+		return {
+			[ACTION_TOOLS[does]]: defineTool({
+				description: `${verb} the new email, as an action agent whose job fits it. Call once per agent: ${own.map((a) => a.name).join(", ")}.`,
+				parameters: z.object({ agent: z.string().describe("The name of the agent whose job fits.") }),
+				execute: async ({ agent }: { agent: string }): Promise<unknown> => {
+					const found = findAgent(own, agent);
+					if (!found) return { error: `No agent named "${agent}" does this. Use one of: ${own.map((a) => a.name).join(", ")}.` };
+					const result = await runAgentAction(deps, found, target);
+					onAct(result);
+					return result.error ? { error: result.error } : { status: result.state, agent: found.name };
+				},
+			}),
+		};
+	};
+	return {
+		...tool("star", "Star"),
+		...tool("label", "Add this agent's label to"),
+		...tool("archive", "Archive"),
+		...tool("mark_read", "Mark read"),
 	};
 }
 

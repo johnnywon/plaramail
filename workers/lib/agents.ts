@@ -9,6 +9,10 @@
  * (workers/agent/index.ts). The agent's mode decides what happens to its
  * reply: Watch records it, Draft keeps the draft, Send sends it.
  *
+ * An action agent stars, labels, archives or marks read instead of replying
+ * (workers/lib/agent-actions.ts). Its ladder is Watch, then On. When it has
+ * rules, it acts as soon as they pass, with no model call.
+ *
  * People write agents in Console > Agents; nothing from incoming mail
  * reaches them. Send waits for SEND_VERSION (SEND_ENABLED): an agent earns it with
  * Test on past mail and a record of drafts sent unchanged.
@@ -19,8 +23,21 @@ import { RUN_STALE_MS } from "../agent/runs";
 import type { Sql } from "../store/sql";
 import { htmlToText } from "./message-meta";
 
-export const AGENT_MODES = ["watch", "draft", "send"] as const;
+/** watch, draft and send are for reply agents; watch and on for action agents. */
+export const AGENT_MODES = ["watch", "draft", "send", "on"] as const;
 export type AgentMode = (typeof AGENT_MODES)[number];
+
+/** What an agent does with mail it takes. One per agent. */
+export const AGENT_DOES = ["reply", "star", "label", "archive", "mark_read"] as const;
+export type AgentDoes = (typeof AGENT_DOES)[number];
+export type AgentAction = Exclude<AgentDoes, "reply">;
+export const isAction = (does: AgentDoes): does is AgentAction => does !== "reply";
+
+/** The modes an agent that does `does` can be in, lowest first. */
+export const modesFor = (does: AgentDoes): readonly AgentMode[] => (isAction(does) ? ["watch", "on"] : ["watch", "draft", "send"]);
+
+/** A new action agent's daily limit. A reply agent's is 25. */
+export const ACTION_DAILY_LIMIT = 100;
 
 /** Off until SEND_VERSION. While off, the API refuses Send and an agent stored in Send works as Draft. */
 export const SEND_ENABLED = false;
@@ -48,6 +65,9 @@ export interface Agent {
 	instructions: string;
 	exampleReply: string;
 	mode: AgentMode;
+	does: AgentDoes;
+	/** The label a Label agent adds. */
+	labelId: string | null;
 	enabled: boolean;
 	position: number;
 	dailyLimit: number;
@@ -72,13 +92,15 @@ export const AgentBody = z.object({
 	instructions: z.string().max(4000).optional(),
 	exampleReply: z.string().max(4000).optional(),
 	mode: z.enum(AGENT_MODES).refine((m) => SEND_ENABLED || m !== "send", SEND_LATER).optional(),
+	does: z.enum(AGENT_DOES).optional(),
+	labelId: z.string().trim().min(1).max(100).nullable().optional(),
 	enabled: z.boolean().optional(),
 	dailyLimit: z.number().int().min(0).max(100).optional(),
 	perSenderLimit: z.number().int().min(1).max(10).optional(),
 });
 export type AgentInput = z.infer<typeof AgentBody>;
 
-const COLUMNS = "id, name, job, addresses, rules, instructions, example_reply, mode, enabled, position, daily_limit, per_sender_limit, created_at, updated_at";
+const COLUMNS = "id, name, job, addresses, rules, instructions, example_reply, mode, does, label_id, enabled, position, daily_limit, per_sender_limit, created_at, updated_at";
 
 function parseJson<T>(raw: unknown, fallback: T): T {
 	try {
@@ -89,8 +111,14 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 	}
 }
 
-function storedMode(raw: unknown): AgentMode {
+function storedDoes(raw: unknown): AgentDoes {
+	return (AGENT_DOES as readonly string[]).includes(String(raw)) ? (String(raw) as AgentDoes) : "reply";
+}
+
+/** A mode the agent's Does doesn't have reads as Watch. */
+function storedMode(raw: unknown, does: AgentDoes): AgentMode {
 	const mode = (AGENT_MODES as readonly string[]).includes(String(raw)) ? (String(raw) as AgentMode) : "watch";
+	if (!modesFor(does).includes(mode)) return "watch";
 	return mode === "send" && !SEND_ENABLED ? "draft" : mode;
 }
 
@@ -105,7 +133,9 @@ const toAgent = (r: Record<string, unknown>): Agent => ({
 	}),
 	instructions: String(r.instructions ?? ""),
 	exampleReply: String(r.example_reply ?? ""),
-	mode: storedMode(r.mode),
+	mode: storedMode(r.mode, storedDoes(r.does)),
+	does: storedDoes(r.does),
+	labelId: r.label_id == null ? null : String(r.label_id),
 	enabled: Number(r.enabled) === 1,
 	position: Number(r.position ?? 0),
 	dailyLimit: Number(r.daily_limit ?? 25),
@@ -126,34 +156,61 @@ export async function getAgent(sql: Sql, id: string): Promise<Agent | null> {
 const nameTaken = async (sql: Sql, name: string, except: string | null) =>
 	!!(await sql.first(`SELECT id FROM agents WHERE lower(name) = lower(?) AND (?2 IS NULL OR id != ?2)`, name.trim(), except));
 
+/** Why a Does, mode and label don't go together, or null when they do. */
+function doesError(does: AgentDoes, mode: AgentMode, labelId: string | null | undefined): string | null {
+	if (!modesFor(does).includes(mode)) return isAction(does) ? "An action agent is in Watch or On" : "On is for action agents. Use Watch or Draft.";
+	if (does === "label" && !labelId) return "Pick the label it adds";
+	return null;
+}
+
 /** A new agent goes to the bottom of the list. It starts in Watch unless asked otherwise. */
 export async function createAgent(sql: Sql, input: AgentInput): Promise<{ agent: Agent } | { error: string }> {
+	const does = input.does ?? "reply";
+	const mode = input.mode ?? "watch";
+	const invalid = doesError(does, mode, input.labelId);
+	if (invalid) return { error: invalid };
 	if (await nameTaken(sql, input.name, null)) return { error: "An agent with that name exists" };
 	const now = new Date().toISOString();
 	const rows = await sql.all(
-		`INSERT INTO agents (id, name, job, addresses, rules, instructions, example_reply, mode, enabled, position, daily_limit, per_sender_limit, created_at, updated_at)
-		SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, (SELECT COALESCE(MAX(position) + 1, 0) FROM agents), ?10, ?11, ?12, ?12
+		`INSERT INTO agents (id, name, job, addresses, rules, instructions, example_reply, mode, enabled, position, daily_limit, per_sender_limit, created_at, updated_at, does, label_id)
+		SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, (SELECT COALESCE(MAX(position) + 1, 0) FROM agents), ?10, ?11, ?12, ?12, ?14, ?15
 		WHERE (SELECT COUNT(*) FROM agents) < ?13
 		RETURNING ${COLUMNS}`,
 		crypto.randomUUID(), input.name.trim(), input.job.trim(), JSON.stringify(input.addresses ?? []), JSON.stringify(input.rules ?? []),
-		input.instructions ?? "", input.exampleReply ?? "", input.mode ?? "watch", input.enabled === false ? 0 : 1,
-		input.dailyLimit ?? 25, input.perSenderLimit ?? 2, now, MAX_AGENTS,
+		input.instructions ?? "", input.exampleReply ?? "", mode, input.enabled === false ? 0 : 1,
+		input.dailyLimit ?? (isAction(does) ? ACTION_DAILY_LIMIT : 25), input.perSenderLimit ?? 2, now, MAX_AGENTS,
+		does, does === "label" ? input.labelId : null,
 	);
 	return rows.length ? { agent: toAgent(rows[0]) } : { error: `You can have up to ${MAX_AGENTS} agents` };
 }
 
+/**
+ * Change an agent. A new Does starts it again in Watch unless a mode comes
+ * with it: what it earned replying says nothing about archiving.
+ */
 export async function updateAgent(sql: Sql, id: string, input: Partial<AgentInput>): Promise<{ agent: Agent | null } | { error: string }> {
+	if (input.does !== undefined || input.mode !== undefined || input.labelId !== undefined) {
+		const current = await getAgent(sql, id);
+		if (!current) return { agent: null };
+		const does = input.does ?? current.does;
+		const mode = input.mode ?? (does !== current.does ? "watch" : current.mode);
+		const labelId = input.labelId !== undefined ? input.labelId : current.labelId;
+		const invalid = doesError(does, mode, labelId);
+		if (invalid) return { error: invalid };
+		input = { ...input, does, mode, labelId: does === "label" ? labelId : null };
+	}
 	if (input.name !== undefined && await nameTaken(sql, input.name, id)) return { error: "An agent with that name exists" };
 	const json = (v: unknown) => (v === undefined ? null : JSON.stringify(v));
 	const rows = await sql.all(
 		`UPDATE agents SET name = COALESCE(?, name), job = COALESCE(?, job), addresses = COALESCE(?, addresses), rules = COALESCE(?, rules),
 			instructions = COALESCE(?, instructions), example_reply = COALESCE(?, example_reply), mode = COALESCE(?, mode),
-			enabled = COALESCE(?, enabled), daily_limit = COALESCE(?, daily_limit), per_sender_limit = COALESCE(?, per_sender_limit), updated_at = ?
+			enabled = COALESCE(?, enabled), daily_limit = COALESCE(?, daily_limit), per_sender_limit = COALESCE(?, per_sender_limit), updated_at = ?,
+			does = COALESCE(?, does), label_id = CASE WHEN ? THEN ? ELSE label_id END
 		WHERE id = ? RETURNING ${COLUMNS}`,
 		input.name?.trim() ?? null, input.job?.trim() ?? null, json(input.addresses), json(input.rules),
 		input.instructions ?? null, input.exampleReply ?? null, input.mode ?? null,
 		input.enabled === undefined ? null : input.enabled ? 1 : 0, input.dailyLimit ?? null, input.perSenderLimit ?? null,
-		new Date().toISOString(), id,
+		new Date().toISOString(), input.does ?? null, input.labelId !== undefined ? 1 : 0, input.labelId ?? null, id,
 	);
 	return { agent: rows.length ? toAgent(rows[0]) : null };
 }
@@ -198,6 +255,35 @@ export function matchAgents(agents: readonly Agent[], mail: InboundMail): Agent[
 		&& a.rules.every((r) => testRule(r, mail)));
 }
 
+export interface InboundPlan {
+	/** Reply agents whose rules passed, in list order. At most one replies. */
+	reply: Agent[];
+	/** Action agents with rules that passed: each acts with no model call. */
+	act: Agent[];
+	/** Action agents with no rules: the model says whether the job fits. */
+	ask: Agent[];
+}
+
+/** Split the agents that matched a message by what happens next. */
+export function planInbound(matched: readonly Agent[]): InboundPlan {
+	const plan: InboundPlan = { reply: [], act: [], ask: [] };
+	for (const a of matched) {
+		if (!isAction(a.does)) plan.reply.push(a);
+		else if (a.mode === "watch" || a.mode === "on") (a.rules.length > 0 ? plan.act : plan.ask).push(a);
+	}
+	return plan;
+}
+
+/** What the action agents the model decides on do, and the tool each calls. */
+export function actionAgentPrompt(agents: readonly Agent[], tools: Record<AgentAction, string>): string {
+	if (agents.length === 0) return "";
+	const list = agents.map((a) => `### ${a.name}\nJob: ${a.job.trim()}\nTool: ${tools[a.does as AgentAction]}`).join("\n\n");
+	return `## Action agents
+These agents act on the new email instead of replying. For every one whose job fits, call its tool once with its name as agent. Leave the others alone. This does not change whether you reply.
+
+${list}`;
+}
+
 /** The agents whose rules passed, in list order, for the drafting prompt: the model takes the first whose job fits, or none. */
 export function agentPrompt(agents: readonly Agent[]): string {
 	if (agents.length === 0) return "";
@@ -240,7 +326,7 @@ export async function agentSendsToday(sql: Sql, agentId: string, sender: string,
 
 export interface AgentStats {
 	agentId: string;
-	/** Runs in the last 7 days by state. */
+	/** Runs in the last 7 days by state. An action agent's are its actions: watched, done, skipped (daily limit) and failed. */
 	runs: Partial<Record<string, number>>;
 	today: number;
 	/** Runs queued or running that moved in the last RUN_STALE_MS: the agent is working now. */
@@ -252,16 +338,20 @@ export async function agentStats(sql: Sql, now = Date.now()): Promise<AgentStats
 	const rows = await sql.all(
 		`SELECT agent_id, state, COUNT(*) AS n, SUM(CASE WHEN created_at >= ?2 THEN 1 ELSE 0 END) AS today,
 			SUM(CASE WHEN state IN ('queued', 'running') AND COALESCE(updated_at, created_at) >= ?3 THEN 1 ELSE 0 END) AS live
-		FROM auto_draft_runs WHERE agent_id IS NOT NULL AND created_at >= ?1 GROUP BY agent_id, state`,
+		FROM auto_draft_runs WHERE agent_id IS NOT NULL AND created_at >= ?1 GROUP BY agent_id, state
+		UNION ALL
+		SELECT agent_id, CASE state WHEN 'undone' THEN 'done' WHEN 'limited' THEN 'skipped' ELSE state END AS state, COUNT(*) AS n,
+			SUM(CASE WHEN created_at >= ?2 THEN 1 ELSE 0 END) AS today, 0 AS live
+		FROM agent_actions WHERE created_at >= ?1 GROUP BY 1, 2`,
 		new Date(now - 7 * 86_400_000).toISOString(), new Date(now - 86_400_000).toISOString(), new Date(now - RUN_STALE_MS).toISOString(),
 	);
 	const byAgent = new Map<string, AgentStats>();
 	for (const r of rows) {
 		const id = String(r.agent_id);
 		const stats = byAgent.get(id) ?? { agentId: id, runs: {}, today: 0, live: 0 };
-		stats.runs[String(r.state)] = Number(r.n);
+		stats.runs[String(r.state)] = (stats.runs[String(r.state)] ?? 0) + Number(r.n);
 		stats.live += Number(r.live ?? 0);
-		if (["watched", "drafted", "sent"].includes(String(r.state))) stats.today += Number(r.today ?? 0);
+		if (["watched", "drafted", "sent", "done"].includes(String(r.state))) stats.today += Number(r.today ?? 0);
 		byAgent.set(id, stats);
 	}
 	return [...byAgent.values()];

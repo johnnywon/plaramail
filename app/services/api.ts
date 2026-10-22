@@ -109,6 +109,8 @@ export interface ActivityEntry {
 	target: string | null;
 	summary: string | null;
 	ok: boolean;
+	/** The action agent's action Undo reverses, while it can. */
+	undo: string | null;
 }
 
 export interface McpUsage {
@@ -153,7 +155,26 @@ export interface AutoDraftRun {
 	updatedAt: string;
 }
 
-export type AgentMode = "watch" | "draft" | "send";
+/** Watch, Draft and Send are for reply agents; Watch and On for action agents. */
+export type AgentMode = "watch" | "draft" | "send" | "on";
+
+/** What an agent does with mail it takes. */
+export type AgentDoes = "reply" | "star" | "label" | "archive" | "mark_read";
+
+/** One action an action agent took or would have taken. */
+export interface AgentActionRow {
+	id: string;
+	agentId: string;
+	agentName: string;
+	mailboxId: string;
+	emailId: string;
+	does: Exclude<AgentDoes, "reply">;
+	labelId: string | null;
+	state: "watched" | "done" | "undone" | "limited" | "failed";
+	reason: string | null;
+	createdAt: string;
+	undoneAt: string | null;
+}
 
 export interface AgentRule {
 	field: "from" | "subject" | "body";
@@ -171,6 +192,9 @@ export interface Agent {
 	instructions: string;
 	exampleReply: string;
 	mode: AgentMode;
+	does: AgentDoes;
+	/** The label a Label agent adds. */
+	labelId: string | null;
 	enabled: boolean;
 	position: number;
 	dailyLimit: number;
@@ -183,7 +207,8 @@ export type AgentInput = Pick<Agent, "name" | "job"> & Partial<Omit<Agent, "id" 
 
 export interface AgentStats {
 	agentId: string;
-	runs: Partial<Record<AutoDraftRun["state"], number>>;
+	/** An action agent's are its actions: watched, done, skipped and failed. */
+	runs: Partial<Record<AutoDraftRun["state"] | "done", number>>;
 	today: number;
 	/** Queued or running runs that moved in the last 10 minutes. */
 	live: number;
@@ -523,6 +548,8 @@ const api = {
 	deleteAgent: (id: string) => del<{ deleted: boolean }>(`/api/v1/agents/${encodeURIComponent(id)}`),
 	orderAgents: (ids: string[]) => put<{ ok: boolean }>("/api/v1/agents/order", { ids }),
 	getAgentRuns: (id: string, limit = 50) => get<AutoDraftRun[]>(`/api/v1/agents/${encodeURIComponent(id)}/runs?limit=${limit}`),
+	getAgentActions: (id: string, limit = 50) => get<AgentActionRow[]>(`/api/v1/agents/${encodeURIComponent(id)}/actions?limit=${limit}`),
+	undoAgentAction: (id: string) => post<AgentActionRow>(`/api/v1/agent-actions/${encodeURIComponent(id)}/undo`, {}),
 	getAgentDrafts: () => get<AgentDraft[]>("/api/v1/agents/review"),
 
 	// Redraft an agent draft with an instruction. The draft is replaced; the reply carries its new id.

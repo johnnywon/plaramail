@@ -50,9 +50,10 @@ Decline pitches, ask for missing details, acknowledge new senders, answer FAQs.
 ## Releases
 
 - 0.9: console, agents in Watch and Draft, Draft review, MCP page, MCP sign-in with OAuth 2.1 and a separate send grant.
-- 0.10: the workbench (setup beside what the agent does), Test on past mail, promotion evidence, action agents, then Send.
+- 0.9.6: action agents.
+- 0.10: the workbench (setup beside what the agent does), Test on past mail, promotion evidence, then Send.
 
-## Action agents (0.10, WON-453)
+## Action agents (0.9.6, WON-453)
 
 An agent can do something to mail instead of replying: "favorite emails from higgsfield", "label invoices", "archive newsletters". In 0.9 an agent can only write a reply, so a job like that matches mail and does nothing.
 
@@ -64,10 +65,12 @@ An agent can do something to mail instead of replying: "favorite emails from hig
 - **Limits.** An action agent has a daily limit (100 by default), so a loose rule can't archive a whole inbox in one run.
 - **Tools.** The drafting run gets one tool per action (`star_email`, `label_email`, `archive_email`, `mark_read`) only for an agent whose Does field names it. A message is acted on once per agent; a second run on the same message does nothing.
 
+As built: `workers/lib/agent-actions.ts`, migration `0013_action_agents.sql`. Star, Label and Archive act on the conversation, as the app's own buttons do; Mark read acts on the new message. Undo is `POST /api/v1/agent-actions/:id/undo`. A rule-only action runs before the injection scan, since no model reads the mail. An action agent with no rules waits for the scan like a reply. Changing an agent's Does starts it again in Watch.
+
 ## Build order
 
 1. Console page and navigation (0.9.0)
 2. Agents in Watch and Draft, and Review (0.9.0)
 3. Test on past mail (0.10)
-4. Action agents (0.10)
+4. Action agents (0.9.6)
 5. Send (0.10)

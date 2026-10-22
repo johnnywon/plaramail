@@ -2,6 +2,18 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## Unreleased
+
+### Added
+
+- Action agents. An agent's Does field is Reply, Star, Label (one label, picked at setup), Archive or Mark read. Reply is the 0.9 behaviour. An action agent's ladder is Watch, then On: Watch logs "Would star", On does it.
+- An action agent whose rules pass acts with no model call. New agent offers a From rule from the job ("from example.org"). An action agent with no rules gets one tool in the drafting run (`star_email`, `label_email`, `archive_email` or `mark_read`) and no reply tool, and the model says whether its job fits.
+- Every fitting action agent acts on a message, once. At most one reply agent replies, by list order, and an action never stops a reply.
+- Each action is in Console > Activity with Undo for 30 days: unstar, remove the label, move back to the inbox, mark unread. `POST /api/v1/agent-actions/:id/undo`, `GET /api/v1/agents/:id/actions`.
+- An action agent has a daily limit, 100 by default.
+
+D1 migration: `0013_action_agents.sql`. `npm run deploy` applies it.
+
 ## 0.9.5
 
 ### Added

@@ -51,9 +51,11 @@ import type { DraftNotes } from "../../shared/draft-notes";
 import type { Env } from "../types";
 import { defineTool, logTools } from "./tool-def";
 import { getSystemPrompt } from "./prompt";
-import { autoDraftPrompt, createAutoDraftTools, prepareAutoDraft, saveTextDraft } from "./auto-draft";
+import { autoDraftMessage, autoDraftPrompt, createActionTools, createAutoDraftTools, prepareAutoDraft, saveTextDraft } from "./auto-draft";
 import { type AutoDraftTarget, type DraftOutcome, discardRunDrafts, outcomeAfterError, settleDrafts, watchedReason } from "./runs";
-import { type Agent, agentSendsToday, listAgents, matchAgents } from "../lib/agents";
+import { type Agent, agentSendsToday, listAgents } from "../lib/agents";
+import { type ActionResult, actedText, actFirst, envActionDeps, type FirstPass } from "../lib/agent-actions";
+import type { EmailFull } from "../lib/schemas";
 import { readPrefs } from "../lib/prefs";
 import type { Unmatched } from "../../shared/prefs";
 
@@ -386,6 +388,14 @@ function crossAddressTools(env: Env) {
 	};
 }
 
+/** A skipped run's reason says what the action agents did. With no reply asked for, that is the whole reason. */
+function withActed(outcome: DraftOutcome, acted: readonly ActionResult[], reply: boolean): DraftOutcome {
+	if (outcome.status !== "skipped") return outcome;
+	const text = actedText(acted);
+	if (!reply) return { ...outcome, reason: text || "no action agent's job fits" };
+	return text ? { ...outcome, reason: `${outcome.reason}; ${text}` } : outcome;
+}
+
 /** A user line and an assistant line for the agent's chat history. */
 function autoLog(userText: string, assistantText: string) {
 	return [
@@ -448,10 +458,32 @@ export class EmailAgent extends AIChatAgent<any> {
 	async handleNewEmail(target: AutoDraftTarget): Promise<DraftOutcome> {
 		const env = this.env as Env;
 		const sql = recordsSql(env);
+		const stub = mailStore(env).mailbox(target.mailboxId);
+
+		// Rules first, no model call: the agents that watch this address and whose rules pass.
+		// Action agents among them act now (workers/lib/agent-actions.ts); the model only runs when something is left for it.
+		let first: FirstPass;
+		let unmatched: Unmatched;
+		try {
+			const raw = (await stub.getEmail(target.emailId)) as EmailFull | null;
+			if (!raw) return { status: "skipped", reason: "email not found" };
+			const mail = autoDraftMessage(raw);
+			const [agents, { prefs }] = await Promise.all([listAgents(sql), readPrefs(env)]);
+			unmatched = prefs.unmatched;
+			first = await actFirst(envActionDeps(env), agents, unmatched, {
+				mailboxId: target.mailboxId, emailId: target.emailId, from: mail.sender, subject: mail.subject, body: mail.body_text,
+			});
+		} catch (e) {
+			return { status: "error", error: (e as Error).message || "Agent rules failed" };
+		}
+		if (!first.needsModel) return { status: "skipped", reason: actedText(first.acted) || "no agent takes this mail" };
+		const acted: ActionResult[] = [...first.acted];
+		// Reply agents compete for the reply; action agents never stop it.
+		const matched: Agent[] = first.plan.reply;
+		const reply = matched.length > 0 || unmatched !== "leave";
 
 		// Read the email and its whole thread once and scan everything the
 		// model will see. Any doubt skips the draft (auto-draft.ts).
-		const stub = mailStore(env).mailbox(target.mailboxId);
 		const prepared = await prepareAutoDraft(env.AI, stub, target);
 		if (!prepared.ok) {
 			console.warn(`Auto-draft skipped for ${target.emailId}: ${prepared.reason}`);
@@ -467,28 +499,23 @@ export class EmailAgent extends AIChatAgent<any> {
 
 		// Every draft saved, oldest first; an error after the first still counts as drafted.
 		const draftIds: string[] = [];
-		let matched: Agent[] = [];
-		let unmatched: Unmatched = "leave";
 		let chosen: string | null = null;
 		try {
 			const model = await agentModel(env, { reasoning: false });
 			const systemPrompt = await getSystemPrompt(env, target.mailboxId);
-			// Rules first, no model call: the agents that watch this address and whose rules pass.
-			const [agents, { prefs }] = await Promise.all([listAgents(sql), readPrefs(env)]);
-			unmatched = prefs.unmatched;
-			matched = matchAgents(agents, {
-				mailboxId: target.mailboxId, from: context.email.sender, subject: context.email.subject, body: context.email.body_text,
-			});
-			if (matched.length === 0 && prefs.unmatched === "leave") return { status: "skipped", reason: "no agent takes this mail" };
 			// The model reads the jobs of the agents that passed and drafts for one, or none. The last draft's agent is the one chosen.
-			const tools = logTools(createAutoDraftTools(env, {
-				mailboxId: target.mailboxId,
-				emailId: target.emailId,
-				threadId: target.threadId,
-				to: replyTo,
-			}, context, toolDraftReply, { agents: matched, onDraft: (id, agent) => { draftIds.push(id); chosen = agent; } }), sql, { actor: "auto-draft", bound: target.mailboxId });
-			const autoPrompt = autoDraftPrompt(target.mailboxId, target.threadId, context, matched)
-				+ (matched.length > 0 && prefs.unmatched === "leave" ? "\n\nIf no agent's job fits the new email, write no draft." : "");
+			// Action agents with no rules get their tool; it logs itself, so it stays out of logTools.
+			const tools = {
+				...logTools(createAutoDraftTools(env, {
+					mailboxId: target.mailboxId,
+					emailId: target.emailId,
+					threadId: target.threadId,
+					to: replyTo,
+				}, context, toolDraftReply, { agents: matched, reply, onDraft: (id, agent) => { draftIds.push(id); chosen = agent; } }), sql, { actor: "auto-draft", bound: target.mailboxId }),
+				...createActionTools(target, first.plan.ask, envActionDeps(env), (r) => acted.push(r)),
+			};
+			const autoPrompt = autoDraftPrompt(target.mailboxId, target.threadId, context, matched, { actions: first.plan.ask, reply })
+				+ (reply && matched.length > 0 && unmatched === "leave" ? "\n\nIf no agent's job fits the new email, write no draft." : "");
 
 			// Fresh context for auto-draft: no prior chat history, so old
 			// messages and tool calls don't confuse the model.
@@ -510,7 +537,7 @@ export class EmailAgent extends AIChatAgent<any> {
 			});
 
 			// No draft_reply call: save the model's text as the draft, once verifyDraft keeps something.
-			if (!draftIds.length && result.text.trim()) {
+			if (reply && !draftIds.length && result.text.trim()) {
 				const sanitizedText = await verifyDraft(env.AI, result.text.trim());
 				if (sanitizedText) {
 					await saveTextDraft(stub, sql, { ...target, to: replyTo }, context.email.subject, sanitizedText, (id) => draftIds.push(id));
@@ -521,11 +548,11 @@ export class EmailAgent extends AIChatAgent<any> {
 				...this.messages,
 				...autoLog(
 					`[Auto-triggered] New email from ${target.sender}: "${context.email.subject}"`,
-					draftIds.length ? `Created draft reply to ${replyTo}.` : "No draft: the model wrote nothing to send.",
+					draftIds.length ? `Created draft reply to ${replyTo}.` : reply ? "No draft: the model wrote nothing to send." : "No reply: only action agents took it.",
 				),
 			]);
 
-			return await this.settle(draftIds, chosen, matched, unmatched, target);
+			return withActed(await this.settle(draftIds, chosen, matched, unmatched, target), acted, reply);
 		} catch (e) {
 			console.error("Auto-draft failed:", (e as Error).message);
 			if (!draftIds.length) return outcomeAfterError(e, draftIds);

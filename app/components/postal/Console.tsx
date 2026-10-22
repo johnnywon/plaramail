@@ -8,12 +8,12 @@ import {
 } from "@phosphor-icons/react";
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, type ReactNode, type Ref, useEffect, useRef, useState } from "react";
-import { SEND_VERSION } from "shared/agent";
+import { SEND_VERSION, suggestRule } from "shared/agent";
 import type { Unmatched } from "shared/prefs";
 import { afterMove, moveInOrder } from "./agent-order";
 import { confirmReady } from "./confirm-guard";
-import api, { type Agent, type AgentDraft, type AgentMode, type AgentRule, type AgentStats, type AutoDraftRun } from "~/services/api";
-import { RunBadge, when } from "./ActivityTab";
+import api, { type Agent, type AgentActionRow, type AgentDoes, type AgentDraft, type AgentMode, type AgentRule, type AgentStats, type AutoDraftRun } from "~/services/api";
+import { RunBadge, UndoAction, when } from "./ActivityTab";
 import { AgentIcon } from "./AgentIcon";
 import type { AddressInfo } from "./compose";
 import { ConsoleMessageContext, type MessageRef, useOpenMessage } from "./console-message";
@@ -40,6 +40,23 @@ const MODES: { value: AgentMode; label: string; disabled?: boolean; title?: stri
 	// Send arrives in SEND_VERSION, after Test on past mail (workers/lib/agents.ts, SEND_ENABLED).
 	{ value: "send", label: "Send", disabled: true, title: `Arrives in ${SEND_VERSION}` },
 ];
+
+/** An action agent's ladder: Watch logs what it would do, On does it. */
+const ACTION_MODES: typeof MODES = [{ value: "watch", label: "Watch" }, { value: "on", label: "On" }];
+const modesOf = (does: AgentDoes) => (does === "reply" ? MODES : ACTION_MODES);
+
+/** What an agent does with mail it takes. `would` and `did` fill the log lines. */
+const DOES: { value: AgentDoes; label: string; would: string; did: string }[] = [
+	{ value: "reply", label: "Reply", would: "would handle", did: "replied" },
+	{ value: "star", label: "Star", would: "would star", did: "starred" },
+	{ value: "label", label: "Label", would: "would label", did: "labelled" },
+	{ value: "archive", label: "Archive", would: "would archive", did: "archived" },
+	{ value: "mark_read", label: "Mark read", would: "would mark read", did: "marked read" },
+];
+const doesOf = (does: AgentDoes) => DOES.find((d) => d.value === does) ?? DOES[0];
+
+/** Undo is offered this long after an action (workers/lib/agent-actions.ts, UNDO_DAYS). */
+const UNDO_MS = 30 * 86_400_000;
 
 /** One icon per page, at rail size and search size. */
 const ICONS: Record<ConsoleTab, (size: number) => React.ReactNode> = {
@@ -68,7 +85,7 @@ const TEMPLATES: { label: string; name: string; job: string; instructions: strin
 ];
 
 export function ModeBadge({ mode }: { mode: AgentMode }) {
-	return <Badge tone={mode} dot>{MODES.find((m) => m.value === mode)?.label}</Badge>;
+	return <Badge tone={mode === "on" ? "ok" : mode} dot>{[...MODES, ...ACTION_MODES].find((m) => m.value === mode)?.label}</Badge>;
 }
 
 /** Working: the agent has a message running or queued right now. */
@@ -86,9 +103,10 @@ function Addresses({ list, identities }: { list: string[]; identities: Identitie
 	);
 }
 
-function weekText(stats: AgentStats | undefined, mode: AgentMode) {
+function weekText(stats: AgentStats | undefined, mode: AgentMode, does: AgentDoes = "reply") {
 	const runs = stats?.runs ?? {};
-	if (mode === "watch") return `${runs.watched ?? 0} would handle`;
+	if (mode === "watch") return `${runs.watched ?? 0} ${doesOf(does).would}`;
+	if (does !== "reply") return `${runs.done ?? 0} ${doesOf(does).did}`;
 	const sent = runs.sent ?? 0;
 	const drafted = runs.drafted ?? 0;
 	return [sent ? `${sent} sent` : "", drafted || !sent ? `${drafted} ${drafted === 1 ? "draft" : "drafts"}` : ""].filter(Boolean).join(", ");
@@ -312,7 +330,7 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 				count={(data?.agents.length ?? 0) + 1}
 				picked={picked}
 				actions={<Button size="sm" variant="primary" icon={<PlusIcon size={12} weight="bold" />} onClick={() => setCreating(true)}>Create agent</Button>}
-				foot="Each agent starts in Watch, moves to Draft, then to Send once you trust it. Higher in the list takes a message first. Drag to reorder, or use the arrows."
+				foot="Each agent starts in Watch. A reply agent moves to Draft, then to Send once you trust it; an action agent moves to On. Higher in the list takes the reply first. Every action agent that fits acts. Drag to reorder, or use the arrows."
 				rows={<>
 					<Row
 						icon={<AgentIcon size={14} />}
@@ -331,7 +349,7 @@ function AgentsSplit(props: PageProps & { settings: React.ReactNode }) {
 							tag={<>{!a.enabled && <Badge>paused</Badge>}<WorkingBadge stats={stats.get(a.id)} /></>}
 							aside={<ModeBadge mode={a.mode} />}
 							sub={a.job}
-							meta={<><Addresses list={a.addresses} identities={identities} /><span>{weekText(stats.get(a.id), a.mode)} in 7 days</span></>}
+							meta={<><Addresses list={a.addresses} identities={identities} /><span>{weekText(stats.get(a.id), a.mode, a.does)} in 7 days</span></>}
 							current={shown === a.id}
 							off={!a.enabled}
 							onClick={() => onAgent(a.id)}
@@ -389,11 +407,21 @@ function CreateAgent({ addresses, identities, onClose, onCreated }: { addresses:
 	const [instructions, setInstructions] = useState("");
 	const [picked, setPicked] = useState<string[]>([]);
 	const [choosing, setChoosing] = useState(false);
+	const [does, setDoes] = useState<AgentDoes>("reply");
+	const [labelId, setLabelId] = useState("");
+	const [useRule, setUseRule] = useState(true);
+	const labels = useQuery({ queryKey: ["labels"], queryFn: () => api.getLabels(), enabled: does === "label" });
 	const panels = useRef<(HTMLElement | null)[]>([]);
 	const template = TEMPLATES.find((t) => t.job === job);
-	const done = [!!job.trim(), !(choosing && picked.length === 0), !!name.trim()];
+	// An action agent with a rule acts without a model call, so setup offers one from the job.
+	const offered = does === "reply" ? null : suggestRule(job);
+	const rule = offered && useRule ? offered : null;
+	const done = [!!job.trim() && (does !== "label" || !!labelId), !(choosing && picked.length === 0), !!name.trim()];
 	const create = useMutation({
-		mutationFn: () => api.createAgent({ name: name.trim(), job: job.trim(), instructions, addresses: choosing ? picked : [] }),
+		mutationFn: () => api.createAgent({
+			name: name.trim(), job: job.trim(), instructions: does === "reply" ? instructions : "", addresses: choosing ? picked : [],
+			does, labelId: does === "label" ? labelId : null, rules: rule ? [rule] : [],
+		}),
 		onSuccess: (a) => { queryClient.invalidateQueries({ queryKey: ["agents"] }); onCreated(a); },
 	});
 	const last = step === NEW_STEPS.length - 1;
@@ -437,7 +465,7 @@ function CreateAgent({ addresses, identities, onClose, onCreated }: { addresses:
 									{TEMPLATES.map((t) => (
 										<button
 											key={t.label} type="button" className="pg-ui-start" aria-pressed={template === t}
-											onClick={() => { setName(t.name); setJob(t.job); setInstructions(t.instructions); }}
+											onClick={() => { setName(t.name); setJob(t.job); setInstructions(t.instructions); setDoes("reply"); }}
 										>
 											<b>{t.label}</b>
 											<span>{t.job}</span>
@@ -445,6 +473,18 @@ function CreateAgent({ addresses, identities, onClose, onCreated }: { addresses:
 									))}
 								</div>
 							)}
+							<div className="pg-ui-toolbar">
+								<label className="pg-ui-sum-label" htmlFor="new-agent-does">It does</label>
+								<select id="new-agent-does" className="pg-select" value={does} onChange={(e) => setDoes(e.target.value as AgentDoes)}>
+									{DOES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+								</select>
+								{does === "label" && (
+									<select className="pg-select" value={labelId} aria-label="Label it adds" onChange={(e) => setLabelId(e.target.value)}>
+										<option value="">Pick a label</option>
+										{labels.data?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+									</select>
+								)}
+							</div>
 						</section>
 						<section ref={(el) => { panels.current[1] = el; }} className="pg-ui-wiz-panel" inert={step !== 1} aria-label="Addresses">
 							<span className="pg-ui-wiz-q" id="new-agent-addresses" tabIndex={-1} data-step-focus>Which addresses should it read?</span>
@@ -459,6 +499,18 @@ function CreateAgent({ addresses, identities, onClose, onCreated }: { addresses:
 							<Summary>
 								<SummaryRow label="Job" onEdit={() => go(0)}>{job.trim()}</SummaryRow>
 								<SummaryRow label="Reads" onEdit={() => go(1)}>{scope}</SummaryRow>
+								<SummaryRow label="Does" onEdit={() => go(0)}>
+									{does === "label" ? `Label ${labels.data?.find((l) => l.id === labelId)?.name ?? ""}` : doesOf(does).label}
+								</SummaryRow>
+								{offered && (
+									<SummaryRow label="Rule">
+										<Choices
+											value={useRule ? "rule" : "model"} onChange={(v) => setUseRule(v === "rule")}
+											options={[{ value: "rule", label: `From contains “${offered.value}”` }, { value: "model", label: "No rule" }]}
+										/>
+										<span className="pg-ui-sum-sub">{useRule ? "Acts when the rule passes, with no model call" : "The model reads each message to decide"}</span>
+									</SummaryRow>
+								)}
 								<SummaryRow label="Mode"><ModeBadge mode="watch" /></SummaryRow>
 							</Summary>
 							{create.error && <Note tone="error">{create.error.message}</Note>}
@@ -515,7 +567,7 @@ function AddressPicker({ addresses, identities, choosing, value, onChoosing, onC
 }
 
 /** What step 3 does with a reply, by mode. */
-const REPLY_WITH: Record<AgentMode, string> = { watch: "logs only", draft: "drafts for review", send: "sends" };
+const REPLY_WITH: Record<AgentMode, string> = { watch: "logs only", draft: "drafts for review", send: "sends", on: "acts" };
 
 const RULE_FIELDS: { value: AgentRule["field"]; label: string }[] = [{ value: "from", label: "From" }, { value: "subject", label: "Subject" }, { value: "body", label: "Body" }];
 const RULE_OPS: { value: AgentRule["op"]; label: string }[] = [
@@ -533,7 +585,9 @@ function AgentPage({ agentId, identities, addresses, onTab }: PageProps & { agen
 	const stats = data?.stats.find((s) => s.agentId === agentId);
 	const refresh = () => queryClient.invalidateQueries({ queryKey: ["agents"] });
 	const update = useMutation({ mutationFn: (input: Partial<Agent>) => api.updateAgent(agentId, input), onSuccess: refresh });
-	const runs = useQuery({ queryKey: ["agent-runs", agentId], queryFn: () => api.getAgentRuns(agentId, 100) });
+	const acts = !!agent && agent.does !== "reply";
+	const runs = useQuery({ queryKey: ["agent-runs", agentId], queryFn: () => api.getAgentRuns(agentId, 100), enabled: !!agent && !acts });
+	const actions = useQuery({ queryKey: ["agent-actions", agentId], queryFn: () => api.getAgentActions(agentId, 100), enabled: acts });
 	const trail = { label: CONSOLE_LABELS.agents, onClick: () => onTab("agents") };
 
 	if (isPending) return <Page title="" trail={trail}><p className="pg-ui-note">Loading</p></Page>;
@@ -555,8 +609,8 @@ function AgentPage({ agentId, identities, addresses, onTab }: PageProps & { agen
 			</>}
 		>
 			{update.error && <Note tone="error">{update.error.message}</Note>}
-			<AgentTrust agent={agent} stats={stats} runs={runs.data ?? []} onMode={(mode) => update.mutate({ mode })} />
-			<AgentRuns runs={runs} identities={identities} />
+			<AgentTrust agent={agent} stats={stats} runs={acts ? actions.data ?? [] : runs.data ?? []} onMode={(mode) => update.mutate({ mode })} />
+			{acts ? <AgentActions actions={actions} identities={identities} /> : <AgentRuns runs={runs} identities={identities} />}
 			<AgentSetup key={agent.id} agent={agent} addresses={addresses} identities={identities} />
 			<AgentDelete key={`d-${agent.id}`} agent={agent} onDeleted={() => { refresh(); onTab("agents"); }} />
 		</Page>
@@ -571,10 +625,14 @@ const RUNGS: Record<AgentMode, { icon: (s: number) => ReactNode; does: string[];
 	watch: { icon: (s) => <EyeIcon size={s} />, does: ["Reads matched mail", "Logs the reply it would write"], never: "Sends nothing" },
 	draft: { icon: (s) => <PencilSimpleIcon size={s} />, does: ["Writes a draft for each match", "You send, edit or discard it"], never: "Sends nothing" },
 	send: { icon: (s) => <PaperPlaneRightIcon size={s} />, does: ["Sends its replies", "Inside its daily limit"] },
+	on: { icon: (s) => <CheckIcon size={s} />, does: ["Acts on matched mail", "Inside its daily limit", "Undo from Activity"] },
 };
 
+/** An action agent's Watch rung: it logs, and changes nothing. */
+const ACTION_WATCH = { icon: RUNGS.watch.icon, does: ["Reads matched mail", "Logs what it would do"], never: "Changes nothing" };
+
 /** The last 7 days, oldest first, with what the agent handled, skipped and failed each day. */
-function weekBars(runs: AutoDraftRun[]) {
+function weekBars(runs: readonly { createdAt: string; state: string }[]) {
 	const days = Array.from({ length: 7 }, (_, i) => {
 		const d = new Date();
 		d.setHours(0, 0, 0, 0);
@@ -585,8 +643,8 @@ function weekBars(runs: AutoDraftRun[]) {
 		const day = days.find((d) => d.key === dayKey(r.createdAt));
 		if (!day) continue;
 		if (r.state === "failed") day.failed++;
-		else if (r.state === "skipped" || r.state === "superseded") day.skipped++;
-		else if (r.state === "watched" || r.state === "drafted" || r.state === "sent") day.handled++;
+		else if (r.state === "skipped" || r.state === "superseded" || r.state === "limited") day.skipped++;
+		else if (["watched", "drafted", "sent", "done", "undone"].includes(r.state)) day.handled++;
 	}
 	return days;
 }
@@ -595,15 +653,17 @@ function weekBars(runs: AutoDraftRun[]) {
  * Trust: three rungs, Watch, Draft and Send, each saying what it lets the agent do. Under them, the gate
  * to the next rung: what it asks for, how far along the agent is, a week of runs, and the move.
  */
-function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: AgentStats | undefined; runs: AutoDraftRun[]; onMode: (mode: AgentMode) => void }) {
-	const at = MODES.findIndex((m) => m.value === agent.mode);
-	const next = MODES[at + 1];
+function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: AgentStats | undefined; runs: readonly { createdAt: string; state: string }[]; onMode: (mode: AgentMode) => void }) {
+	const modes = modesOf(agent.does);
+	const acts = agent.does !== "reply";
+	const at = Math.max(0, modes.findIndex((m) => m.value === agent.mode));
+	const next = modes[at + 1];
 	const counts = stats?.runs ?? {};
-	const matched = (counts.watched ?? 0) + (counts.drafted ?? 0) + (counts.sent ?? 0);
+	const matched = (counts.watched ?? 0) + (counts.drafted ?? 0) + (counts.sent ?? 0) + (counts.done ?? 0);
 	const failed = counts.failed ?? 0;
 	const bars = weekBars(runs);
 	const peak = Math.max(1, ...bars.map((d) => d.handled + d.skipped + d.failed));
-	const gate: { label: string; met?: boolean; value?: number; later?: boolean }[] = agent.mode === "watch"
+	const gate: { label: string; met?: boolean; value?: number; later?: boolean }[] = !next ? [] : agent.mode === "watch"
 		? [
 			{ label: `${Math.min(matched, TRUST_GATE.matched)} of ${TRUST_GATE.matched} messages matched`, value: matched / TRUST_GATE.matched, met: matched >= TRUST_GATE.matched },
 			{ label: failed ? `${failed} failed this week` : "None failed this week", met: !failed, value: failed ? 0 : 1 },
@@ -614,11 +674,11 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 		];
 	const ready = gate.every((g) => g.met);
 	return (
-		<Section title="Trust" actions={<span className="pg-ui-quiet">{weekText(stats, agent.mode)} in 7 days</span>}>
+		<Section title="Trust" actions={<span className="pg-ui-quiet">{weekText(stats, agent.mode, agent.does)} in 7 days</span>}>
 			<div className="pg-ui-trust">
 				<ol className="pg-ui-rungs" aria-label="Trust">
-					{MODES.map((m, i) => {
-						const rung = RUNGS[m.value];
+					{modes.map((m, i) => {
+						const rung = acts && m.value === "watch" ? ACTION_WATCH : RUNGS[m.value];
 						const state = i === at ? "now" : i < at ? "done" : m.disabled ? "locked" : "next";
 						return (
 							<li key={m.value} data-state={state}>
@@ -626,7 +686,7 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 									<span className="pg-ui-rung-head">
 										<span className="pg-ui-rung-n" aria-hidden>{i < at ? <CheckIcon size={12} weight="bold" /> : i + 1}</span>
 										<b>{m.label}</b>
-										{state === "now" && <Badge tone={m.value} dot>Now</Badge>}
+										{state === "now" && <Badge tone={m.value === "on" ? "ok" : m.value} dot>Now</Badge>}
 										{state === "locked" && <span className="pg-ui-rung-later"><LockSimpleIcon size={12} />{SEND_VERSION}</span>}
 										<span className="pg-ui-rung-icon" aria-hidden>{rung.icon(16)}</span>
 									</span>
@@ -641,7 +701,8 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 				</ol>
 				<div className="pg-ui-gate">
 					<div className="pg-ui-gate-main">
-						<h3>To move to {next?.label}</h3>
+						<h3>{next ? `To move to ${next.label}` : `${doesOf(agent.does).label}: On`}</h3>
+						{!next && <p className="pg-ui-quiet">Each action is in Activity with Undo for 30 days.</p>}
 						<ul className="pg-ui-gate-list">
 							{gate.map((g) => (
 								<li key={g.label} data-met={g.met || undefined} data-later={g.later || undefined}>
@@ -660,7 +721,7 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 								</Button>
 							)}
 							{next?.disabled && <Button disabled title={next.title} icon={<LockSimpleIcon size={12} />}>Move to {next.label}</Button>}
-							{at > 0 && <Button variant="quiet" icon={<ArrowLeftIcon size={12} />} onClick={() => onMode(MODES[at - 1].value)}>Back to {MODES[at - 1].label}</Button>}
+							{at > 0 && <Button variant="quiet" icon={<ArrowLeftIcon size={12} />} onClick={() => onMode(modes[at - 1].value)}>Back to {modes[at - 1].label}</Button>}
 						</div>
 					</div>
 					<figure className="pg-ui-week" aria-label={`Last 7 days, ${bars.map((d) => d.handled).join(", ")} handled`}>
@@ -683,7 +744,7 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 						</svg>
 						<div className="pg-ui-week-labels" aria-hidden>{bars.map((d) => <span key={d.key}>{d.label}</span>)}</div>
 						<figcaption className="pg-ui-week-key">
-							<span data-k="handled">{agent.mode === "watch" ? "Would handle" : "Handled"}</span>
+							<span data-k="handled">{agent.mode === "watch" ? "Would handle" : acts ? "Done" : "Handled"}</span>
 							<span data-k="skipped">Skipped</span>
 							<span data-k="failed">Failed</span>
 						</figcaption>
@@ -722,6 +783,43 @@ function AgentRuns({ runs, identities }: { runs: UseQueryResult<AutoDraftRun[]>;
 	);
 }
 
+const ACTION_STATES: Record<AgentActionRow["state"], { label: string; tone: "neutral" | "watch" | "ok" | "warn" | "danger" }> = {
+	watched: { label: "Watched", tone: "watch" },
+	done: { label: "Done", tone: "ok" },
+	undone: { label: "Undone", tone: "neutral" },
+	limited: { label: "Daily limit", tone: "warn" },
+	failed: { label: "Failed", tone: "danger" },
+};
+
+/** What an action agent did, newest first, with Undo on each done action for 30 days. */
+function AgentActions({ actions, identities }: { actions: UseQueryResult<AgentActionRow[]>; identities: Identities }) {
+	const openMessage = useOpenMessage();
+	const [all, setAll] = useState(false);
+	const total = actions.data?.length ?? 0;
+	return (
+		<Section title="Activity" actions={total > 6 && <Button size="sm" variant="quiet" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${total}`}</Button>}>
+			<Async query={actions} empty="No actions yet">
+				{(rows) => (
+					<Table
+						label="Actions"
+						rows={all ? rows : rows.slice(0, 6)}
+						rowKey={(r) => r.id}
+						onRow={(r) => openMessage?.({ mailboxId: r.mailboxId, emailId: r.emailId })}
+						columns={[
+							{ key: "at", label: "Received", cell: (r) => <span className="pg-mono">{when(r.createdAt)}</span> },
+							{ key: "to", label: "To", wide: true, cell: (r) => <AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} bold={false} short /> },
+							{ key: "state", label: "Result", cell: (r) => <Badge tone={ACTION_STATES[r.state].tone} dot>{ACTION_STATES[r.state].label}</Badge> },
+							{ key: "why", label: "Why", wide: true, clip: (r) => r.reason, cell: (r) => r.reason ?? "" },
+							{ key: "undo", label: "", cell: (r) => (r.state === "done" && Date.parse(r.createdAt) >= Date.now() - UNDO_MS
+								? <span onClick={(e) => e.stopPropagation()}><UndoAction actionId={r.id} /></span> : null) },
+						]}
+					/>
+				)}
+			</Async>
+		</Section>
+	);
+}
+
 type SetupRow = "reads";
 
 /** How the agent works, as Summary rows. Typed fields save after a pause; picks and buttons save at once. */
@@ -746,10 +844,13 @@ function AgentSetup({ agent, addresses, identities }: { agent: Agent; addresses:
 	const body = JSON.stringify({
 		name: form.name, job: form.job, addresses: form.addresses, rules: form.rules.filter((r) => r.value.trim()),
 		instructions: form.instructions, exampleReply: form.exampleReply, dailyLimit: form.dailyLimit, perSenderLimit: form.perSenderLimit,
+		does: form.does, labelId: form.does === "label" ? form.labelId : null,
 	});
 	// What the server holds. Moves forward on each save, ahead of the agents refetch.
 	const [savedAs, setSavedAs] = useState(body);
-	const valid = !!form.name.trim() && !!form.job.trim();
+	const valid = !!form.name.trim() && !!form.job.trim() && (form.does !== "label" || !!form.labelId);
+	const acts = form.does !== "reply";
+	const labels = useQuery({ queryKey: ["labels"], queryFn: () => api.getLabels(), enabled: form.does === "label" });
 	useEffect(() => {
 		if (body === savedAs || !valid || save.isPending || save.isError) return;
 		const t = setTimeout(() => save.mutate(body), typed ? 700 : 0);
@@ -802,14 +903,33 @@ function AgentSetup({ agent, addresses, identities }: { agent: Agent; addresses:
 				<SummaryRow label="Job">
 					<InlineText multiline label="Job" value={form.job} invalid={!form.job.trim()} placeholder="Describe the job" onChange={(v) => set({ job: v }, true)} />
 				</SummaryRow>
-				<SummaryRow label="Reply">
-					<InlineText multiline label="Instructions" value={form.instructions} placeholder="How it should write" onChange={(v) => set({ instructions: v }, true)} />
-					<InlineText multiline label="Example reply" value={form.exampleReply} placeholder="Example reply" onChange={(v) => set({ exampleReply: v }, true)} />
+				<SummaryRow label="Does">
+					<span className="pg-ui-toolbar">
+						<select className="pg-select" value={form.does} aria-label="Does" onChange={(e) => set({ does: e.target.value as AgentDoes })}>
+							{DOES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+						</select>
+						{form.does === "label" && (
+							<select className="pg-select" value={form.labelId ?? ""} aria-label="Label it adds" onChange={(e) => set({ labelId: e.target.value || null })}>
+								<option value="">Pick a label</option>
+								{labels.data?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+							</select>
+						)}
+					</span>
+					<span className="pg-ui-sum-sub">
+						{form.does !== agent.does ? "Saving starts it again in Watch"
+							: acts ? (rules.length ? "Acts when its rules pass, with no model call" : "No rules: the model reads each message to decide") : "Writes a reply"}
+					</span>
 				</SummaryRow>
+				{!acts && (
+					<SummaryRow label="Reply">
+						<InlineText multiline label="Instructions" value={form.instructions} placeholder="How it should write" onChange={(v) => set({ instructions: v }, true)} />
+						<InlineText multiline label="Example reply" value={form.exampleReply} placeholder="Example reply" onChange={(v) => set({ exampleReply: v }, true)} />
+					</SummaryRow>
+				)}
 				<SummaryRow label="Limits">
 					<span className="pg-ui-sum-nums">
-						<NumberInput label="Sends a day" min={0} max={100} value={form.dailyLimit} onChange={(v) => set({ dailyLimit: Number(v) }, true)} unit="a day" />
-						<NumberInput label="Replies to one sender a day" min={1} max={10} value={form.perSenderLimit} onChange={(v) => set({ perSenderLimit: Number(v) }, true)} unit="per sender" />
+						<NumberInput label={acts ? "Actions a day" : "Sends a day"} min={0} max={100} value={form.dailyLimit} onChange={(v) => set({ dailyLimit: Number(v) }, true)} unit="a day" />
+						{!acts && <NumberInput label="Replies to one sender a day" min={1} max={10} value={form.perSenderLimit} onChange={(v) => set({ perSenderLimit: Number(v) }, true)} unit="per sender" />}
 					</span>
 				</SummaryRow>
 				<SummaryRow label="Name">
