@@ -207,7 +207,7 @@ export function createAutoDraftTools(
 	target: AutoDraftTarget,
 	context: Pick<AutoDraftContext, "thread">,
 	draftReply: typeof toolDraftReply = toolDraftReply,
-	options: { agents?: readonly Agent[]; onDraft?: (draftId: string, agent: string | null) => void; reply?: boolean } = {},
+	options: { agents?: readonly Agent[]; onDraft?: (draftId: string, agent: string | null) => void; reply?: boolean; model?: string | null } = {},
 ) {
 	const { mailboxId, emailId, threadId, to } = target;
 	const agents = options.agents ?? [];
@@ -267,7 +267,7 @@ export function createAutoDraftTools(
 					body,
 					isPlainText: true,
 					runVerifyDraft: true,
-					notes: { origin: "auto-draft", agent: chosen, instructions: [] },
+					notes: { origin: "auto-draft", agent: chosen, model: options.model ?? null, instructions: [] },
 				});
 				if ("draftId" in result) options.onDraft?.(result.draftId, chosen);
 				return result;
@@ -330,6 +330,7 @@ export async function saveTextDraft(
 	subject: string,
 	text: string,
 	onDraft: (draftId: string) => void,
+	model: string | null = null,
 ): Promise<void> {
 	const reSubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
 	const args = { to: target.to, subject: reSubject };
@@ -352,7 +353,7 @@ export async function saveTextDraft(
 			[],
 		);
 		onDraft(id);
-		await stub.setDraftNotes(id, { origin: "auto-draft", agent: null, instructions: [] });
+		await stub.setDraftNotes(id, { origin: "auto-draft", agent: null, model, instructions: [] });
 		return { draftId: id };
 	});
 }

@@ -9,6 +9,11 @@ export interface DraftNotes {
 	agent: string | null;
 	/** One-off redraft instructions, oldest first. */
 	instructions: string[];
+	/**
+	 * The model that wrote the draft's current text, as the provider names it.
+	 * Null or missing when it isn't known: MCP clients, and drafts saved before 0.9.6.
+	 */
+	model?: string | null;
 }
 
 export type DraftOrigin = "auto-draft" | "chat" | "mcp";

@@ -284,6 +284,13 @@ export async function quickModel(env: Env): Promise<LanguageModel> {
  * a short reply doesn't need the long thinking step chat gets. The chat panel
  * passes `chat: true`.
  */
+/** The id of the model a run uses, as its provider names it, for the draft's notes (WON-594). */
+export function modelIdOf(model: LanguageModel): string | null {
+	if (typeof model === "string") return model;
+	const id = (model as { modelId?: unknown }).modelId;
+	return typeof id === "string" && id ? id : null;
+}
+
 export async function agentModel(env: Env, options: { reasoning?: boolean; chat?: boolean } = {}): Promise<LanguageModel> {
 	if (DEMO) return languageModel(env, { provider: "workers-ai", id: DEMO_AI_MODEL }, undefined, options);
 	const config = await readAgentModelConfig(env);

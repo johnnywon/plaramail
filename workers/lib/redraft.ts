@@ -27,6 +27,8 @@ export interface RedraftDeps {
 	write: (system: string, prompt: string) => Promise<string>;
 	/** The same check agent drafts get (verifyDraft). Empty means nothing usable. */
 	verify: (text: string) => Promise<string>;
+	/** The id of the model `write` uses. The redraft's notes name it: it wrote the new text. */
+	model?: string | null;
 }
 
 export type RedraftResult =
@@ -108,7 +110,7 @@ export async function redraft(
 	const html = /<[a-z][\s\S]*>/i.test(verified) ? verified : textToHtml(verified);
 
 	// Replace the draft, as saving a draft does, and carry its notes forward.
-	const next: DraftNotes = { ...notes, instructions: [...notes.instructions, wanted] };
+	const next: DraftNotes = { ...notes, instructions: [...notes.instructions, wanted], model: deps.model ?? null };
 	const id = crypto.randomUUID();
 	await stub.createEmail(Folders.DRAFT, {
 		id,
