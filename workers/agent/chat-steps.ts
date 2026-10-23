@@ -8,7 +8,8 @@
  * answer that says it stopped, instead of a half-finished "Now the next one."
  */
 
-import type { UIMessageChunk } from "ai";
+import type { ModelMessage, UIMessageChunk } from "ai";
+import { boundRequest, CHAT_REQUEST_BUDGET } from "./request-budget";
 
 export const CHAT_STEP_LIMIT = 20;
 
@@ -23,12 +24,17 @@ export function stepLimitNote(limit = CHAT_STEP_LIMIT): string {
  * `prepareStep` for streamText: no tools and the note above on the last step.
  * `activeTools: []` leaves the tools out of the request, because Workers AI
  * doesn't pass `toolChoice: "none"` on and the model could still call one.
+ * Every step's messages are held to the request budget (request-budget.ts);
+ * `fixed` is what the system prompt and tool definitions take of it.
  */
-export function chatPrepareStep(system: string, limit = CHAT_STEP_LIMIT) {
-	return ({ stepNumber }: { stepNumber: number }) =>
-		stepNumber >= limit - 1
-			? { toolChoice: "none" as const, activeTools: [] as never[], system: `${system}\n\n${stepLimitNote(limit)}` }
-			: {};
+export function chatPrepareStep(system: string, limit = CHAT_STEP_LIMIT, size: { budget?: number; fixed?: number } = {}) {
+	return ({ stepNumber, messages }: { stepNumber: number; messages?: ModelMessage[] }) => {
+		const bounded = messages ? boundRequest(messages, size.budget ?? CHAT_REQUEST_BUDGET, size.fixed ?? system.length) : messages;
+		const cut = bounded !== messages ? { messages: bounded } : {};
+		return stepNumber >= limit - 1
+			? { toolChoice: "none" as const, activeTools: [] as never[], system: `${system}\n\n${stepLimitNote(limit)}`, ...cut }
+			: cut;
+	};
 }
 
 /** The line the panel shows when a run ran out of steps partway through. */

@@ -13,6 +13,9 @@
  * - Reasoning from earlier replies is dropped.
  * - If the history is still over HISTORY_BUDGET characters, the oldest
  *   requests are dropped whole until it fits. The last request always stays.
+ *
+ * That last request can still be over budget on its own, and a run's own
+ * steps add tool output: request-budget.ts holds every step to a hard limit.
  */
 
 import type { ModelMessage } from "ai";

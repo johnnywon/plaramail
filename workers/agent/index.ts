@@ -16,6 +16,7 @@ import { verifyDraft } from "../lib/ai";
 import { agentModel } from "../lib/agent-model";
 import { CHAT_STEP_LIMIT, chatPrepareStep, withStepLimitLine } from "./chat-steps";
 import { pruneHistory } from "./chat-history";
+import { boundRequest, DRAFT_REQUEST_BUDGET, fixedSize } from "./request-budget";
 import { mailStore, recordsSql } from "../store";
 import { logActivity } from "../lib/activity";
 import {
@@ -426,7 +427,7 @@ export class EmailAgent extends AIChatAgent<any> {
 			messages: pruneHistory(await convertToModelMessages(this.messages)),
 			tools,
 			stopWhen: stepCountIs(CHAT_STEP_LIMIT),
-			prepareStep: chatPrepareStep(systemPrompt),
+			prepareStep: chatPrepareStep(systemPrompt, CHAT_STEP_LIMIT, { fixed: fixedSize(systemPrompt, tools) }),
 			onFinish,
 		});
 
@@ -534,6 +535,8 @@ export class EmailAgent extends AIChatAgent<any> {
 				messages: await convertToModelMessages(messages),
 				tools,
 				stopWhen: stepCountIs(5),
+				// Each step's request stays inside the drafting budget (request-budget.ts).
+				prepareStep: ({ messages: step }) => ({ messages: boundRequest(step, DRAFT_REQUEST_BUDGET, fixedSize(systemPrompt, tools)) }),
 			});
 
 			// No draft_reply call: save the model's text as the draft, once verifyDraft keeps something.

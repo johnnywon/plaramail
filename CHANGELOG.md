@@ -16,6 +16,11 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 
 - Console > MCP checks `/health` as well as `/mcp`, and lists all three bypass paths (`/mcp`, `/.well-known`, `/health`) while Access blocks either. When only `/health` is blocked, it says so: health checks and `npm run smoke` fail until it is added.
 
+### Fixed
+
+- Every chat and drafting request has a size limit, checked on each step of a run: about 40K tokens for chat and 20K for drafting, the system prompt and tool definitions included. Before, one long request or the tool output of a long run went to the model whole. Earlier requests go first, then older tool output in the current request becomes a stub (the latest two results stay), then a result still too long is cut to its start, then a very long message keeps its start and end. Each cut says so in the text the model reads. `workers/agent/request-budget.ts` has the numbers.
+- Drafting quotes the new email up to 12,000 characters and the earlier messages up to 6,000, newest first. `get_email` returns up to 16,000 characters of a body and `get_thread` the newest messages up to 24,000 in all. Asking for the same email or thread twice in one run returns a note instead of the text again.
+
 D1 migration: `0013_action_agents.sql`. `npm run deploy` applies it.
 
 ## 0.9.5
