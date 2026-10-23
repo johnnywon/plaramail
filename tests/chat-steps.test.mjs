@@ -38,7 +38,7 @@ test("the chat agent uses the step budget", () => {
 	const src = readFileSync(new URL("../workers/agent/index.ts", import.meta.url), "utf8");
 	const chat = src.slice(src.indexOf("async onChatMessage"), src.indexOf("async onRequest"));
 	assert.match(chat, /stopWhen: stepCountIs\(CHAT_STEP_LIMIT\)/);
-	assert.match(chat, /prepareStep: chatPrepareStep\(systemPrompt\)/);
+	assert.match(chat, /prepareStep: chatPrepareStep\(systemPrompt, CHAT_STEP_LIMIT, \{ fixed: fixedSize\(systemPrompt, tools\) \}\)/);
 	assert.match(chat, /withStepLimitLine\(result\.toUIMessageStream\(/);
 });
 

@@ -35,6 +35,7 @@ import type { MailboxStore } from "../store/types";
 import type { Sql } from "../store/sql";
 import type { Env } from "../types";
 import { defineTool } from "./tool-def";
+import { clipText } from "./request-budget";
 
 export const AUTO_DRAFT_TOOLS = ["get_email", "get_thread", "draft_reply"] as const;
 /** The action tools an action agent with no rules can add, one per Does. */
@@ -132,8 +133,33 @@ export async function prepareAutoDraft(
 	return { ok: true, context: { email, thread, replyTo } };
 }
 
-/** Characters of each earlier message quoted in the prompt. get_thread has them in full. */
+/** Characters of each earlier message quoted in the prompt. get_thread has more. */
 const PROMPT_HISTORY_CHARS = 500;
+/**
+ * Drafting's size limits (WON-593), in characters. The prompt quotes the new
+ * email up to PROMPT_BODY_MAX and the earlier messages up to PROMPT_HISTORY_MAX,
+ * newest first. get_email returns a body up to EMAIL_BODY_MAX; get_thread the
+ * messages newest first, each up to THREAD_BODY_MAX, THREAD_MAX in all. Every
+ * cut says so in the text. The whole request is held to DRAFT_REQUEST_BUDGET
+ * (request-budget.ts) on every step.
+ */
+export const PROMPT_BODY_MAX = 12_000;
+export const PROMPT_HISTORY_MAX = 6_000;
+export const EMAIL_BODY_MAX = 16_000;
+export const THREAD_BODY_MAX = 4_000;
+export const THREAD_MAX = 24_000;
+
+/** The newest messages whose text fits `max`, back in date order, and how many older ones were left out. */
+function newestThatFit<T>(list: readonly T[], size: (m: T) => number, max: number): { kept: T[]; left: number } {
+	const kept: T[] = [];
+	let used = 0;
+	for (let i = list.length - 1; i >= 0; i--) {
+		used += size(list[i]);
+		if (used > max && kept.length > 0) break;
+		kept.unshift(list[i]);
+	}
+	return { kept, left: list.length - kept.length };
+}
 
 /**
  * The drafting run's prompt. `actions` are the action agents with no rules,
@@ -157,14 +183,14 @@ Email details:
 - Thread ID: ${threadId}
 
 Email body:
-${email.body_text || "(empty)"}`;
+${email.body_text ? clipText(email.body_text, PROMPT_BODY_MAX) : "(empty)"}`;
 
 	const earlier = thread.filter((m) => m.id !== email.id);
 	if (earlier.length > 0) {
-		const history = thread
-			.map((m) => `[${m.date}] ${m.sender} → ${m.recipient} (${m.folder_id}): ${m.body_text.substring(0, PROMPT_HISTORY_CHARS)}`)
-			.join("\n\n");
-		prompt += `\n\nFull thread history (${threadId}):\n${history}`;
+		const line = (m: AutoDraftMessage) => `[${m.date}] ${m.sender} → ${m.recipient} (${m.folder_id}): ${m.body_text.substring(0, PROMPT_HISTORY_CHARS)}`;
+		const { kept, left } = newestThatFit(earlier, (m) => line(m).length, PROMPT_HISTORY_MAX);
+		const history = kept.map(line).join("\n\n");
+		prompt += `\n\nThread history (${threadId}), newest last:\n${left ? `(${left} earlier ${left === 1 ? "message" : "messages"} left out; get_thread has them)\n\n` : ""}${history}`;
 	} else {
 		prompt += `\n\nThis is the first message in the thread (no prior conversation).`;
 	}
@@ -185,19 +211,34 @@ export function createAutoDraftTools(
 ) {
 	const { mailboxId, emailId, threadId, to } = target;
 	const agents = options.agents ?? [];
+	// What this run already returned: the same read twice adds nothing but size.
+	const read = new Set<string>();
+	const again = (key: string) => (read.has(key) ? true : (read.add(key), false));
 	const tools = {
 		get_email: defineTool({
-			description: "Get an email in this conversation with its full body. Only the new email and the emails in its thread can be read.",
+			description: `Get an email in this conversation with its body, up to ${EMAIL_BODY_MAX} characters. Only the new email and the emails in its thread can be read.`,
 			parameters: z.object({
 				emailId: z.string().describe("The email ID to retrieve"),
 			}),
-			execute: async ({ emailId: id }): Promise<unknown> =>
-				context.thread.find((m) => m.id === id) ?? { error: "Email not found in this conversation" },
+			execute: async ({ emailId: id }): Promise<unknown> => {
+				const found = context.thread.find((m) => m.id === id);
+				if (!found) return { error: "Email not found in this conversation" };
+				if (again(`email:${id}`)) return { id, note: "You already have this email from an earlier call in this run." };
+				return { ...found, body_text: clipText(found.body_text, EMAIL_BODY_MAX) };
+			},
 		}),
 		get_thread: defineTool({
-			description: "Get every email in this conversation, oldest first.",
+			description: `Get the emails in this conversation, oldest first: the newest ones, each up to ${THREAD_BODY_MAX} characters and ${THREAD_MAX} in all. get_email has one email at more length.`,
 			parameters: z.object({}),
-			execute: async (): Promise<unknown> => ({ thread_id: threadId, message_count: context.thread.length, messages: context.thread }),
+			execute: async (): Promise<unknown> => {
+				if (again("thread")) return { thread_id: threadId, note: "You already have this thread from an earlier call in this run." };
+				const clipped = context.thread.map((m) => ({ ...m, body_text: clipText(m.body_text, THREAD_BODY_MAX) }));
+				const { kept, left } = newestThatFit(clipped, (m) => JSON.stringify(m).length, THREAD_MAX);
+				return {
+					thread_id: threadId, message_count: context.thread.length, messages: kept,
+					...(left ? { left_out: `${left} earlier ${left === 1 ? "message" : "messages"} left out to keep the size down. Use get_email for one.` } : {}),
+				};
+			},
 		}),
 		draft_reply: defineTool({
 			description:
