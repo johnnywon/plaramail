@@ -12,6 +12,10 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 - Each action is in Console > Activity with Undo for 30 days: unstar, remove the label, move back to the inbox, mark unread. `POST /api/v1/agent-actions/:id/undo`, `GET /api/v1/agents/:id/actions`.
 - An action agent has a daily limit, 100 by default.
 
+### Changed
+
+- Console > MCP checks `/health` as well as `/mcp`, and lists all three bypass paths (`/mcp`, `/.well-known`, `/health`) while Access blocks either. When only `/health` is blocked, it says so: health checks and `npm run smoke` fail until it is added.
+
 D1 migration: `0013_action_agents.sql`. `npm run deploy` applies it.
 
 ## 0.9.5

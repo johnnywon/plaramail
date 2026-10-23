@@ -8,6 +8,7 @@ import { useState } from "react";
 import api from "~/services/api";
 import type { ConsoleTab } from "./console-tabs";
 import { Async, Badge, Button, Code, CopyField, Name, Note, Section, Table, Tabs } from "./ConsoleUI";
+import { BYPASS_PATHS, checkBypass } from "./mcp-access";
 
 type Client = "claude-code" | "claude-desktop" | "codex" | "cursor" | "grok" | "other";
 
@@ -24,20 +25,6 @@ const REFERENCE = "https://github.com/johnnywon/plaramail/blob/main/docs/mcp.md"
 /** Zero Trust › Access › Applications. `:account` lets the dashboard ask which account. */
 const ACCESS_APPS = "https://dash.cloudflare.com/?to=/:account/one/access-controls/apps";
 
-/**
- * MCP clients reach /mcp and the OAuth metadata without an Access session. Fetching the
- * metadata without this page's cookies shows whether Access stands in their way.
- */
-async function reachableWithoutAccess(): Promise<boolean> {
-	try {
-		const res = await fetch("/.well-known/oauth-protected-resource/mcp", { credentials: "omit", redirect: "manual", cache: "no-store" });
-		if (!res.ok) return false;
-		const meta = (await res.json()) as { resource?: string };
-		return meta.resource === `${window.location.origin}/mcp`;
-	} catch {
-		return false;
-	}
-}
 
 /** What to run or paste for each client. Each opens the consent page on its first call: no keys to copy. */
 function setup(client: Client, url: string): { lang: "sh" | "json"; title: string; code: string } {
@@ -71,7 +58,8 @@ export function McpTab({ onTab }: { onTab: (tab: ConsoleTab) => void }) {
 	const url = `${window.location.origin}/mcp`;
 	const [client, setClient] = useState<Client>("claude-code");
 	const step = setup(client, url);
-	const open = useQuery({ queryKey: ["mcp-reachable"], queryFn: reachableWithoutAccess });
+	// MCP clients and health checks reach their paths without an Access session (mcp-access.ts).
+	const open = useQuery({ queryKey: ["mcp-reachable"], queryFn: () => checkBypass(window.location.origin) });
 	const host = window.location.host;
 	const apps = useQuery({ queryKey: ["mcp-apps"], queryFn: () => api.getMcpApps() });
 	// Last use comes from the activity log, which names each call by the app's registered name.
@@ -86,15 +74,15 @@ export function McpTab({ onTab }: { onTab: (tab: ConsoleTab) => void }) {
 	return (
 		<>
 			<CopyField value={url} label="MCP server URL" />
-			{open.data === false && (
+			{open.data && (!open.data.mcp || !open.data.health) && (
 				<Section>
 					<Note tone="warn">
-						Access is blocking MCP clients. In{" "}
-						<a href={ACCESS_APPS} target="_blank" rel="noreferrer">Access applications <ArrowSquareOutIcon size={12} /></a>, add a
-						self-hosted application for these two paths with a <b>Bypass</b> policy for <b>Everyone</b>.
+						{open.data.mcp ? <>Access is blocking <code>/health</code>, so health checks and <code>npm run smoke</code> fail.</> : "Access is blocking MCP clients."} In{" "}
+						<a href={ACCESS_APPS} target="_blank" rel="noreferrer">Access applications <ArrowSquareOutIcon size={12} /></a>,{" "}
+						{open.data.mcp ? <>add <code>/health</code> to the application that bypasses these paths</> : <>add a self-hosted application for these three paths</>} with a{" "}
+						<b>Bypass</b> policy for <b>Everyone</b>.
 					</Note>
-					<CopyField value={`${host}/mcp`} label="Path to bypass" />
-					<CopyField value={`${host}/.well-known`} label="Path to bypass" />
+					{BYPASS_PATHS.map((path) => <CopyField key={path} value={`${host}${path}`} label="Path to bypass" />)}
 					<div>
 						<Button size="sm" disabled={open.isFetching} onClick={() => open.refetch()}>{open.isFetching ? "Checking" : "Check again"}</Button>
 					</div>
