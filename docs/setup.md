@@ -47,7 +47,7 @@ Requirements: a domain on Cloudflare, R2, and Workers Paid for outbound email. T
           "app_launcher_visible":false,"policies":[{"id":"<bypass policy id>","precedence":1}]}'
    ```
 
-   Console > MCP checks this and shows the two paths with your hostname while Access still blocks clients. `/mcp` covers the OAuth endpoints under it (`/mcp/oauth/token`, `/mcp/oauth/register`). Leave `/authorize` behind Access: it is the consent page, and who passes Access there is who the client acts for. `/health` answers `{"ok":true,"d1":"ok","r2":"ok"}`, or 503 with the store that failed, and nothing else; point an uptime monitor at it if you use one.
+   Console > MCP checks `/mcp` and `/health` and shows the three paths with your hostname while Access still blocks either. `/mcp` covers the OAuth endpoints under it (`/mcp/oauth/token`, `/mcp/oauth/register`). Leave `/authorize` behind Access: it is the consent page, and who passes Access there is who the client acts for. `/health` answers `{"ok":true,"d1":"ok","r2":"ok"}`, or 503 with the store that failed, and nothing else; point an uptime monitor at it if you use one.
 6. **Route mail to the Worker.** Enable Email Routing for the domain, then add one rule per address in `EMAIL_ADDRESSES`:
    ```sh
    npx wrangler@latest email routing enable example.com
