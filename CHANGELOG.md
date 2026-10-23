@@ -11,6 +11,7 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 - Every fitting action agent acts on a message, once. At most one reply agent replies, by list order, and an action never stops a reply.
 - Each action is in Console > Activity with Undo for 30 days: unstar, remove the label, move back to the inbox, mark unread. `POST /api/v1/agent-actions/:id/undo`, `GET /api/v1/agents/:id/actions`.
 - An action agent has a daily limit, 100 by default.
+- An agent draft keeps the model that wrote it. The composer's draft line names the origin, the agent when there is one, and the model: "Auto-draft · Otis · GLM 5.3 Flash". A redraft records the model that wrote the new text. Chat drafts record the chat model. MCP drafts and drafts saved before this version say "model not recorded"; no model is guessed for them.
 
 ### Changed
 
@@ -21,7 +22,7 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 - Every chat and drafting request has a size limit, checked on each step of a run: about 40K tokens for chat and 20K for drafting, the system prompt and tool definitions included. Before, one long request or the tool output of a long run went to the model whole. Earlier requests go first, then older tool output in the current request becomes a stub (the latest two results stay), then a result still too long is cut to its start, then a very long message keeps its start and end. Each cut says so in the text the model reads. `workers/agent/request-budget.ts` has the numbers.
 - Drafting quotes the new email up to 12,000 characters and the earlier messages up to 6,000, newest first. `get_email` returns up to 16,000 characters of a body and `get_thread` the newest messages up to 24,000 in all. Asking for the same email or thread twice in one run returns a note instead of the text again.
 
-D1 migration: `0013_action_agents.sql`. `npm run deploy` applies it.
+D1 migrations: `0013_action_agents.sql` and `0014_draft_model.sql`. `npm run deploy` applies them.
 
 ## 0.9.5
 

@@ -13,7 +13,7 @@ import {
 import { z } from "zod";
 import { HeaderValueSchema } from "../lib/schemas";
 import { verifyDraft } from "../lib/ai";
-import { agentModel } from "../lib/agent-model";
+import { agentModel, modelIdOf } from "../lib/agent-model";
 import { CHAT_STEP_LIMIT, chatPrepareStep, withStepLimitLine } from "./chat-steps";
 import { pruneHistory } from "./chat-history";
 import { boundRequest, DRAFT_REQUEST_BUDGET, fixedSize } from "./request-budget";
@@ -60,14 +60,15 @@ import type { EmailFull } from "../lib/schemas";
 import { readPrefs } from "../lib/prefs";
 import type { Unmatched } from "../../shared/prefs";
 
-const CHAT_NOTES: DraftNotes = { origin: "chat", agent: null, instructions: [] };
 
 /**
  * The chat agent's tools. crossAddress adds tools that search and label across
  * every address. Auto-draft, which reads untrusted incoming mail, never gets
  * these: it has its own three tools in ./auto-draft.ts.
  */
-function createEmailTools(env: Env, bound: string | null, { crossAddress = false, known = [] as string[] } = {}) {
+function createEmailTools(env: Env, bound: string | null, { crossAddress = false, known = [] as string[], model = null as string | null } = {}) {
+	// Drafts the chat agent writes carry the model that wrote them (WON-594).
+	const chatNotes: DraftNotes = { origin: "chat", agent: null, model, instructions: [] };
 	// Cross-address agents name the address on each call; auto-draft stays on its own.
 	const where = (description: string): z.ZodRawShape =>
 		crossAddress
@@ -167,7 +168,7 @@ function createEmailTools(env: Env, bound: string | null, { crossAddress = false
 					subject,
 					body,
 					isPlainText: true,
-					notes: CHAT_NOTES,
+					notes: chatNotes,
 				}));
 			},
 		}),
@@ -197,7 +198,7 @@ function createEmailTools(env: Env, bound: string | null, { crossAddress = false
 					body,
 					isPlainText: true,
 					runVerifyDraft: true,
-					notes: CHAT_NOTES,
+					notes: chatNotes,
 				}));
 			},
 		}),
@@ -415,7 +416,7 @@ export class EmailAgent extends AIChatAgent<any> {
 		const bound = this.name === SHARED_AGENT ? null : this.name;
 		const known = (await mailStore(env).mailboxes.list()).map((m) => m.id.toLowerCase());
 		const model = await agentModel(env, { chat: true });
-		const tools = logTools(createEmailTools(env, bound, { crossAddress: true, known }), recordsSql(env), { actor: "chat", bound });
+		const tools = logTools(createEmailTools(env, bound, { crossAddress: true, known, model: modelIdOf(model) }), recordsSql(env), { actor: "chat", bound });
 		// Each address has its own prompt. The shared panel uses the open mail's address.
 		const prompt = await getSystemPrompt(env, promptAddress(bound, options?.body, known));
 		const systemPrompt = bound ? prompt : `${prompt}\n\n${sharedAgentNote(known, options?.body)}`;
@@ -512,7 +513,7 @@ export class EmailAgent extends AIChatAgent<any> {
 					emailId: target.emailId,
 					threadId: target.threadId,
 					to: replyTo,
-				}, context, toolDraftReply, { agents: matched, reply, onDraft: (id, agent) => { draftIds.push(id); chosen = agent; } }), sql, { actor: "auto-draft", bound: target.mailboxId }),
+				}, context, toolDraftReply, { agents: matched, reply, model: modelIdOf(model), onDraft: (id, agent) => { draftIds.push(id); chosen = agent; } }), sql, { actor: "auto-draft", bound: target.mailboxId }),
 				...createActionTools(target, first.plan.ask, envActionDeps(env), (r) => acted.push(r)),
 			};
 			const autoPrompt = autoDraftPrompt(target.mailboxId, target.threadId, context, matched, { actions: first.plan.ask, reply })
@@ -543,7 +544,7 @@ export class EmailAgent extends AIChatAgent<any> {
 			if (reply && !draftIds.length && result.text.trim()) {
 				const sanitizedText = await verifyDraft(env.AI, result.text.trim());
 				if (sanitizedText) {
-					await saveTextDraft(stub, sql, { ...target, to: replyTo }, context.email.subject, sanitizedText, (id) => draftIds.push(id));
+					await saveTextDraft(stub, sql, { ...target, to: replyTo }, context.email.subject, sanitizedText, (id) => draftIds.push(id), modelIdOf(model));
 				}
 			}
 

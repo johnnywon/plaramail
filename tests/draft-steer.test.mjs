@@ -50,7 +50,7 @@ test("redraft replaces the draft, keeps the quote and records the instruction", 
 	assert.equal(next.in_reply_to, "orig");
 	assert.match(next.body, /Thursday at 10am works/);
 	assert.ok(next.body.endsWith(QUOTE));
-	assert.deepEqual(next.draft_notes, { origin: "auto-draft", agent: "Meetings", instructions: ["shorter"] });
+	assert.deepEqual(next.draft_notes, { origin: "auto-draft", agent: "Meetings", model: null, instructions: ["shorter"] });
 
 	const { prompt, system } = prompts[0];
 	assert.equal(system, "You are an email assistant.");
@@ -141,6 +141,6 @@ test("saving an edited agent draft keeps its notes", async () => {
 	}, env);
 	assert.equal(response.status, 201);
 	const { id } = await response.json();
-	assert.deepEqual((await box.getEmail(id)).draft_notes, { origin: "auto-draft", agent: "Meetings", instructions: [] });
+	assert.deepEqual((await box.getEmail(id)).draft_notes, { origin: "auto-draft", agent: "Meetings", model: null, instructions: [] });
 	assert.equal(d1.exec(`SELECT COUNT(*) AS n FROM draft_notes`)[0].n, 1);
 });

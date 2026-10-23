@@ -13,6 +13,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 import EmailIframe from "~/components/EmailIframe";
 import { DRAFT_ORIGIN_LABELS, REDRAFT_INSTRUCTION_MAX } from "shared/draft-notes";
+import { prettyName } from "shared/models";
 import api from "~/services/api";
 import { type DraftResult, useDraftWithAgent } from "./Agent";
 import { ownText, skipSave } from "./draft-start";
@@ -385,6 +386,11 @@ export function Composer(props: ComposerProps) {
 			if (r.draftId && before.draftId && before.draftId !== r.draftId && !ownText(before.html)) sender.discard(before);
 			const html = r.text ? textToParagraphs(r.text) : r.html ?? "";
 			if (html) patch({ html, ...(r.draftId ? { draftId: r.draftId, notes: { origin: "chat", agent: null, instructions: [] } } : {}) });
+			// The saved draft's notes name the model that wrote it (WON-594).
+			if (r.draftId) {
+				const saved = await api.getEmail(stateRef.current.from, r.draftId).catch(() => null);
+				if (saved?.draft_notes && stateRef.current.draftId === r.draftId) patch({ notes: saved.draft_notes });
+			}
 		} catch (e) {
 			setError((e as Error).message);
 		} finally {
@@ -614,6 +620,9 @@ export function Composer(props: ComposerProps) {
 							<span className="pg-cw-notes-text" title={state.notes.instructions.length ? `Redrafted: ${state.notes.instructions.join("; ")}` : undefined}>
 								<AgentIcon size={12} weight="fill" />
 								{DRAFT_ORIGIN_LABELS[state.notes.origin]}
+								{state.notes.agent && <> · {state.notes.agent}</>}
+								{" · "}
+								{state.notes.model ? <span title={state.notes.model}>{prettyName(state.notes.model)}</span> : "model not recorded"}
 								{state.notes.instructions.length > 0 && <> · {state.notes.instructions.length === 1 ? "redrafted once" : `redrafted ${state.notes.instructions.length} times`}</>}
 							</span>
 							<input

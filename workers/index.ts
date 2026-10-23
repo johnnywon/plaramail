@@ -24,7 +24,7 @@ import type { Env } from "./types";
 import { interpretSearch, MAX_REQUEST_LENGTH } from "./lib/search-interpret";
 import { HeaderValueSchema, MailboxSettingsSchema } from "./lib/schemas";
 import { readPrefs, writePrefs } from "./lib/prefs";
-import { agentModel } from "./lib/agent-model";
+import { agentModel, modelIdOf } from "./lib/agent-model";
 import { catalogFor, clearCatalogCache, languageModel, mergeAgentModelConfig, openRouterZdr, quickModel, readAgentModelConfig, viewOf, writeAgentModelConfig } from "./lib/agent-model";
 import { KEYED_PROVIDERS, PROVIDERS, PROVIDER_INFO, RECOMMENDED_MODEL, SUGGESTED_MODELS, validModelId } from "../shared/models";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
@@ -682,6 +682,7 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts/:id/redraft", async (c: AppContext
 			system,
 			write: async (systemPrompt, prompt) => (await generateText({ model, system: systemPrompt, prompt, maxOutputTokens: 2000 })).text,
 			verify: (text) => verifyDraft(c.env.AI, text),
+			model: modelIdOf(model),
 		}), (r) => (r.ok ? { draftId: r.draft.id, subject: r.draft.subject } : { error: r.error }));
 	if (!result.ok) return c.json({ error: result.error }, result.status);
 	return c.json({ draft: result.draft, notes: result.notes });
