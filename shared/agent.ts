@@ -56,3 +56,13 @@ export function sharedAgentNote(addresses: string[], context: AgentContext | und
 	}
 	return lines.join("\n");
 }
+
+/**
+ * A rule offered from the job's own words, for an action agent's setup:
+ * "star emails from northwind" offers From contains "northwind".
+ */
+export function suggestRule(job: string): { field: "from"; op: "contains"; value: string } | null {
+	const m = /\bfrom\s+@?([a-z0-9][\w.+-]*(?:@[\w-]+(?:\.[\w-]+)*)?)/i.exec(job);
+	const value = m?.[1].replace(/[.+-]+$/, "").toLowerCase();
+	return value ? { field: "from", op: "contains", value } : null;
+}

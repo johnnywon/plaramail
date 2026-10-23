@@ -49,6 +49,7 @@ import { verifyDraft } from "./lib/ai";
 import { AgentBody, agentStats, createAgent, deleteAgent, listAgentDrafts, listAgents, matchAgents, orderAgents, updateAgent } from "./lib/agents";
 import { redraft } from "./lib/redraft";
 import { seedAgents } from "./lib/dev-seed-agents";
+import { listAgentActions, mailOps, undoAgentAction } from "./lib/agent-actions";
 import { REDRAFT_INSTRUCTION_MAX } from "../shared/draft-notes";
 
 type AppContext = Context<MailboxContext>;
@@ -406,6 +407,16 @@ app.put("/api/v1/agents/:id", async (c) => {
 app.delete("/api/v1/agents/:id", async (c) => {
 	const deleted = await deleteAgent(recordsSql(c.env), c.req.param("id"));
 	return deleted ? c.json({ deleted: true }) : c.json({ error: "Not found" }, 404);
+});
+
+/** One action agent's latest actions. */
+app.get("/api/v1/agents/:id/actions", async (c) =>
+	c.json(await listAgentActions(recordsSql(c.env), c.req.param("id"), Number(c.req.query("limit")) || 50)));
+
+/** Reverse an action agent's action: unstar, remove the label, back to the inbox, mark unread. */
+app.post("/api/v1/agent-actions/:id/undo", async (c) => {
+	const result = await undoAgentAction({ sql: recordsSql(c.env), ops: mailOps(c.env) }, c.req.param("id"));
+	return "error" in result ? c.json({ error: result.error }, result.status) : c.json(result.action);
 });
 
 /** One agent's latest runs. */

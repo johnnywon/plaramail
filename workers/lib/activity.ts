@@ -51,6 +51,12 @@ export const TOOL_ACTIONS: Record<string, ActivityAction> = {
 	unsubscribe: "settings",
 	block_sender: "settings",
 	unblock_sender: "settings",
+	// Action agents (WON-453), and a person undoing one of their actions.
+	star_email: "label",
+	label_email: "label",
+	archive_email: "move",
+	mark_read: "move",
+	undo_action: "move",
 };
 
 export interface ActivityEntry {
@@ -61,6 +67,8 @@ export interface ActivityEntry {
 	target?: string | null;
 	summary?: string | null;
 	ok: boolean;
+	/** The action agent's action this entry records (workers/lib/agent-actions.ts). */
+	actionId?: string | null;
 }
 
 export interface ActivityRow {
@@ -74,7 +82,12 @@ export interface ActivityRow {
 	target: string | null;
 	summary: string | null;
 	ok: boolean;
+	/** The action Undo reverses, while it can still be undone. */
+	undo: string | null;
 }
+
+/** How long a done action keeps Undo. Matches UNDO_DAYS in workers/lib/agent-actions.ts. */
+const UNDO_MS = 30 * 86_400_000;
 
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 const clip = (v: string | null, n = 200) => (v && v.length > n ? `${v.slice(0, n - 1)}…` : v);
@@ -121,9 +134,9 @@ export function describeCall(tool: string, args: Record<string, unknown>, result
 export async function logActivity(sql: Sql, entry: ActivityEntry, now = Date.now()): Promise<void> {
 	try {
 		await sql.run(
-			`INSERT INTO agent_activity (at, mailbox_id, actor, client, action, tool, target, summary, ok) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO agent_activity (at, mailbox_id, actor, client, action, tool, target, summary, ok, action_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			new Date(now).toISOString(), entry.mailboxId ?? null, entry.actor, clip(entry.client ?? null, 100),
-			TOOL_ACTIONS[entry.tool] ?? "read", entry.tool, entry.target ?? null, entry.summary ?? null, entry.ok ? 1 : 0,
+			TOOL_ACTIONS[entry.tool] ?? "read", entry.tool, entry.target ?? null, entry.summary ?? null, entry.ok ? 1 : 0, entry.actionId ?? null,
 		);
 	} catch (e) {
 		console.error("activity log failed:", (e as Error).message);
@@ -159,13 +172,16 @@ export async function listActivity(
 	} = {},
 ): Promise<{ entries: ActivityRow[]; next: number | null }> {
 	const limit = Math.min(Math.max(options.limit ?? ACTIVITY_PAGE, 1), 200);
+	// An entry offers Undo while its action is done and younger than UNDO_MS. The undo entry itself never does.
 	const rows = await sql.all(
-		`SELECT id, at, mailbox_id, actor, client, action, tool, target, summary, ok FROM agent_activity
-		WHERE (?1 IS NULL OR mailbox_id = ?1) AND (?2 IS NULL OR actor = ?2) AND (?3 IS NULL OR action = ?3) AND (?4 IS NULL OR id < ?4)
-			AND (?6 = 0 OR ok = 0) AND (?7 IS NULL OR at >= ?7)
-		ORDER BY id DESC LIMIT ?5`,
+		`SELECT a.id, a.at, a.mailbox_id, a.actor, a.client, a.action, a.tool, a.target, a.summary, a.ok,
+			CASE WHEN a.tool != 'undo_action' AND x.state = 'done' AND x.created_at >= ?8 THEN x.id END AS undo
+		FROM agent_activity a LEFT JOIN agent_actions x ON x.id = a.action_id
+		WHERE (?1 IS NULL OR a.mailbox_id = ?1) AND (?2 IS NULL OR a.actor = ?2) AND (?3 IS NULL OR a.action = ?3) AND (?4 IS NULL OR a.id < ?4)
+			AND (?6 = 0 OR a.ok = 0) AND (?7 IS NULL OR a.at >= ?7)
+		ORDER BY a.id DESC LIMIT ?5`,
 		options.mailboxId?.toLowerCase() ?? null, options.actor ?? null, options.action ?? null, options.before ?? null, limit + 1,
-		options.failed ? 1 : 0, options.since ?? null,
+		options.failed ? 1 : 0, options.since ?? null, new Date(Date.now() - UNDO_MS).toISOString(),
 	);
 	const entries = rows.slice(0, limit).map((r) => ({
 		id: Number(r.id),
@@ -178,6 +194,7 @@ export async function listActivity(
 		target: r.target == null ? null : String(r.target),
 		summary: r.summary == null ? null : String(r.summary),
 		ok: Number(r.ok) === 1,
+		undo: r.undo == null ? null : String(r.undo),
 	}));
 	return { entries, next: rows.length > limit ? entries[entries.length - 1].id : null };
 }
