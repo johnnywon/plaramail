@@ -66,3 +66,7 @@ npm run test:browser
 `npm run test:browser` opens the mail view in Chromium at desktop width and at 375px (`tests/browser/`). It starts a dev server on port 5199 with `tests/browser/wrangler.ci.jsonc`, which has local bindings only, so it needs no Cloudflare account; the sample inbox fills it. Install the browser once with `npx playwright install --only-shell chromium`. CI runs it as the `browser` job.
 
 Design rules live in [`DESIGN.md`](../DESIGN.md). `tests/design-rules.test.mjs` enforces the ones that can be checked.
+
+## MCP Registry listing
+
+`server.json` lists PlaraMail in the [MCP Registry](https://registry.modelcontextprotocol.io). The remote URL is a template, `https://{host}/mcp`, because every deployment has its own host. Its `version` follows `package.json`, and `tests/registry-listing.test.mjs` fails when they differ. After a release, publish the new version with the registry's `mcp-publisher` CLI: `mcp-publisher login github` as the repository owner, then `mcp-publisher publish`.
