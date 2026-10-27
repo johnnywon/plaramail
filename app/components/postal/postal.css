@@ -53,6 +53,7 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
   .pg-format,
   .pg-cw-head,
   .pg-cw-row,
+  .pg-cw-summary,
   .pg-files,
   .pg-warn,
   .pg-cw-foot,
@@ -869,6 +870,17 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-send-split .pg-caret:hover { background: var(--pg-primary-hover); }
 .postal .pg-send-split .pg-send:not(:only-child) { border-radius: 6px 0 0 6px !important; }
 .postal .pg-send-split .pg-caret { border-radius: 0 6px 6px 0 !important; }
+/* Send is the one control in Signal, at every width. */
+.pg-send-split :is(.pg-send, .pg-caret) { background: var(--pg-signal); color: var(--pg-ink); }
+.pg-send-split .pg-caret { border-left-color: color-mix(in srgb, var(--pg-ink) 22%, transparent); }
+.pg-send-split :is(.pg-send, .pg-caret):hover { background: var(--pg-signal-deep); }
+
+/* Short screens (useKeyboardDock sets data-short): writing the body folds To, From and Subject into one line. */
+.pg-cw-summary { display: none; border: 0; border-bottom: 1px solid var(--pg-line); }
+.pg-cw[data-short][data-focus="body"] :is(.pg-cw-body > .pg-cw-row, .pg-modes) { display: none; }
+.pg-cw[data-short][data-focus="body"] .pg-cw-summary { display: flex; align-items: center; gap: 6px; flex: none; width: 100%; min-height: 44px; padding: 0 14px; background: none; color: var(--pg-text-6); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; }
+.pg-cw-summary b { min-width: 0; color: var(--pg-text-2); font-weight: 500; }
+.pg-cw-summary span { min-width: 0; flex: 1; }
 .pg-sched { left: 0; bottom: 38px; width: 312px; max-width: calc(100vw - 24px); padding: 4px; transform-origin: bottom left; }
 .pg-sched .pg-caption { display: block; padding: 6px 8px 4px; }
 .pg-sched .pg-menu-item { height: 34px; color: var(--pg-text-2); white-space: nowrap; }
@@ -1386,10 +1398,9 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
   .pg-dock .pg-agent-key { width: 58px; height: 44px; }
   .pg-dock .pg-agent-icon { width: 33px; height: 22px; }
   .pg-dock-send { height: 44px; box-shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 8px 18px -8px color-mix(in srgb, var(--pg-signal) 75%, transparent); }
-  .pg-dock-send .pg-send, .pg-dock-send .pg-caret { background: var(--pg-signal); color: var(--pg-ink); }
   .pg-dock-send .pg-send { gap: 8px; padding: 0 14px 0 13px; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .pg-dock-send .pg-caret { width: 40px; border-left-color: color-mix(in srgb, var(--pg-ink) 22%, transparent); }
-  .pg-dock-send :is(.pg-send, .pg-caret):is(:hover, :active) { background: var(--pg-signal-deep); }
+  .pg-dock-send .pg-caret { width: 40px; }
+  .pg-dock-send :is(.pg-send, .pg-caret):active { background: var(--pg-signal-deep); }
   .pg-dock-send .pg-caret svg { transition: rotate .2s var(--pg-side-ease); }
   .pg-dock-send .pg-caret[aria-expanded="true"] svg { rotate: 180deg; }
   .pg-dock-send :is(.pg-send, .pg-caret):active { translate: 0 1px; }

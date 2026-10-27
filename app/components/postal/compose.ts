@@ -107,7 +107,8 @@ export function recipientsToText(list: Recipient[]): string {
 	return list.map((r) => r.addr).join(", ");
 }
 
-function prefixed(subject: string, prefix: "Re" | "Fwd") {
+/** The subject with one Re: or Fwd: in front. Switching Reply and Forward swaps it and keeps the writer's edits. */
+export function prefixed(subject: string, prefix: "Re" | "Fwd") {
 	const base = subject.replace(/^((re|fwd?|fw):\s*)+/i, "");
 	return `${prefix}: ${base}`;
 }

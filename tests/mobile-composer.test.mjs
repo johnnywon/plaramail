@@ -186,11 +186,12 @@ test("the agent draft icon carries the four motion presets, and reduced motion s
 	assert.doesNotMatch(motion, /\b(scale|rotate|transform):/);
 });
 
-test("Signal is on Send only", () => {
+test("Signal is on Send only, at every width", () => {
 	const css = read("app/components/postal/postal.css");
 	const uses = css.split("\n").filter((l) => /var\(--pg-signal/.test(l));
 	assert.ok(uses.length > 0);
-	for (const line of uses) assert.match(line, /^\s*\.pg-dock-send/, line);
+	for (const line of uses) assert.match(line, /^\s*\.pg-(dock-send|send-split)\b/, line);
+	assert.match(css, /^\.pg-send-split :is\(\.pg-send, \.pg-caret\) \{ background: var\(--pg-signal\);/m);
 });
 
 test("the format keys keep the editor's focus, so the caret stays put", () => {
@@ -199,4 +200,67 @@ test("the format keys keep the editor's focus, so the caret stays put", () => {
 	assert.match(card, /onPointerDown=\{keep\} onMouseDown=\{keep\}/);
 	// The editor is never remounted: no key on it.
 	assert.doesNotMatch(read("app/components/postal/ComposeWindow.tsx"), /<Editor\s+key=/);
+});
+
+// ── Rulings on the compose lab's open questions ───────────────────────
+
+test("Cc and Bcc are saved with the draft and come back when it opens", () => {
+	const compose = read("app/components/postal/compose.ts");
+	const save = compose.slice(compose.indexOf("const save = useCallback"), compose.indexOf("const discard = useCallback"));
+	assert.match(save, /cc: recipientsToText\(state\.cc\) \|\| undefined,\n\t+bcc: recipientsToText\(state\.bcc\) \|\| undefined,/);
+	const open = compose.slice(compose.indexOf("export function composeFromDraft"));
+	assert.match(open, /const bcc = recipientsFromText\(draft\.bcc \|\| ""\);/);
+	assert.match(open, /showBcc: bcc\.length > 0,/);
+});
+
+test("switching Reply, Reply all and Forward keeps the body and the edited subject, and the recipients follow", () => {
+	const mail = read("app/components/postal/PostalMail.tsx");
+	const start = mail.slice(mail.indexOf("const startReply = "), mail.indexOf("const draftState = "));
+	assert.match(start, /const subject = keep \? prefixed\(keep\.subject, mode === "forward" \? "Fwd" : "Re"\) : next\.subject;/);
+	assert.match(start, /\{ html: keep\.html, subject, files, draftId: keep\.draftId,/);
+	assert.doesNotMatch(start, /to: keep\.to|cc: keep\.cc/);
+});
+
+test("Send later reaches a year ahead, inside the server's limit", async () => {
+	const { inScheduleRange, lastScheduleDay, SCHEDULE_MAX_DAYS } = await loadTs("app/components/postal/schedule-slots.ts");
+	const { SCHEDULE_MAX_LEAD_MS } = await loadTs("workers/lib/scheduled-send.ts");
+	const now = new Date(2026, 9, 27, 10, 0);
+	const day = (n, h = 9) => new Date(2026, 9, 27 + n, h, 0);
+	assert.equal(SCHEDULE_MAX_DAYS, 365);
+	assert.equal(lastScheduleDay(now), "2027-10-27");
+	assert.equal(inScheduleRange(new Date(now.getTime() + 30_000), now), false);
+	assert.equal(inScheduleRange(day(1), now), true);
+	assert.equal(inScheduleRange(day(365, 9), now), true);
+	assert.equal(inScheduleRange(day(366, 0), now), false);
+	assert.ok(day(365, 23).getTime() - now.getTime() < SCHEDULE_MAX_LEAD_MS);
+	const win = read("app/components/postal/ComposeWindow.tsx");
+	assert.equal((win.match(/max=\{lastScheduleDay\(/g) ?? []).length, 2);
+	assert.match(win, /const customOk = inScheduleRange\(customAt\);/);
+});
+
+test("Enter, Space and comma wait while an IME composes in To", () => {
+	const win = read("app/components/postal/ComposeWindow.tsx");
+	const field = win.slice(win.indexOf("function RecipientField"), win.indexOf("const pad = "));
+	const keys = field.slice(field.indexOf("onKeyDown="));
+	assert.ok(keys.indexOf("e.nativeEvent.isComposing || e.keyCode === 229") < keys.indexOf('e.key === "Enter"'));
+});
+
+test("Discard waits with Undo, which reopens what was written, and only one hold at a time", () => {
+	const win = read("app/components/postal/ComposeWindow.tsx");
+	const discard = win.slice(win.indexOf("const discard = async"), win.indexOf("\n\t};\n", win.indexOf("const discard = async")));
+	assert.ok(discard.indexOf("sender.discardHeld?.(stateRef.current)") < discard.indexOf("await sender.discard("));
+	const mail = read("app/components/postal/PostalMail.tsx");
+	const held = mail.slice(mail.indexOf("discardHeld: (state"), mail.indexOf("useEffect(", mail.indexOf("discardHeld: (state")));
+	assert.match(held, /holds\.hold\(\(\) => sender\.discard\(state\)\)/);
+	assert.match(held, /if \(!holds\.isLatest\(hold\) \|\| !hold\.undo\(\)\) return;\n\t+setToast\(null\);\n\t+openCompose\(state\);/);
+});
+
+test("short screens fold To, From and Subject into one line while the body is written", () => {
+	const win = read("app/components/postal/ComposeWindow.tsx");
+	assert.match(win, /el\.toggleAttribute\("data-short", vv\.height < 420\);/);
+	assert.match(win, /data-focus=\{inBody \? "body" : undefined\}/);
+	assert.match(win, /className="pg-cw-summary"/);
+	const css = read("app/components/postal/postal.css");
+	assert.match(css, /\.pg-cw\[data-short\]\[data-focus="body"\] :is\(\.pg-cw-body > \.pg-cw-row, \.pg-modes\) \{ display: none; \}/);
+	assert.match(css, /\.pg-cw\[data-short\]\[data-focus="body"\] \.pg-cw-summary \{ display: flex;[^}]*min-height: 44px;/);
 });

@@ -28,12 +28,13 @@ import {
 import { Editor, FormatBar, FormatCard } from "./Editor";
 import { AddressText, buildIdentities, type Identities, Swatch } from "./identity";
 import { formatSize, sendTimeLabel } from "./model";
-import { scheduleSlots } from "./schedule-slots";
+import { inScheduleRange, lastScheduleDay, scheduleSlots } from "./schedule-slots";
 import { usePrefs, useResolvedTheme } from "./prefs";
 import { useShortcuts } from "./shortcuts";
 import { TooltipLayer } from "./Tooltip";
 
-type Sender = ReturnType<typeof useMailSender>;
+/** The mail view adds discardHeld: Discard waits a few seconds with Undo, as Send does. Resolves true when it holds. */
+type Sender = ReturnType<typeof useMailSender> & { discardHeld?: (state: ComposeState) => boolean };
 
 /** The quoted original at the end of a saved reply body. */
 const QUOTE_AT_END = /(\s*<br\s*\/?>\s*)?<blockquote[\s\S]*<\/blockquote>\s*$/i;
@@ -145,6 +146,8 @@ export function RecipientField({ label, list, onChange, inputRef, autoFocus, ext
 						}
 					}}
 					onKeyDown={(e) => {
+						// While an IME composes (Japanese, Chinese, Korean), Enter, Space and comma belong to it. Safari reports the closing key as 229.
+						if (e.nativeEvent.isComposing || e.keyCode === 229) return;
 						if (shown && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
 							e.preventDefault();
 							setAt((i) => (i + (e.key === "ArrowDown" ? 1 : options.length - 1)) % options.length);
@@ -251,6 +254,8 @@ function useKeyboardDock(ref: React.RefObject<HTMLDivElement | null>, on: boolea
 			el.style.setProperty("--pg-vv-top", `${Math.round(vv.offsetTop)}px`);
 			el.style.setProperty("--pg-vv-h", `${Math.round(vv.height)}px`);
 			el.toggleAttribute("data-kb", window.innerHeight - vv.height - vv.offsetTop > 80);
+			// Under 420px tall, writing the body folds the fields into one line (.pg-cw-summary).
+			el.toggleAttribute("data-short", vv.height < 420);
 		};
 		update();
 		vv.addEventListener("resize", update);
@@ -261,6 +266,7 @@ function useKeyboardDock(ref: React.RefObject<HTMLDivElement | null>, on: boolea
 			el.style.removeProperty("--pg-vv-top");
 			el.style.removeProperty("--pg-vv-h");
 			el.removeAttribute("data-kb");
+			el.removeAttribute("data-short");
 		};
 	}, [ref, on]);
 }
@@ -306,6 +312,7 @@ export function Composer(props: ComposerProps) {
 	const [fromOpen, setFromOpen] = useState(false);
 	const [schedOpen, setSchedOpen] = useState(false);
 	const [moreOpen, setMoreOpen] = useState(false);
+	const [inBody, setInBody] = useState(false);
 	const [custom, setCustom] = useState(false);
 	const [customDate, setCustomDate] = useState(() => isoDay(new Date(Date.now() + 864e5)));
 	const [customTime, setCustomTime] = useState("09:00");
@@ -599,8 +606,8 @@ export function Composer(props: ComposerProps) {
 			setSchedOpen(false);
 			return;
 		}
-		if (at.getTime() <= Date.now() + 60_000) {
-			setError("Pick a time in the future.");
+		if (!inScheduleRange(at)) {
+			setError("Pick a time from now to a year ahead.");
 			return;
 		}
 		setBusy(true);
@@ -632,6 +639,7 @@ export function Composer(props: ComposerProps) {
 		if (d?.status === "writing") stopAgent();
 		else if (d) dropSaved(d);
 		await saving.current;
+		if (sender.discardHeld?.(stateRef.current)) return finish(null);
 		await sender.discard(stateRef.current);
 		finish("Draft discarded");
 	};
@@ -682,7 +690,7 @@ export function Composer(props: ComposerProps) {
 	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 	const customAt = new Date(`${customDate}T${customTime}`);
-	const customOk = !Number.isNaN(customAt.getTime()) && customAt.getTime() > Date.now() + 60_000;
+	const customOk = inScheduleRange(customAt);
 	const fromInfo = info.get(state.from);
 	const fromId = identities.of(state.from);
 	const signed = usesSignature(state, info);
@@ -796,7 +804,7 @@ export function Composer(props: ComposerProps) {
 			setCustomDate(day);
 			setCustomTime(time);
 			const at = new Date(`${day}T${time}`);
-			setLater(!Number.isNaN(at.getTime()) && at.getTime() > Date.now() + 60_000 ? at : null);
+			setLater(inScheduleRange(at) ? at : null);
 		};
 		return (
 			<div className="pg-cw-card pg-later" role="dialog" aria-label="Send later" ref={cardRef}>
@@ -833,7 +841,7 @@ export function Composer(props: ComposerProps) {
 							))}
 						</span>
 						<div className="pg-later-other">
-							<input type="date" aria-label="Date" value={pickDay} min={isoDay(today)} onChange={(e) => pick(e.target.value, pickTime)} />
+							<input type="date" aria-label="Date" value={pickDay} min={isoDay(today)} max={lastScheduleDay(today)} onChange={(e) => pick(e.target.value, pickTime)} />
 							<input type="time" aria-label="Time" value={pickTime} onChange={(e) => pick(pickDay, e.target.value)} />
 						</div>
 					</>
@@ -885,6 +893,7 @@ export function Composer(props: ComposerProps) {
 				data-state={dataState}
 				data-dropping={dropping || undefined}
 				data-card={card ?? undefined}
+				data-focus={inBody ? "body" : undefined}
 				onPasteCapture={(e) => {
 					// A pasted file or screenshot is attached. A copy from a page (it carries HTML) stays with the editor;
 					// a file copied in Finder can carry its name as plain text, so plain text alone doesn't count.
@@ -983,6 +992,12 @@ export function Composer(props: ComposerProps) {
 					</button>
 				</div>
 				<div className="pg-cw-body">
+					{phone && (
+						<button type="button" className="pg-cw-summary" title="Show To, From and Subject" onPointerDown={(e) => e.preventDefault()} onClick={() => { setInBody(false); requestAnimationFrame(() => toRef.current?.focus()); }}>
+							To <b className="pg-ellipsis">{state.to.map((r) => r.name || r.addr).join(", ") || "No one yet"}</b>
+							<span className="pg-ellipsis">· {state.subject.trim() || "No subject"}</span>
+						</button>
+					)}
 					<div className="pg-cw-row">
 						<span className="pg-field-label">From</span>
 						<button
@@ -1036,7 +1051,12 @@ export function Composer(props: ComposerProps) {
 						<span className="pg-field-label">Subject</span>
 						<input className="pg-cw-subject" value={state.subject} aria-label="Subject" onChange={(e) => patch({ subject: e.target.value })} />
 					</div>
-					<div className="pg-cw-scroll" onPointerDown={() => card && card !== "format" && setCard(null)}>
+					<div
+						className="pg-cw-scroll"
+						onPointerDown={() => card && card !== "format" && setCard(null)}
+						onFocus={() => setInBody(true)}
+						onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setInBody(false)}
+					>
 						<Editor
 							value={state.html}
 							onChange={(html) => patch({ html })}
@@ -1178,7 +1198,7 @@ export function Composer(props: ComposerProps) {
 												<div className="pg-sched-custom">
 													<span className="pg-small">Send at</span>
 													<div className="pg-inputs">
-														<input type="date" aria-label="Date" value={customDate} min={isoDay(new Date())} onChange={(e) => setCustomDate(e.target.value)} />
+														<input type="date" aria-label="Date" value={customDate} min={isoDay(new Date())} max={lastScheduleDay()} onChange={(e) => setCustomDate(e.target.value)} />
 														<input type="time" aria-label="Time" value={customTime} onChange={(e) => setCustomTime(e.target.value)} />
 													</div>
 													<div className="pg-times">
@@ -1186,7 +1206,7 @@ export function Composer(props: ComposerProps) {
 															<button key={v} type="button" onClick={() => setCustomTime(v)}>{label}</button>
 														))}
 													</div>
-													<span className="pg-note" data-bad={!customOk || undefined}>{customOk ? `Sends ${sendTimeLabel(customAt)} · your time zone` : "Pick a time in the future"}</span>
+													<span className="pg-note" data-bad={!customOk || undefined}>{customOk ? `Sends ${sendTimeLabel(customAt)} · your time zone` : "Pick a time from now to a year ahead"}</span>
 													<button type="button" className="pg-btn pg-btn-primary" disabled={!customOk || busy} onClick={() => customOk && schedule(customAt)}>
 														<ClockIcon size={12} weight="bold" />Schedule send
 													</button>

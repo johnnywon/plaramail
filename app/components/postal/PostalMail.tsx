@@ -23,7 +23,7 @@ import { markLayoutMoving } from "~/lib/layout-motion";
 import { useUnreadTab } from "~/lib/unread-tab";
 import { useEmail } from "~/queries/emails";
 import {
-	type ComposeMode, type ComposeState, composeFor, composeFromDraft, emptyCompose, handOff, HANDOFF_KEY, useAddressInfo,
+	type ComposeMode, type ComposeState, composeFor, composeFromDraft, emptyCompose, handOff, HANDOFF_KEY, prefixed, useAddressInfo,
 	sentText, textToParagraphs, useMailSender,
 } from "./compose";
 import { ComposePopout, Composer } from "./ComposeWindow";
@@ -483,6 +483,21 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 			);
 			return true;
 		},
+		// Discard waits the same few seconds with Undo, which reopens what was written.
+		discardHeld: (state: ComposeState): boolean => {
+			if (state.draftId && open?.emailId === state.draftId) closeConversation();
+			const hold = holds.hold(() => sender.discard(state));
+			showToast({
+				text: "Draft discarded",
+				icon: <TrashIcon size={ICON} />,
+				onUndo: () => {
+					if (!holds.isLatest(hold) || !hold.undo()) return;
+					setToast(null);
+					openCompose(state);
+				},
+			});
+			return true;
+		},
 	};
 	useEffect(() => {
 		window.addEventListener("beforeunload", warnBeforeUnload);
@@ -494,9 +509,10 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 		const from = open.mailboxId;
 		holds.settle();
 		const next = composeFor(mode, original, open.mailboxId, from);
-		// Switching mode keeps what was written, attached and saved. The original's files come only with Forward.
+		// Switching mode keeps what was written, the subject, attachments and the saved draft; recipients follow the new mode. The original's files come only with Forward.
 		const files = keep ? [...next.files, ...keep.files.filter((f) => !f.attachmentId)] : next.files;
-		const carried = keep ? { html: keep.html, files, draftId: keep.draftId, from: keep.from, signature: keep.signature } : {};
+		const subject = keep ? prefixed(keep.subject, mode === "forward" ? "Fwd" : "Re") : next.subject;
+		const carried = keep ? { html: keep.html, subject, files, draftId: keep.draftId, from: keep.from, signature: keep.signature } : {};
 		setInline({ key: Date.now(), initial: { ...next, ...carried, askAgent } });
 	};
 
