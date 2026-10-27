@@ -264,3 +264,20 @@ test("short screens fold To, From and Subject into one line while the body is wr
 	assert.match(css, /\.pg-cw\[data-short\]\[data-focus="body"\] :is\(\.pg-cw-body > \.pg-cw-row, \.pg-modes\) \{ display: none; \}/);
 	assert.match(css, /\.pg-cw\[data-short\]\[data-focus="body"\] \.pg-cw-summary \{ display: flex;[^}]*min-height: 44px;/);
 });
+
+test("Send later moves: cards leave, the picker folds, a new time rises in", () => {
+	const win = read("app/components/postal/ComposeWindow.tsx");
+	const css = read("app/components/postal/postal.css");
+	assert.match(win, /const CARD_OUT_MS = 180;/);
+	assert.match(win, /data-card-leaving=\{cardLeaving \|\| undefined\}/);
+	assert.match(css, /\.pg-dock\[data-card-leaving\] \.pg-cw-card \{ animation: pg-card-out \.18s/);
+	// The picker stays mounted so it can fold both ways, and nothing in it takes focus while shut.
+	assert.match(win, /className="pg-later-pick" data-open=\{picking \|\| undefined\} inert=\{!picking\}/);
+	assert.match(css, /\.pg-later-pick \{ display: grid; grid-template-rows: 0fr;/);
+	// A changed time remounts the note and the Send label, which replays pg-swap-in.
+	assert.match(win, /className="pg-card-note" key=\{later\?\.getTime\(\) \?\? "none"\}/);
+	assert.match(win, /className="pg-send-label" key=\{later\?\.getTime\(\) \?\? "now"\}/);
+	// Reduced motion drops every animation and transition, and the card closes at once.
+	assert.match(css, /prefers-reduced-motion: reduce\) \{\n  \.postal \*, \.postal \*::before, \.postal \*::after \{ animation: none !important; transition: none !important; \}/);
+	assert.match(win, /prefers-reduced-motion: reduce\)"\)\.matches;\n\t\tconst id = setTimeout\(\(\) => setLast\(null\), still \? 0 : CARD_OUT_MS\)/);
+});
