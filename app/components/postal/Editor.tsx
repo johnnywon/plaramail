@@ -67,10 +67,10 @@ export function Editor({ value, onChange, placeholder, size = "inline", autoFocu
 		return () => cancelAnimationFrame(id);
 	}, [editor, autoFocus]);
 
-	const state = useEditorState({ editor, selector: ({ editor: e }) => ({ empty: !e || e.isEmpty }) });
+	const state = useEditorState({ editor, selector: ({ editor: e }) => ({ empty: !e || blank(e) }) });
 	// The editor is created after the first render, already holding its content, and no transaction tells
 	// useEditorState; asking the editor too keeps the placeholder off text it already has.
-	const empty = !!state?.empty && (!editor || editor.isEmpty);
+	const empty = !!state?.empty && (!editor || blank(editor));
 
 	return (
 		<div
@@ -93,6 +93,11 @@ export function Editor({ value, onChange, placeholder, size = "inline", autoFocu
 			<EditorContent editor={editor} />
 		</div>
 	);
+}
+
+/** Empty and still a plain paragraph. TipTap calls an empty list empty too, and the placeholder would sit on its marker. */
+function blank(editor: TipTap) {
+	return editor.isEmpty && editor.state.doc.firstChild?.type.name === "paragraph";
 }
 
 function promptLink(editor: TipTap) {
