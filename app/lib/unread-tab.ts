@@ -56,11 +56,13 @@ async function badgedIcon(src: string, unread: number): Promise<string | null> {
 	return canvas.toDataURL("image/png");
 }
 
-/** Keep the tab's title and icon showing `unread`. */
-export function useUnreadTab(unread: number | null | undefined) {
+/** Keep the tab's title on `title` with the unread count in front, and the count on its icon. */
+export function useUnreadTab(unread: number | null | undefined, title: string) {
 	const n = unread ?? 0;
 	useEffect(() => {
-		document.title = unreadTitle(document.title, n);
+		document.title = unreadTitle(title, n);
+	}, [title, n]);
+	useEffect(() => {
 		const links = [...document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]')];
 		for (const l of links) l.dataset.href ??= l.getAttribute("href") ?? "";
 		let stale = false;

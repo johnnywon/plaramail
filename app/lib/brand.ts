@@ -14,8 +14,13 @@ export function useAppName(): string {
 	return (useRouteLoaderData("root") as RootData)?.appName || DEFAULT_APP_NAME;
 }
 
+/** A tab title: where you are, narrowest first, then the app. "Agents · Console · PlaraMail". */
+export function tabTitle(name: string, ...place: (string | null | undefined)[]): string {
+	return [...place.map((p) => p?.trim()).filter(Boolean), name].join(" · ");
+}
+
 /** Page title for a route's meta(), suffixed with the app name. */
 export function pageTitle(matches: Match[], page?: string): string {
 	const name = (matches.find((m) => m?.id === "root")?.data as RootData)?.appName || DEFAULT_APP_NAME;
-	return page ? `${page} · ${name}` : name;
+	return tabTitle(name, page);
 }
