@@ -15,7 +15,7 @@ import { getAttachmentUrl, getNonInlineAttachments, messageBodyHtml } from "~/li
 import { useEmail, useMarkThreadRead, useThreadReplies } from "~/queries/emails";
 import type { Conversation, Label } from "~/services/api";
 import type { Email } from "~/types";
-import type { DraftResult } from "./Agent";
+import type { DraftWithAgent } from "./Agent";
 import type { AddressInfo, ComposeMode, ComposeState, useMailSender } from "./compose";
 import { Composer } from "./ComposeWindow";
 import { ownText } from "./draft-start";
@@ -53,7 +53,8 @@ export interface ReaderProps {
 	/** `askAgent`: open it and have the agent draft into it. */
 	onEditDraft: (draft: Email, askAgent?: boolean) => void;
 	onEditSignatures: () => void;
-	draftWithAgent: (state: ComposeState) => Promise<DraftResult>;
+	draftWithAgent: DraftWithAgent;
+	stopAgent?: () => void;
 	replyRequest: { mode: Exclude<ComposeMode, "new">; id: number } | null;
 	/** Changes when the label shortcut asks for the label picker. */
 	labelRequest: number;
@@ -317,6 +318,7 @@ export function Reader(props: ReaderProps) {
 							onPopOut={props.onPopOut}
 							onMode={(mode, keep) => original && props.startReply(mode, original, keep)}
 							draftWithAgent={props.draftWithAgent}
+							stopAgent={props.stopAgent}
 							onEditSignatures={props.onEditSignatures}
 						/>
 					) : (

@@ -3,14 +3,14 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
-	LinkIcon, ListBulletsIcon, ListNumbersIcon, QuotesIcon, TextBIcon, TextItalicIcon, TextStrikethroughIcon, TextTSlashIcon,
-	TextUnderlineIcon,
+	CaretUpIcon, CheckIcon, LinkIcon, ListBulletsIcon, ListNumbersIcon, QuotesIcon, TextBIcon, TextItalicIcon, TextStrikethroughIcon, TextTSlashIcon,
+	TextUnderlineIcon, XIcon,
 } from "@phosphor-icons/react";
 import LinkExtension from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
 import { type Editor as TipTap, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useShortcuts } from "./shortcuts";
 
 export interface EditorProps {
@@ -137,5 +137,102 @@ export function FormatBar({ editor }: { editor: TipTap | null }) {
 			<button type="button" title={tip("link", "Insert link")} aria-label="Insert link" aria-pressed={state?.link} onMouseDown={run(promptLink)}><LinkIcon size={16} /></button>
 			<button type="button" title="Clear formatting" aria-label="Clear formatting" onMouseDown={run((e) => e.chain().focus().unsetAllMarks().clearNodes().run())}><TextTSlashIcon size={16} /></button>
 		</div>
+	);
+}
+
+/** Paragraph styles on the phone's format card, each shown in its own type. */
+const STYLES = [
+	{ id: "body", label: "Body", set: (e: TipTap) => e.chain().focus().clearNodes().run() },
+	{ id: "heading", label: "Heading", set: (e: TipTap) => e.chain().focus().clearNodes().setHeading({ level: 3 }).run() },
+	{ id: "quote", label: "Quote", set: (e: TipTap) => e.chain().focus().clearNodes().setBlockquote().run() },
+	{ id: "code", label: "Code", set: (e: TipTap) => e.chain().focus().clearNodes().setCodeBlock().run() },
+] as const;
+
+/** Keep the editor's focus and selection (and the phone's keyboard) when a key is pressed. */
+const keep = (e: React.PointerEvent | React.MouseEvent) => e.preventDefault();
+
+/**
+ * The phone's format card, over the dock: the paragraph style, then Text
+ * (bold, italic, underline, strikethrough), then Lists and link. Link turns
+ * the card into an address field: selected text becomes the link; with
+ * nothing selected the address goes in as the link. Keys never take focus
+ * from the editor, so the caret stays where it was.
+ */
+export function FormatCard({ editor, cardRef }: { editor: TipTap | null; cardRef?: React.Ref<HTMLDivElement & HTMLFormElement> }) {
+	const [styles, setStyles] = useState(false);
+	const [linking, setLinking] = useState(false);
+	const [href, setHref] = useState("");
+	const state = useEditorState({
+		editor,
+		selector: ({ editor: e }) => ({
+			style: e?.isActive("heading") ? "heading" : e?.isActive("codeBlock") ? "code" : e?.isActive("blockquote") ? "quote" : "body",
+			bold: !!e?.isActive("bold"),
+			italic: !!e?.isActive("italic"),
+			underline: !!e?.isActive("underline"),
+			strike: !!e?.isActive("strike"),
+			bullet: !!e?.isActive("bulletList"),
+			ordered: !!e?.isActive("orderedList"),
+			link: !!e?.isActive("link"),
+		}),
+	});
+	const run = (fn: (e: TipTap) => void) => () => editor && fn(editor);
+	const current = STYLES.find((x) => x.id === state?.style) ?? STYLES[0];
+
+	const addLink = () => {
+		const url = href.trim();
+		if (!editor || !url) return;
+		const { empty } = editor.state.selection;
+		if (empty) editor.chain().focus().insertContent({ type: "text", text: url, marks: [{ type: "link", attrs: { href: url } }] }).run();
+		else editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+		setLinking(false);
+		setHref("");
+	};
+
+	if (linking) {
+		return (
+			<form ref={cardRef} className="pg-cw-card pg-fmt is-link" role="group" aria-label="Insert link" onSubmit={(e) => { e.preventDefault(); addLink(); }}>
+				<LinkIcon size={20} color="var(--pg-text-5)" />
+				<input className="pg-card-input" type="url" inputMode="url" autoFocus value={href} placeholder="Paste or type a link" aria-label="Link address" onChange={(e) => setHref(e.target.value)} />
+				<button type="submit" className="pg-card-add" disabled={!href.trim()}>Add</button>
+				<button type="button" className="pg-key" aria-label="Cancel link" onClick={() => { setLinking(false); editor?.commands.focus(); }}><XIcon size={20} /></button>
+			</form>
+		);
+	}
+
+	const key = (label: string, on: boolean | undefined, fn: (e: TipTap) => void, icon: React.ReactNode) => (
+		<button type="button" className="pg-key" aria-label={label} title={label} aria-pressed={!!on} onPointerDown={keep} onMouseDown={keep} onClick={run(fn)}>{icon}</button>
+	);
+
+	return (
+		<>
+			{styles && (
+				<div className="pg-styles" role="menu" aria-label="Text style">
+					{STYLES.map((x) => (
+						<button key={x.id} type="button" role="menuitemradio" aria-checked={x.id === current.id} data-style={x.id} onPointerDown={keep} onMouseDown={keep} onClick={() => { if (editor) x.set(editor); setStyles(false); }}>
+							<span>{x.label}</span>
+							{x.id === current.id && <CheckIcon size={14} weight="bold" />}
+						</button>
+					))}
+				</div>
+			)}
+			<div ref={cardRef} className="pg-cw-card pg-fmt" role="toolbar" aria-label="Formatting">
+				<button type="button" className="pg-style" aria-haspopup="menu" aria-expanded={styles} aria-label={`Text style, ${current.label}`} onPointerDown={keep} onMouseDown={keep} onClick={() => setStyles((v) => !v)}>
+					{current.label}<CaretUpIcon size={12} />
+				</button>
+				<span className="pg-well" role="group" aria-label="Text">
+					{key("Bold", state?.bold, (e) => e.chain().focus().toggleBold().run(), <TextBIcon size={20} weight="bold" />)}
+					{key("Italic", state?.italic, (e) => e.chain().focus().toggleItalic().run(), <TextItalicIcon size={20} />)}
+					{key("Underline", state?.underline, (e) => e.chain().focus().toggleUnderline().run(), <TextUnderlineIcon size={20} />)}
+					{key("Strikethrough", state?.strike, (e) => e.chain().focus().toggleStrike().run(), <TextStrikethroughIcon size={20} />)}
+				</span>
+				<span className="pg-well" role="group" aria-label="Lists and link">
+					{key("Bulleted list", state?.bullet, (e) => e.chain().focus().toggleBulletList().run(), <ListBulletsIcon size={20} />)}
+					{key("Numbered list", state?.ordered, (e) => e.chain().focus().toggleOrderedList().run(), <ListNumbersIcon size={20} />)}
+					<button type="button" className="pg-key" aria-label="Insert link" title="Insert link" aria-pressed={!!state?.link} onPointerDown={keep} onMouseDown={keep} onClick={() => { setStyles(false); setHref((editor?.getAttributes("link").href as string | undefined) ?? ""); setLinking(true); }}>
+						<LinkIcon size={20} />
+					</button>
+				</span>
+			</div>
+		</>
 	);
 }

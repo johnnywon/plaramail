@@ -75,7 +75,7 @@ test("the mail view's composers send through the held sender", () => {
 	assert.equal((mail.match(/sender=\{heldSender\}/g) ?? []).length, 2);
 	assert.doesNotMatch(mail, /sender=\{sender\}/);
 	assert.match(mail, /sender\.check\(state\);/);
-	assert.match(mail, /if \(state\.draftId && open\?\.emailId === state\.draftId\) closeConversation\(\);\n\t\t\tconst hold = holdSend\(/, "the draft being sent leaves the reader");
+	assert.match(mail, /if \(state\.draftId && open\?\.emailId === state\.draftId\) closeConversation\(\);\n\t\t\tconst hold = holds\.hold\(/, "the draft being sent leaves the reader");
 	const win = readFileSync(new URL("../app/components/postal/ComposeWindow.tsx", import.meta.url), "utf8");
 	assert.match(win, /props\.onClosed\(held \? null : sentText\(stateRef\.current\)\)/);
 	assert.doesNotMatch(win, /TODO\(roadmap\): undo send/);

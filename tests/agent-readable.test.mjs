@@ -85,7 +85,8 @@ test("a choice of one is a radio group, so agents see which option is on", () =>
 	const groups = {
 		"app/components/postal/Segmented.tsx": 1,
 		"app/components/postal/ListPane.tsx": 2,
-		"app/components/postal/ComposeWindow.tsx": 1,
+		// Reply mode, and on the phone's cards the agent's tone and Send later's when, day and time.
+		"app/components/postal/ComposeWindow.tsx": 5,
 		"app/components/postal/ModelTab.tsx": 3,
 	};
 	for (const [file, count] of Object.entries(groups)) {

@@ -27,3 +27,32 @@ export function AgentIcon({ size = 16, color, className, style }: {
 		</svg>
 	);
 }
+
+const STROKE = { stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+
+/** The agent's motion, from Plara Design's css/motion.css: waiting, reading, writing (looped), landed (once). */
+export type AgentAnim = "agent-ready" | "agent-think" | "agent-write" | "agent-done";
+
+/**
+ * The agent writes: a solid spark in front of Write's three lines and cursor
+ * block, 1.5 wide on a 36 × 24 grid. The agent key's only drawing, so the shape
+ * says what it does. Ported from Plara Design (react/icons.tsx, AgentDraftIcon).
+ * `anim` runs one of the four presets in postal.css.
+ */
+export function AgentDraftIcon({ size = 16, color, className, style, anim }: {
+	size?: number;
+	color?: string;
+	className?: string;
+	style?: CSSProperties;
+	anim?: AgentAnim;
+}) {
+	return (
+		<svg width={(size * 36) / 24} height={size} viewBox="0 0 36 24" fill="none" className={className} style={{ color, flex: "none", ...style }} aria-hidden="true" data-anim={anim}>
+			<path d="M8 3.5Q8.9 11.1 15.5 12Q8.9 12.9 8 20.5Q7.1 12.9 0.5 12Q7.1 11.1 8 3.5Z" className="pg-agent-spark" fill="currentColor" />
+			<path d="M19 6.5h15" className="pg-agent-line" pathLength="1" style={{ "--i": 0 } as CSSProperties} {...STROKE} />
+			<path d="M19 12h15" className="pg-agent-line" pathLength="1" style={{ "--i": 1 } as CSSProperties} {...STROKE} />
+			<path d="M19 17.5h7" className="pg-agent-line" pathLength="1" style={{ "--i": 2 } as CSSProperties} {...STROKE} />
+			<rect x="28.4" y="15.25" width="2.4" height="4.5" className="pg-agent-cursor" fill="var(--pg-green)" />
+		</svg>
+	);
+}

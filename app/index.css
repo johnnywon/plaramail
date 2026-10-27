@@ -170,6 +170,10 @@ button:disabled {
   --pg-mail: oklch(0.76 0.16 58);
   --pg-green: oklch(0.82 0.17 152);
   --pg-green-text: oklch(0.84 0.16 152);
+  /* Signal, the Fold mark's last flap: only on Send in the phone composer's dock. Ink sits on it and on solid green. */
+  --pg-signal: #e46f2c;
+  --pg-signal-deep: #cf5f20;
+  --pg-ink: #121316;
   --pg-yellow: oklch(0.87 0.15 95);
   --pg-yellow-text: oklch(0.9 0.14 95);
   --pg-danger: oklch(0.64 0.19 15);

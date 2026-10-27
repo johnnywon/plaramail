@@ -43,7 +43,7 @@ test("an empty reply opened for drafting isn't saved", () => {
 
 test("the composer and runner use the queue, and the reader offers Draft reply on an empty draft", () => {
 	const compose = readFileSync("app/components/postal/ComposeWindow.tsx", "utf8");
-	assert.match(compose, /useState\(!!props\.initial\.askAgent\)/, "Drafting… shows from the first paint");
+	assert.match(compose, /props\.initial\.askAgent \? \{ status: "writing"/, "the agent's draft card shows writing from the first paint");
 	assert.match(compose, /skipSave\(openedToDraft\.current, s\.html\)/);
 	const agent = readFileSync("app/components/postal/Agent.tsx", "utf8");
 	assert.match(agent, /canSend\(/);
