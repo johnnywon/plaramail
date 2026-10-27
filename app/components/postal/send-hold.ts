@@ -16,6 +16,8 @@ export const UNDO_SEND_MS = 5000;
 export interface Hold {
 	/** Cancel the send. False once it has started. */
 	undo(): boolean;
+	/** Send now instead of waiting out the hold. False once it has started or been undone. */
+	flush(): boolean;
 	/** "sent" after the send, "undone" after undo; rejects when the send fails. */
 	done: Promise<"sent" | "undone">;
 }
@@ -36,13 +38,27 @@ const realTimers: Timers = { set: (fn, ms) => setTimeout(fn, ms), clear: (t) => 
 /** Run `send` after `ms` unless undone first. */
 export function holdSend(send: () => Promise<void>, ms = UNDO_SEND_MS, timers: Timers = realTimers): Hold {
 	let held = true;
+	let timer: unknown;
 	let settle!: (v: "sent" | "undone") => void;
 	let fail!: (e: unknown) => void;
 	const done = new Promise<"sent" | "undone">((resolve, reject) => {
 		settle = resolve;
 		fail = reject;
 	});
+	const go = () => {
+		held = false;
+		send().then(
+			() => { pending.delete(hold); settle("sent"); },
+			(e) => { pending.delete(hold); fail(e); },
+		);
+	};
 	const hold: Hold = {
+		flush() {
+			if (!held) return false;
+			timers.clear(timer);
+			go();
+			return true;
+		},
 		undo() {
 			if (!held) return false;
 			held = false;
@@ -53,15 +69,34 @@ export function holdSend(send: () => Promise<void>, ms = UNDO_SEND_MS, timers: T
 		},
 		done,
 	};
-	const timer = timers.set(() => {
-		held = false;
-		send().then(
-			() => { pending.delete(hold); settle("sent"); },
-			(e) => { pending.delete(hold); fail(e); },
-		);
-	}, ms);
+	timer = timers.set(go, ms);
 	pending.add(hold);
 	return hold;
+}
+
+/**
+ * One held send at a time. Holding another, or opening a composer, sends the
+ * held one now, so Undo always means the last send and never writes over a
+ * composer opened since.
+ */
+export function oneHold() {
+	let current: Hold | null = null;
+	return {
+		hold(send: () => Promise<void>, ms = UNDO_SEND_MS, timers: Timers = realTimers): Hold {
+			current?.flush();
+			current = holdSend(send, ms, timers);
+			return current;
+		},
+		/** Send the held message now, if there is one. */
+		settle() {
+			current?.flush();
+			current = null;
+		},
+		/** Whether this hold is still the latest one and can be undone. */
+		isLatest(hold: Hold) {
+			return hold === current;
+		},
+	};
 }
 
 /** Keep the page from closing silently while a send is held. */

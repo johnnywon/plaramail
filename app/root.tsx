@@ -117,7 +117,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 				<meta property="og:image:width" content="1200" />
 				<meta property="og:image:height" content="630" />
 				<meta name="twitter:card" content="summary_large_image" />
-				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+				<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
 				<title>{data?.appName || DEFAULT_APP_NAME}</title>
 				<Meta />
 				<Links />

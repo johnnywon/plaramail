@@ -53,6 +53,7 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
   .pg-format,
   .pg-cw-head,
   .pg-cw-row,
+  .pg-cw-summary,
   .pg-files,
   .pg-warn,
   .pg-cw-foot,
@@ -763,6 +764,9 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-editor .ProseMirror p { margin: 0 0 8px; }
 .pg-editor .ProseMirror ul, .pg-editor .ProseMirror ol { margin: 4px 0; padding-left: 22px; }
 .pg-editor .ProseMirror blockquote { margin: 6px 0; padding: 6px 10px; border: 1px solid var(--pg-line-2); background: var(--pg-base); color: var(--pg-text-5); }
+/* The phone's text styles: Heading and Code. */
+.pg-editor .ProseMirror h3 { margin: 4px 0 8px; font-size: 1.2em; font-weight: 600; line-height: 1.35; color: var(--pg-text-1); }
+.pg-editor .ProseMirror pre { margin: 6px 0; padding: 8px 10px; background: var(--pg-recess-face); font: 13px/1.5 var(--pg-mono); white-space: pre-wrap; }
 .pg-editor .ProseMirror a { color: var(--pg-mail); }
 .pg-editor .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--pg-text-8); float: left; height: 0; pointer-events: none; }
 .pg-format { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-top: 1px solid var(--pg-line); flex-wrap: wrap; }
@@ -838,6 +842,8 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-cw-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .pg-cw-scroll .pg-quote { margin: 0 14px 12px; }
 .pg-cw-scroll .pg-editor { flex: 1; display: flex; flex-direction: column; }
+/* The agent's draft sits right under the writer's text. */
+.pg-cw-scroll:has(.pg-adraft) .pg-editor { flex: none; }
 .pg-cw-scroll .pg-editor > div { flex: 1; display: flex; flex-direction: column; }
 .pg-cw-scroll .ProseMirror { flex: 1; }
 .pg-signature { padding: 0 14px 12px; font-size: 13px; line-height: 1.5; color: var(--pg-text-6); }
@@ -864,6 +870,17 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-send-split .pg-caret:hover { background: var(--pg-primary-hover); }
 .postal .pg-send-split .pg-send:not(:only-child) { border-radius: 6px 0 0 6px !important; }
 .postal .pg-send-split .pg-caret { border-radius: 0 6px 6px 0 !important; }
+/* Send is the one control in Signal, at every width. */
+.pg-send-split :is(.pg-send, .pg-caret) { background: var(--pg-signal); color: var(--pg-ink); }
+.pg-send-split .pg-caret { border-left-color: color-mix(in srgb, var(--pg-ink) 22%, transparent); }
+.pg-send-split :is(.pg-send, .pg-caret):hover { background: var(--pg-signal-deep); }
+
+/* Short screens (useKeyboardDock sets data-short): writing the body folds To, From and Subject into one line. */
+.pg-cw-summary { display: none; border: 0; border-bottom: 1px solid var(--pg-line); }
+.pg-cw[data-short][data-focus="body"] :is(.pg-cw-body > .pg-cw-row, .pg-modes) { display: none; }
+.pg-cw[data-short][data-focus="body"] .pg-cw-summary { display: flex; align-items: center; gap: 6px; flex: none; width: 100%; min-height: 44px; padding: 0 14px; background: none; color: var(--pg-text-6); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; }
+.pg-cw-summary b { min-width: 0; color: var(--pg-text-2); font-weight: 500; }
+.pg-cw-summary span { min-width: 0; flex: 1; }
 .pg-sched { left: 0; bottom: 38px; width: 312px; max-width: calc(100vw - 24px); padding: 4px; transform-origin: bottom left; }
 .pg-sched .pg-caption { display: block; padding: 6px 8px 4px; }
 .pg-sched .pg-menu-item { height: 34px; color: var(--pg-text-2); white-space: nowrap; }
@@ -881,6 +898,157 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-sched-custom .pg-btn { height: 30px; justify-content: center; }
 .pg-tool-btn { width: 28px; height: 28px; flex: none; display: flex; align-items: center; justify-content: center; color: var(--pg-text-5); }
 .pg-tool-btn:hover:not(:disabled), .pg-tool-btn[aria-pressed="true"] { background: var(--pg-hover-raised); color: var(--pg-text-1); }
+
+/* ── The agent key ─────────────────────────────────────────────────────
+   Ported from Plara Design (.pl-agent-btn in css/components.css). The agent draft icon alone, the one green
+   control in the composer's foot, named by its aria-label: Write, Rewrite, or Draft a reply with the agent.
+   Rest: a green tint and ring; hover lifts the spark 1px. Open, its card showing (aria-pressed): solid green,
+   the icon in ink. Busy: Stop, in a breathing ring. Hovered, open and busy keys keep their fill. */
+.pg-agent-key { position: relative; display: inline-grid; place-items: center; flex: none; width: 40px; height: 30px; color: var(--pg-green-text); background: color-mix(in oklch, var(--pg-green) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--pg-green) 28%, transparent); transition: background-color .15s; }
+.pg-agent-key:hover:not(:disabled, [aria-pressed="true"], [data-busy]) { background: color-mix(in oklch, var(--pg-green) 18%, transparent); }
+.pg-agent-key .pg-agent-spark { transition: translate .16s var(--pg-side-ease); }
+.pg-agent-key:hover:not(:disabled) .pg-agent-spark { translate: 0 -1px; }
+.pg-agent-key:active:not(:disabled) { translate: 0 1px; }
+.pg-agent-key[aria-pressed="true"] { background: var(--pg-green); color: var(--pg-ink); box-shadow: none; }
+.pg-agent-key[aria-pressed="true"] .pg-agent-cursor { fill: currentColor; }
+.pg-agent-key[data-busy] { background: var(--pg-segment); color: var(--pg-green); box-shadow: inset 0 0 0 1px var(--pg-line-2); }
+.pg-agent-key[data-busy]::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 1.5px var(--pg-green); animation: pg-pulse 1.4s ease-in-out infinite; }
+
+/* ── The agent draft icon's motion ─────────────────────────────────────
+   Ported from Plara Design's css/motion.css. Parts: .pg-agent-spark, .pg-agent-line (--i 0 to 2, pathLength 1)
+   and .pg-agent-cursor. agent-ready: the agent card is open, the cursor blinks. agent-think: it reads for the
+   first 0.9s, the spark breathes and the lines glow in turn. agent-write: it writes, each line draws on and the
+   cursor rides its end, a 2s loop. agent-done: the draft landed, once. Translate and opacity only, except the
+   lines, which draw on with stroke-dashoffset because the icon is writing. Reduced motion shows the drawn icon. */
+[data-anim^="agent-"] :is(.pg-agent-spark, .pg-agent-cursor) { transform-box: view-box; }
+@keyframes pg-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+[data-anim="agent-ready"] .pg-agent-cursor { animation: pg-caret 1.06s steps(1) infinite; }
+@keyframes pg-agent-glow { 0%, 100% { opacity: .3; } 30%, 50% { opacity: 1; } }
+[data-anim="agent-think"] .pg-agent-spark { animation: pg-pulse 1.4s ease-in-out infinite; }
+[data-anim="agent-think"] .pg-agent-line { opacity: .3; animation: pg-agent-glow 1.4s ease-in-out infinite; animation-delay: calc(var(--i, 0) * 180ms); }
+[data-anim="agent-think"] .pg-agent-cursor { animation: pg-caret 1.06s steps(1) infinite; }
+@keyframes pg-agent-send { 0% { opacity: .45; } 6% { opacity: 1; } 28% { opacity: .55; } 36% { opacity: 1; } 61% { opacity: .55; } 69% { opacity: 1; } 92% { opacity: 1; } 100% { opacity: .45; } }
+@keyframes pg-agent-line-0 { 0% { opacity: 0; stroke-dashoffset: 1; } 1% { opacity: 1; } 28%, 92% { opacity: 1; stroke-dashoffset: 0; } 100% { opacity: 0; stroke-dashoffset: 0; } }
+@keyframes pg-agent-line-1 { 0%, 33% { opacity: 0; stroke-dashoffset: 1; } 34% { opacity: 1; } 61%, 92% { opacity: 1; stroke-dashoffset: 0; } 100% { opacity: 0; stroke-dashoffset: 0; } }
+@keyframes pg-agent-line-2 { 0%, 66% { opacity: 0; stroke-dashoffset: 1; } 67% { opacity: 1; } 80%, 92% { opacity: 1; stroke-dashoffset: 0; } 100% { opacity: 0; stroke-dashoffset: 0; } }
+@keyframes pg-agent-pen {
+  0% { opacity: 1; translate: -9.4px -11px; } 28%, 31% { translate: 4.6px -11px; } 31.1%, 33% { translate: -9.4px -5.5px; }
+  61%, 64% { translate: 4.6px -5.5px; } 64.1%, 66% { translate: -9.4px 0; } 80% { opacity: 1; translate: 0 0; }
+  84% { opacity: 0; } 88%, 96% { opacity: 1; } 100% { opacity: 0; translate: 0 0; }
+}
+[data-anim="agent-write"] .pg-agent-spark { animation: pg-agent-send 2s var(--pg-side-ease) infinite; }
+[data-anim="agent-write"] .pg-agent-line { stroke-dasharray: 1 2; animation: pg-agent-line-0 2s cubic-bezier(.45, 0, .25, 1) infinite; }
+[data-anim="agent-write"] .pg-agent-line + .pg-agent-line { animation-name: pg-agent-line-1; }
+[data-anim="agent-write"] .pg-agent-line + .pg-agent-line + .pg-agent-line { animation-name: pg-agent-line-2; }
+[data-anim="agent-write"] .pg-agent-cursor { animation: pg-agent-pen 2s cubic-bezier(.45, 0, .25, 1) infinite; }
+@keyframes pg-agent-settle { from { opacity: 0; translate: 0 3px; } }
+@keyframes pg-agent-draw { from { opacity: 0; stroke-dashoffset: 1; } 1% { opacity: 1; } to { opacity: 1; stroke-dashoffset: 0; } }
+@keyframes pg-agent-land { 0% { opacity: 0; } 1%, 24% { opacity: 1; } 25%, 49% { opacity: 0; } 50%, 74% { opacity: 1; } 75%, 99% { opacity: 0; } 100% { opacity: 1; } }
+[data-anim="agent-done"] .pg-agent-spark { animation: pg-agent-settle 360ms var(--pg-side-ease) both; }
+[data-anim="agent-done"] .pg-agent-line { stroke-dasharray: 1 2; animation: pg-agent-draw 360ms var(--pg-side-ease) both; animation-delay: calc(120ms + var(--i, 0) * 80ms); }
+[data-anim="agent-done"] .pg-agent-cursor { animation: pg-agent-land 640ms steps(1) 520ms both; }
+@media (prefers-reduced-motion: reduce) { [data-anim="agent-think"] .pg-agent-line { opacity: 1; } }
+
+/* ── Cards over the foot ───────────────────────────────────────────────
+   Format, Photos and files, the agent and Send later open in one place, 8px above the foot, one at a time.
+   Each lifts 8px as it fades in on the side curve. The body scrolls clear of the open card (--pg-card-h). */
+.pg-cw-foot { position: relative; }
+@keyframes pg-card-in { from { opacity: 0; translate: 0 8px; } }
+.pg-cw-card { position: absolute; z-index: 6; left: 8px; right: 8px; bottom: calc(100% + 8px); display: flex; flex-direction: column; gap: 10px; max-height: calc(var(--pg-vv-h, 100dvh) - 150px); overflow-y: auto; padding: 12px; background: var(--pg-raised); box-shadow: var(--pg-shadow-pop), inset 0 0 0 1px var(--pg-line-2); font-size: 13px; animation: pg-card-in .3s var(--pg-side-ease); }
+.pg-cw[data-card] .pg-cw-scroll { padding-bottom: var(--pg-card-h, 0px); }
+.pg-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; color: var(--pg-text-1); }
+.pg-card-head.is-agent { color: var(--pg-green-text); }
+.pg-card-meta { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 11px var(--pg-mono); color: var(--pg-text-7); }
+.pg-card-note { font: 500 11px/1.45 var(--pg-mono); color: var(--pg-text-7); }
+.pg-card-row { display: flex; align-items: center; gap: 8px; }
+.pg-card-label { font: 500 11px var(--pg-mono); color: var(--pg-text-7); }
+.pg-card-input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 0; outline: none; background: var(--pg-recess-face); box-shadow: var(--pg-recess); color: var(--pg-text-1); font: 13px var(--pg-font); }
+.pg-card-input::placeholder { color: var(--pg-text-8); }
+.pg-card-add { flex: none; height: 40px; padding: 0 14px; background: var(--pg-text-1); color: var(--pg-base); font-weight: 600; }
+/* Wells: keys in a recessed group. A key that is on rises out of it. */
+.pg-well { display: inline-flex; flex: none; gap: 2px; padding: 2px; background: var(--pg-recess-face); box-shadow: var(--pg-recess); }
+.pg-key { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 40px; height: 40px; color: var(--pg-text-5); transition: background-color .16s var(--pg-side-ease), color .16s var(--pg-side-ease); }
+.pg-key:hover:not(:disabled) { color: var(--pg-text-1); }
+.pg-key:active:not(:disabled) { translate: 0 1px; }
+.pg-key:is([aria-pressed="true"], [aria-checked="true"], [aria-selected="true"]) { background: var(--pg-raised); color: var(--pg-text-1); box-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 0 0 1px var(--pg-line-2); }
+/* Format: the paragraph style, Text, then Lists and link. */
+.pg-fmt { flex-direction: row; align-items: center; justify-content: space-between; gap: 4px; padding: 4px; overflow: visible; }
+.pg-fmt .pg-key { min-width: 36px; width: 36px; }
+@media (min-width: 400px) { .pg-fmt .pg-key { min-width: 40px; width: 40px; } }
+.pg-fmt.is-link { padding-left: 12px; }
+.pg-style { display: inline-flex; flex: none; align-items: center; gap: 4px; height: 44px; padding: 0 6px 0 10px; font-weight: 600; color: var(--pg-text-1); }
+.pg-style:hover, .pg-style[aria-expanded="true"] { background: var(--pg-hover-raised); }
+.pg-style svg { color: var(--pg-text-6); }
+.pg-styles { position: absolute; z-index: 7; left: 8px; bottom: calc(100% + 68px); width: 220px; display: flex; flex-direction: column; padding: 6px; background: var(--pg-raised); box-shadow: var(--pg-shadow-pop), inset 0 0 0 1px var(--pg-line-2); animation: pg-card-in .3s var(--pg-side-ease); }
+.pg-styles button { display: flex; align-items: center; min-height: 44px; padding: 0 12px; color: var(--pg-text-2); }
+.pg-styles button:hover { background: var(--pg-hover-raised); }
+.pg-styles button[aria-checked="true"] { background: color-mix(in oklch, var(--pg-mail) 12%, transparent); color: var(--pg-text-1); }
+.pg-styles button svg { margin-left: auto; color: var(--pg-mail); }
+.pg-styles [data-style="body"] span { font-size: 15px; }
+.pg-styles [data-style="heading"] span { font-size: 18px; font-weight: 600; }
+.pg-styles [data-style="quote"] span { padding: 2px 8px; background: var(--pg-recess-face); box-shadow: var(--pg-recess); color: var(--pg-text-4); }
+.pg-styles [data-style="code"] span { font: 14px var(--pg-mono); }
+/* The agent: a request with a green go key, starting points, a tone. */
+.pg-ask { box-shadow: var(--pg-shadow-pop), inset 0 0 0 1px color-mix(in oklch, var(--pg-green) 34%, transparent); }
+.pg-ask-in { position: relative; display: flex; }
+.pg-ask-in .pg-card-input { padding-right: 52px; }
+.pg-ask-go { position: absolute; right: 4px; top: 4px; display: grid; place-items: center; width: 36px; height: 36px; background: var(--pg-green); color: var(--pg-ink); }
+.pg-starts { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.pg-starts button { flex: none; height: 36px; padding: 0 12px; background: color-mix(in oklch, var(--pg-green) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--pg-green) 22%, transparent); font-size: 13px; color: var(--pg-text-2); }
+.pg-starts button:hover { background: color-mix(in oklch, var(--pg-green) 16%, transparent); }
+.pg-tone .pg-key { padding: 0 12px; font-size: 13px; }
+.pg-tone .pg-key[aria-checked="true"] { color: var(--pg-green-text); }
+/* Photos and files: two tabs, what is attached, a picker, and a meter against the 5 MB message. */
+.pg-attach-tabs { display: flex; }
+.pg-attach-tabs .pg-key { flex: 1; font-size: 13px; }
+.pg-attach-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto; }
+.pg-attach-pick { height: 44px; justify-content: center; gap: 8px; font-size: 13px; }
+.pg-meter-row { display: flex; align-items: center; gap: 10px; }
+.pg-meter-row .pg-card-meta { margin-left: 0; flex: none; }
+.pg-meter { flex: 1; height: 6px; overflow: hidden; background: var(--pg-recess-face); box-shadow: var(--pg-recess); }
+.pg-meter i { display: block; height: 100%; background: var(--pg-text-5); }
+.pg-meter[data-over] i { background: var(--pg-yellow); }
+/* Send later: three slots in a well, the chosen one rises with a mail-orange ring; or a day and a time. */
+.pg-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; }
+.pg-slot { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 10px; text-align: left; color: var(--pg-text-5); transition: background-color .16s var(--pg-side-ease); }
+.pg-slot b { font-size: 13px; font-weight: 600; line-height: 1.25; color: var(--pg-text-1); }
+.pg-slot time { font: 500 11px var(--pg-mono); color: var(--pg-text-6); }
+.pg-slot:hover { background: var(--pg-hover); }
+.pg-slot:active, .pg-days button:active { translate: 0 1px; }
+.pg-slot[aria-checked="true"] { background: var(--pg-raised); box-shadow: 0 1px 2px rgba(0, 0, 0, .35), inset 0 0 0 1.5px var(--pg-mail); }
+.pg-slot[aria-checked="true"] time { color: var(--pg-text-1); }
+.pg-pickrow { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; text-align: left; color: var(--pg-text-2); }
+.pg-pickrow:hover { background: var(--pg-hover-raised); }
+.pg-pickrow > svg:first-child { color: var(--pg-text-5); }
+.pg-pickrow[aria-checked="true"] > svg:first-child { color: var(--pg-mail); }
+.pg-pickrow time { font: 600 12px var(--pg-mono); color: var(--pg-text-1); }
+.pg-pick-caret { color: var(--pg-text-6); rotate: 180deg; transition: rotate .2s var(--pg-side-ease); }
+.pg-pickrow[aria-expanded="true"] .pg-pick-caret { rotate: 0deg; }
+.pg-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.pg-days button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 52px; font-size: 16px; font-weight: 600; color: var(--pg-text-1); box-shadow: inset 0 0 0 1px var(--pg-line-2); }
+.pg-days small { font: 500 10px var(--pg-mono); text-transform: uppercase; color: var(--pg-text-7); }
+.pg-days button[aria-checked="true"] { background: var(--pg-mail); color: var(--pg-ink); box-shadow: none; }
+.pg-days button[aria-checked="true"] small { color: inherit; }
+.pg-later-times { display: flex; }
+.pg-later-times .pg-key { flex: 1; min-width: 0; font: 600 12px var(--pg-mono); }
+.pg-later-other { display: flex; gap: 8px; }
+.pg-later-other input { flex: 1; min-width: 0; height: 44px; padding: 0 10px; border: 1px solid var(--pg-line-2); background: var(--pg-input); color: var(--pg-text-1); font-size: 16px; }
+
+/* ── The agent's draft ────────────────────────────────────────────────
+   A card under the writer's text, in ordinary ink with a green ring: Agent draft (or Agent rewrite), the request
+   and tone, and the model once it lands. Use draft (or Replace with this), Redraft, and Discard. It lifts 8px as
+   it fades in, once. While the agent works, the head alone shows, its icon reading then writing. */
+.pg-adraft { flex: none; display: flex; flex-direction: column; margin: 4px 14px 12px; background: color-mix(in oklch, var(--pg-green) 5%, var(--pg-raised)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--pg-green) 26%, transparent); animation: pg-card-in .36s var(--pg-side-ease); }
+.pg-adraft-head { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 10px 12px 0; min-height: 36px; font-size: 12px; color: var(--pg-text-5); }
+.pg-adraft-head > svg { color: var(--pg-green-text); }
+.pg-adraft-head b { flex: none; font-weight: 600; color: var(--pg-green-text); }
+.pg-adraft-head small { flex: none; margin-left: auto; font: 500 11px var(--pg-mono); color: var(--pg-text-7); }
+.pg-adraft-text { padding: 8px 12px 4px; font: 14px/1.6 var(--pg-font); color: var(--pg-text-2); word-break: break-word; }
+.pg-adraft-text p { margin: 0 0 8px; }
+.pg-adraft-foot { display: flex; align-items: center; gap: 6px; padding: 4px 8px 8px; }
+.pg-adraft-use { display: inline-flex; align-items: center; height: 32px; padding: 0 14px; background: var(--pg-green); color: var(--pg-ink); font-weight: 600; }
+.pg-cw-more { position: relative; display: flex; }
+.pg-more-menu { position: absolute; top: calc(100% + 4px); right: 0; min-width: 200px; }
 
 /* ── Agent column ──────────────────────────────────────────────────── */
 .pg-agent { width: 328px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--pg-line); background: var(--pg-rail); min-height: 0; position: relative; z-index: 5; }
@@ -1216,6 +1384,29 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
   .pg-cw-foot .pg-agent-label, .pg-cw-foot .pg-save-label { display: none; }
   .pg-cw-foot .pg-btn { padding: 0 10px; }
   .pg-format { flex-wrap: nowrap; overflow-x: auto; }
+  /* The full-screen composer keeps to the visual viewport, so its dock rides the keyboard (useKeyboardDock).
+     A reply opens full screen too. */
+  .pg-cw:not([data-state="min"]), .pg-cw[data-state="inline"] { position: fixed; z-index: 40; left: 0; right: 0; top: var(--pg-vv-top, 0px); bottom: auto; width: 100%; height: var(--pg-vv-h, 100dvh); margin: 0; border: 0; overflow: hidden; animation: none; }
+  .postal .pg-cw[data-state="inline"] { border-radius: 0 !important; }
+  .pg-cw[data-state="inline"] .pg-cw-scroll { flex: 1; overflow-y: auto; }
+  .pg-cw-head { height: 52px; padding-top: env(safe-area-inset-top, 0px); }
+  /* The dock: 56px, the tool well, the agent and Send, all 44px, on a glass layer. Above the home area when
+     the keyboard is down. */
+  .pg-dock { height: auto; min-height: 56px; gap: 8px; padding: 6px max(8px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); background: color-mix(in oklch, var(--pg-raised) 84%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4); }
+  .pg-cw[data-kb] .pg-dock { padding-bottom: 6px; }
+  .pg-dock > .pg-well .pg-key { width: 40px; }
+  .pg-dock .pg-agent-key { width: 58px; height: 44px; }
+  .pg-dock .pg-agent-icon { width: 33px; height: 22px; }
+  .pg-dock-send { height: 44px; box-shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 8px 18px -8px color-mix(in srgb, var(--pg-signal) 75%, transparent); }
+  .pg-dock-send .pg-send { gap: 8px; padding: 0 14px 0 13px; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pg-dock-send .pg-caret { width: 40px; }
+  .pg-dock-send :is(.pg-send, .pg-caret):active { background: var(--pg-signal-deep); }
+  .pg-dock-send .pg-caret svg { transition: rotate .2s var(--pg-side-ease); }
+  .pg-dock-send .pg-caret[aria-expanded="true"] svg { rotate: 180deg; }
+  .pg-dock-send :is(.pg-send, .pg-caret):active { translate: 0 1px; }
+  .pg-cw-card .pg-card-input, .pg-later-other input { font-size: 16px; }
+  .pg-adraft-use, .pg-adraft-foot .pg-btn { height: 44px; }
+  .pg-adraft { margin-inline: 12px; }
   /* Every action stays in view: the toolbar wraps to a second row instead of scrolling. */
   .pg-reader-bar > div { flex-wrap: wrap; row-gap: 4px; }
 }

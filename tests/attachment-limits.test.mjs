@@ -52,6 +52,6 @@ test("the composer checks size before sending and on every way files come in", (
 	assert.match(win, /if \(!files\.length \|\| e\.clipboardData\.getData\("text\/html"\)\) return;/, "a Finder copy with its name as plain text still attaches");
 	assert.match(win, /onDropCapture=/);
 	assert.match(win, /const addFiles = async/);
-	assert.equal((win.match(/addFiles\(/g) ?? []).length, 3); // the picker, paste and drop
+	assert.equal((win.match(/addFiles\(/g) ?? []).length, 4); // the file picker, the photo picker, paste and drop
 	assert.doesNotMatch(win, /readFiles\(list\)\;\n\t*patch/);
 });

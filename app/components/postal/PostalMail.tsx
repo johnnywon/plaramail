@@ -23,7 +23,7 @@ import { markLayoutMoving } from "~/lib/layout-motion";
 import { useUnreadTab } from "~/lib/unread-tab";
 import { useEmail } from "~/queries/emails";
 import {
-	type ComposeMode, type ComposeState, composeFor, composeFromDraft, emptyCompose, handOff, HANDOFF_KEY, useAddressInfo,
+	type ComposeMode, type ComposeState, composeFor, composeFromDraft, emptyCompose, handOff, HANDOFF_KEY, prefixed, useAddressInfo,
 	sentText, textToParagraphs, useMailSender,
 } from "./compose";
 import { ComposePopout, Composer } from "./ComposeWindow";
@@ -31,7 +31,7 @@ import { buildIdentities } from "./identity";
 import { ListPane } from "./ListPane";
 import { LogoutModal, ShortcutsModal, Toast, type ToastState } from "./Modals";
 import { ConsolePage } from "./Console";
-import { holdSend, warnBeforeUnload } from "./send-hold";
+import { oneHold, warnBeforeUnload } from "./send-hold";
 import type { ConsoleSearchHandle } from "./ConsoleSearch";
 import { type ConsoleTab, consoleTabFrom } from "./console-tabs";
 import { conversations, HOME, labelOf, type MailAction, parsePostalFilter, RESTORABLE, scoped, scopeOf, searchErrors, searchTerms, withSearch } from "./model";
@@ -253,7 +253,7 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 	const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 	const [agentBusy, setAgentBusy] = useState(false);
 	const [replyRequest, setReplyRequest] = useState<{ mode: Exclude<ComposeMode, "new">; id: number } | null>(null);
-	const { draftWithAgent, runner: draftRunner } = useDraftWithAgent();
+	const { draftWithAgent, cancel: stopAgent, runner: draftRunner } = useDraftWithAgent();
 	const searchRef = useRef<HTMLInputElement>(null);
 
 	const showToast = useCallback((t: Omit<ToastState, "id">) => setToast({ ...t, id: Date.now() }), []);
@@ -451,8 +451,12 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 		return open?.mailboxId ?? addresses[0] ?? "";
 	};
 
+	// One held send at a time (send-hold.ts): opening a composer sends the held one now, so Undo can't write over it.
+	const holds = useRef(oneHold()).current;
+
 	const openCompose = (initial?: ComposeState, max = false) => {
 		if (cw && !initial) return; // already open; the window keeps its draft
+		holds.settle();
 		setCw({ key: Date.now(), initial: initial ?? emptyCompose(defaultFrom()), max });
 	};
 
@@ -463,12 +467,12 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 			sender.check(state);
 			// The draft being sent leaves the reader, as it did before the hold. Undo reopens it in the composer.
 			if (state.draftId && open?.emailId === state.draftId) closeConversation();
-			const hold = holdSend(() => sender.send(state).then(() => undefined));
+			const hold = holds.hold(() => sender.send(state).then(() => undefined));
 			showToast({
 				text: "Sending",
 				icon: <PaperPlaneTiltIcon size={ICON} />,
 				onUndo: () => {
-					if (!hold.undo()) return;
+					if (!holds.isLatest(hold) || !hold.undo()) return;
 					setToast(null);
 					openCompose(state);
 				},
@@ -477,6 +481,21 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 				(how) => how === "sent" && showToast({ text: sentText(state), icon: <PaperPlaneTiltIcon size={ICON} /> }),
 				(e) => showToast({ text: `Could not send. ${(e as Error).message || ""} It is in Drafts.`.replace(/\s+/g, " "), icon: <WarningIcon size={ICON} /> }),
 			);
+			return true;
+		},
+		// Discard waits the same few seconds with Undo, which reopens what was written.
+		discardHeld: (state: ComposeState): boolean => {
+			if (state.draftId && open?.emailId === state.draftId) closeConversation();
+			const hold = holds.hold(() => sender.discard(state));
+			showToast({
+				text: "Draft discarded",
+				icon: <TrashIcon size={ICON} />,
+				onUndo: () => {
+					if (!holds.isLatest(hold) || !hold.undo()) return;
+					setToast(null);
+					openCompose(state);
+				},
+			});
 			return true;
 		},
 	};
@@ -488,10 +507,12 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 	const startReply = (mode: Exclude<ComposeMode, "new">, original: Email, keep?: ComposeState, askAgent?: boolean) => {
 		if (!open) return;
 		const from = open.mailboxId;
+		holds.settle();
 		const next = composeFor(mode, original, open.mailboxId, from);
-		// Switching mode keeps what was written, attached and saved. The original's files come only with Forward.
+		// Switching mode keeps what was written, the subject, attachments and the saved draft; recipients follow the new mode. The original's files come only with Forward.
 		const files = keep ? [...next.files, ...keep.files.filter((f) => !f.attachmentId)] : next.files;
-		const carried = keep ? { html: keep.html, files, draftId: keep.draftId, from: keep.from, signature: keep.signature } : {};
+		const subject = keep ? prefixed(keep.subject, mode === "forward" ? "Fwd" : "Re") : next.subject;
+		const carried = keep ? { html: keep.html, subject, files, draftId: keep.draftId, from: keep.from, signature: keep.signature } : {};
 		setInline({ key: Date.now(), initial: { ...next, ...carried, askAgent } });
 	};
 
@@ -937,6 +958,7 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 									onEditSignatures={() => openConsole("signatures")}
 									onEditDraft={(draft, askAgent) => open && editDraft(open.mailboxId, draft.id, draft, askAgent)}
 									draftWithAgent={draftWithAgent}
+									stopAgent={stopAgent}
 									replyRequest={replyRequest}
 									labelRequest={labelRequest}
 									onUnsubscribe={unsubscribeFrom}
@@ -977,6 +999,7 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 						info={info}
 						sender={heldSender}
 						draftWithAgent={draftWithAgent}
+						stopAgent={stopAgent}
 						onClosed={(message) => {
 							// The open draft is gone once it is sent, scheduled anew or discarded.
 							if (open && cw.initial.draftId === open.emailId && message && !message.startsWith("Draft saved")) closeConversation();

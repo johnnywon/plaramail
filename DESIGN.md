@@ -56,6 +56,20 @@ An address always renders as **bold handle**, muted `@`, then the domain in its 
 - Popovers, menus, row tools, the composer, toasts and tooltips enter on the same curve, translate only (no scaling, so text stays crisp): menus and popovers drop 4px, toasts rise 8px. The motion tokens (`--pg-side-ease`, `--pg-side-ms`, `--pg-pop-ms`) live on `:root` and `.postal`.
 - At 600px and below: one pane at a time with a Back control, the left column as a drawer, the agent as a bottom sheet, the composer full screen, 44px targets and 16px inputs.
 
+### Composer on a phone
+
+Ported from Plara Design's compose lab (`site/compose-lab.html`), with PlaraMail's 6px radius in place of the lab's corner levels.
+
+- Under 600px the composer, replies included, fills the visual viewport (`useKeyboardDock` in `ComposeWindow.tsx`), so the dock sits on the keyboard. Chrome on Android resizes the page for the keyboard (`interactive-widget=resizes-content` in `root.tsx`). Off the keyboard, the dock clears the home area with the safe-area inset.
+- The dock, all 44px: a tool well (Format, Attach files, Add photos), the agent key, then Send split from its Send later arrow. Send is the only Signal (`--pg-signal`) control, on the phone and on wider screens. The header's More menu holds the signature, Save draft and Discard draft.
+- Cards open 8px above the dock, one at a time, and lift 8px as they fade in: Format (text style menu, Text, Lists and link), Photos and files (with a meter against the 5 MB message), the agent (request, three starting points, tone), and Send later (three slots, or a day and a time up to a year ahead, in local time; Send then reads the chosen time). Format keys never take focus from the editor.
+- The agent key (`.pg-agent-key`) is the agent draft icon alone (`AgentDraftIcon`, 36 × 24: a solid spark in front of Write's lines and cursor). Rest: a green tint and ring. Open: solid green. Busy: Stop in a breathing ring. Hover keeps the open and busy fills. Wider screens use the same key in the foot.
+- The agent's draft lands as a card under the writer's text: Use draft (Replace with this for a rewrite), Redraft, Discard. Send uses a finished draft, drops one still being written, and never lets a rewrite replace the writer's text. The rules are in `agent-draft.ts`.
+- The draft icon's motion: `agent-ready` while the agent card is open, `agent-think` for the first 0.9s, `agent-write` until the draft lands, `agent-done` once. Translate and opacity only, except the lines, which draw on. Reduced motion shows the drawn icon.
+- Under 420px tall (the keyboard up on a small phone), writing the body folds From, To and Subject into one line: "To Dana Park · Friday walkthrough". Tapping it opens the fields again in To.
+- Discard waits 5 seconds with Undo, as Send does, and Undo reopens what was written. One message or discard is held at a time (`oneHold` in `send-hold.ts`).
+- Switching Reply, Reply all and Forward keeps the body, the edited subject and the attachments; the recipients follow the new mode. Enter, Space and comma leave To alone while an IME is composing.
+
 ### State
 
 - Unread: a lifted row fill (`#191a1e`) plus bright, bold text. Read rows are dimmed.

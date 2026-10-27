@@ -11,6 +11,8 @@ import type { ComposeState } from "./compose";
 import { Keys, useShortcuts } from "./shortcuts";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { canSend, DRAFT_START_MS, draftStartStep, ownText } from "./draft-start";
+import { type AgentDraft, requestText, type Tone } from "./agent-draft";
+import api from "~/services/api";
 import { AgentMarkdown } from "./agent-markdown";
 import { SHARED_AGENT, type AgentContext } from "../../../shared/agent";
 import { DEMO_AGENT_NOTICE, useDemo } from "~/lib/demo";
@@ -86,6 +88,15 @@ export interface DraftResult {
 	text?: string;
 	draftId?: string;
 }
+
+/** What the agent card asks for: a request, a tone, and whether to rewrite the writer's text. */
+export interface DraftAsk {
+	request?: string;
+	tone?: Tone;
+	kind?: AgentDraft["kind"];
+}
+
+export type DraftWithAgent = (state: ComposeState, ask?: DraftAsk) => Promise<DraftResult>;
 
 // ── Panel ────────────────────────────────────────────────────────────
 
@@ -560,6 +571,9 @@ export function useDraftWithAgent() {
 	// The job whose agent began answering.
 	const startedJob = useRef<number | null>(null);
 
+	// The job the writer stopped. Its run on the server goes on; a draft it saves is deleted when it lands.
+	const stopped = useRef<number | null>(null);
+
 	const finish = (fn: (w: NonNullable<typeof waiter.current>) => void) => {
 		const w = waiter.current;
 		waiter.current = null;
@@ -579,19 +593,22 @@ export function useDraftWithAgent() {
 		return () => clearTimeout(t);
 	}, [job]); // eslint-disable-line react-hooks/exhaustive-deps
 
-	const draftWithAgent = (state: ComposeState): Promise<DraftResult> => {
+	/** `ask`: the agent card's request and tone, and whether it rewrites the writer's text. */
+	const draftWithAgent: DraftWithAgent = (state, ask = {}) => {
 		if (demo) return Promise.reject(new Error(DEMO_AGENT_NOTICE));
 		// The writer's own words, not the quote under a reopened reply draft.
 		const notes = ownText(state.html);
 		const to = state.to[0]?.addr;
+		const wanted = requestText(ask);
+		const mine = `${wanted ? ` ${wanted}` : ""}${notes ? (ask.kind === "rewrite" ? ` My text: ${notes}` : ` Use these notes from me: ${notes}`) : ""}`;
 		let mailboxId = state.from;
 		let prompt: string;
 		if ((state.mode === "reply" || state.mode === "reply-all") && state.originalId) {
 			mailboxId = state.originalMailbox ?? state.from;
-			prompt = `Draft a reply to email ${state.originalId} with draft_reply. Read the thread first.${to ? ` Address it to ${to}.` : ""}${notes ? ` Use these notes from me: ${notes}` : ""}`;
+			prompt = `Draft a reply to email ${state.originalId} with draft_reply. Read the thread first.${to ? ` Address it to ${to}.` : ""}${mine}`;
 		} else {
 			if (!to) return Promise.reject(new Error("Add a recipient first, then ask the agent."));
-			prompt = `Draft a new email with draft_email to ${to}.${state.subject.trim() ? ` Subject: ${state.subject.trim()}.` : ""}${state.mode === "forward" && state.originalId ? ` It forwards email ${state.originalId}; write a short note to go with it.` : ""}${notes ? ` Use these notes from me: ${notes}` : ""}`;
+			prompt = `Draft a new email with draft_email to ${to}.${state.subject.trim() ? ` Subject: ${state.subject.trim()}.` : ""}${state.mode === "forward" && state.originalId ? ` It forwards email ${state.originalId}; write a short note to go with it.` : ""}${mine}`;
 		}
 		if (waiter.current) return Promise.reject(new Error("The agent is already drafting."));
 		return new Promise<DraftResult>((resolve, reject) => {
@@ -614,6 +631,15 @@ export function useDraftWithAgent() {
 		});
 	};
 
+	/** Stop waiting for the draft. The request already sent runs on; the draft it saves is deleted when it lands. */
+	const cancel = () => {
+		const w = waiter.current;
+		if (!w || !job) return;
+		waiter.current = null;
+		stopped.current = job.id;
+		w.reject(new Error("Stopped"));
+	};
+
 	const runner = job ? (
 		<AgentDraftRunner
 			key={job.id}
@@ -621,10 +647,13 @@ export function useDraftWithAgent() {
 			onStarted={() => {
 				startedJob.current = job.id;
 			}}
-			onDone={(r) => finish((w) => w.resolve(r))}
+			onDone={(r) => {
+				if (stopped.current === job.id && r.draftId) api.deleteEmail(job.mailboxId, r.draftId).catch(() => {});
+				finish((w) => w.resolve(r));
+			}}
 			onError={(m) => finish((w) => w.reject(new Error(m)))}
 		/>
 	) : null;
 
-	return { draftWithAgent, runner };
+	return { draftWithAgent, cancel, runner };
 }
