@@ -202,6 +202,12 @@ test("the format keys keep the editor's focus, so the caret stays put", () => {
 	assert.doesNotMatch(read("app/components/postal/ComposeWindow.tsx"), /<Editor\s+key=/);
 });
 
+test("the placeholder hides once the empty body becomes a list or quote", () => {
+	const editor = read("app/components/postal/Editor.tsx");
+	assert.match(editor, /editor\.isEmpty && editor\.state\.doc\.firstChild\?\.type\.name === "paragraph"/);
+	assert.doesNotMatch(editor, /\.isEmpty \}\)|&& \(!editor \|\| editor\.isEmpty\)/);
+});
+
 // ── Rulings on the compose lab's open questions ───────────────────────
 
 test("Cc and Bcc are saved with the draft and come back when it opens", () => {
