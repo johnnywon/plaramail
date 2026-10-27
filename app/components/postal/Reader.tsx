@@ -3,7 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
-	ArchiveIcon, ArrowBendDoubleUpLeftIcon, BellSlashIcon, ArrowBendUpLeftIcon, ArrowBendUpRightIcon, CalendarBlankIcon, CaretLeftIcon, CheckIcon, CodeIcon, DownloadSimpleIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon, FileAudioIcon, FileCodeIcon, FileDocIcon, FileIcon, FileImageIcon, FilePdfIcon, FilePptIcon, FileTextIcon, FileVideoIcon, FileXlsIcon, FileZipIcon, ImageIcon, PaperclipIcon, PencilSimpleLineIcon, PlusIcon, ProhibitIcon, StarIcon, TagIcon, TrashIcon, TrayArrowUpIcon, WarningIcon, WarningOctagonIcon, XIcon,
+	ArchiveIcon, ArrowBendDoubleUpLeftIcon, BellSlashIcon, ArrowBendUpLeftIcon, ArrowBendUpRightIcon, CalendarBlankIcon, CaretLeftIcon, CheckIcon, CodeIcon, DownloadSimpleIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon, FileAudioIcon, FileCodeIcon, FileDocIcon, FileIcon, FileImageIcon, FilePdfIcon, FilePptIcon, FileTextIcon, FileVideoIcon, FileXlsIcon, FileZipIcon, ImageIcon, PaperclipIcon, PencilSimpleLineIcon, PlusIcon, ProhibitIcon, StarIcon, TagIcon, TrashIcon, TrayArrowUpIcon, WarningIcon, WarningOctagonIcon, XIcon, DotsThreeIcon
 } from "@phosphor-icons/react";
 import { AgentIcon } from "./AgentIcon";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -17,7 +17,7 @@ import type { Conversation, Label } from "~/services/api";
 import type { Email } from "~/types";
 import type { DraftWithAgent } from "./Agent";
 import type { AddressInfo, ComposeMode, ComposeState, useMailSender } from "./compose";
-import { Composer } from "./ComposeWindow";
+import { AgentKey, Composer, usePhone } from "./ComposeWindow";
 import { ownText } from "./draft-start";
 import { AddressText, type Identities, LabelTag, Swatch } from "./identity";
 import { formatSize, fullDate, type MailAction, nameFromHeaders } from "./model";
@@ -65,6 +65,9 @@ export interface ReaderProps {
 	onBlock: (email: Email, block: boolean) => void;
 }
 
+/** How long the More menu or sheet stays on screen to leave (pg-msgmenu-out). */
+const MORE_OUT_MS = 200;
+
 /** What Unsubscribe does, as its tooltip hint. */
 const UNSUBSCRIBE_HINT: Record<UnsubscribeMethod, string> = {
 	"one-click": "Tells the list to stop, in one click",
@@ -93,7 +96,43 @@ export function Reader(props: ReaderProps) {
 		setPickerOpen((v) => force || !v);
 	};
 	const { tip } = useShortcuts();
+	const phone = usePhone();
 	const [source, setSource] = useState<Email | null>(null);
+	// More: a menu under its button, a bottom sheet on a phone. It stays mounted for MORE_OUT_MS to leave.
+	const [more, setMore] = useState<"open" | "leaving" | null>(null);
+	const [moreTop, setMoreTop] = useState(48);
+	const moreBtn = useRef<HTMLButtonElement>(null);
+	const moreRef = useRef<HTMLDivElement>(null);
+	const moreTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+	const openMore = () => {
+		clearTimeout(moreTimer.current);
+		const b = moreBtn.current?.getBoundingClientRect();
+		const r = sectionRef.current?.getBoundingClientRect();
+		if (b && r) setMoreTop(b.bottom - r.top + 4);
+		setMore("open");
+	};
+	const closeMore = (refocus = true) => {
+		if (!more) return;
+		const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+		setMore("leaving");
+		clearTimeout(moreTimer.current);
+		moreTimer.current = setTimeout(() => setMore(null), still ? 0 : MORE_OUT_MS);
+		if (refocus) moreBtn.current?.focus({ preventScroll: true });
+	};
+	useEffect(() => () => clearTimeout(moreTimer.current), []);
+	useEffect(() => {
+		if (more !== "open") return;
+		moreRef.current?.querySelector<HTMLButtonElement>("[role=menuitem]:not(:disabled)")?.focus({ preventScroll: true });
+		// Escape closes More, wherever focus is, before the mail shortcuts see it and close the message.
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== "Escape") return;
+			e.preventDefault();
+			e.stopPropagation();
+			closeMore();
+		};
+		document.addEventListener("keydown", onKey, true);
+		return () => document.removeEventListener("keydown", onKey, true);
+	}, [more]); // eslint-disable-line react-hooks/exhaustive-deps
 	const marked = useRef<string | null>(null);
 	const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -123,6 +162,7 @@ export function Reader(props: ReaderProps) {
 
 	useEffect(() => {
 		setPickerOpen(false);
+		setMore(null);
 		scrollRef.current?.scrollTo({ top: 0 });
 	}, [open?.mailboxId, open?.emailId]);
 
@@ -161,6 +201,9 @@ export function Reader(props: ReaderProps) {
 	const incoming = head && !sent && head.folder_id !== Folders.DRAFT && head.sender && head.sender.toLowerCase() !== mailbox ? head : null;
 	const unsubscribe = incoming ? unsubscribeMethod(unsubscribeTargets(incoming.raw_headers)) : null;
 	const blocked = !!incoming && props.isBlocked(mailbox, incoming.sender);
+	// On a phone, replying moves to a dock in the thumb zone, the composer's dock; the reply bar under the message steps aside.
+	const dock = phone && !props.inline && !!original;
+	const draftHasText = !!draft && !!ownText(draft.body ?? "");
 
 	// The message's letterhead: who and where on the left, when on the right, inside the page.
 	const when = (head ? fullDate(head.date) : row ? fullDate(row.date) : "").split(" · ");
@@ -211,7 +254,7 @@ export function Reader(props: ReaderProps) {
 		</>
 	);
 	return (
-		<section className="pg-reader" aria-label="Message" ref={sectionRef}>
+		<section className="pg-reader" aria-label="Message" ref={sectionRef} data-dock={dock || undefined}>
 			{pickerOpen && row && (
 				<LabelPicker
 					left={pickerLeft}
@@ -225,48 +268,115 @@ export function Reader(props: ReaderProps) {
 			<div className="pg-reader-bar" role="toolbar" aria-label="Message actions">
 				<div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
 					<button type="button" className="pg-icon-btn pg-back" onClick={props.onBack} aria-label="Back to list"><CaretLeftIcon size={16} weight="bold" /></button>
-					<div className="pg-group">
-						<button type="button" className="pg-icon-btn" title={tip("reply", "Reply")} aria-label="Reply" onClick={() => reply("reply")} disabled={!original}><ArrowBendUpLeftIcon size={16} /></button>
-						<button type="button" className="pg-icon-btn" title={tip("replyAll", "Reply all")} aria-label="Reply all" onClick={() => reply("reply-all")} disabled={!original}><ArrowBendDoubleUpLeftIcon size={16} /></button>
-						<button type="button" className="pg-icon-btn" title={tip("forward", "Forward")} aria-label="Forward" onClick={() => reply("forward")} disabled={!original}><ArrowBendUpRightIcon size={16} /></button>
-					</div>
+					{!phone && (
+						<div className="pg-group">
+							<button type="button" className="pg-icon-btn" title={tip("reply", "Reply")} aria-label="Reply" onClick={() => reply("reply")} disabled={!original}><ArrowBendUpLeftIcon size={16} /></button>
+							<button type="button" className="pg-icon-btn" title={tip("replyAll", "Reply all")} aria-label="Reply all" onClick={() => reply("reply-all")} disabled={!original}><ArrowBendDoubleUpLeftIcon size={16} /></button>
+							<button type="button" className="pg-icon-btn" title={tip("forward", "Forward")} aria-label="Forward" onClick={() => reply("forward")} disabled={!original}><ArrowBendUpRightIcon size={16} /></button>
+						</div>
+					)}
+					{phone && <div style={{ flex: 1 }} />}
 					<div className="pg-group">
 						{props.canRestore && <button type="button" className="pg-icon-btn" title="Move to Inbox" aria-label="Move to Inbox" onClick={() => props.onAction("restore")} disabled={!row}><TrayArrowUpIcon size={16} /></button>}
 						<button type="button" className="pg-icon-btn" title={tip("archive", "Archive")} aria-label="Archive" onClick={() => props.onAction("archive")} disabled={!row}><ArchiveIcon size={16} /></button>
 						<button type="button" className="pg-icon-btn" title={tip("trash", "Move to Trash")} aria-label="Move to Trash" onClick={() => props.onAction("trash")} disabled={!row || !props.canTrash}><TrashIcon size={16} /></button>
-						{props.canSpam && <button type="button" className="pg-icon-btn" title={tip("spam", "Report spam")} aria-label="Report spam" onClick={() => props.onAction("spam")} disabled={!row}><WarningOctagonIcon size={16} /></button>}
 					</div>
-					<div className="pg-group" style={{ position: "relative" }}>
-						<button type="button" className="pg-icon-btn" title={unread ? tip("markRead", "Mark read") : tip("markUnread", "Mark unread")} aria-label={unread ? "Mark read" : "Mark unread"} onClick={() => props.onAction("read")} disabled={!row}>
-							{unread ? <EnvelopeOpenIcon size={16} /> : <EnvelopeSimpleIcon size={16} />}
-						</button>
-						<button type="button" className="pg-icon-btn" title={tip("star", starred ? "Unstar" : "Star")} aria-label={starred ? "Unstar" : "Star"} aria-pressed={starred} onClick={() => props.onAction("star")} disabled={!row}>
-							<StarIcon size={16} weight={starred ? "fill" : "regular"} color={starred ? "var(--pg-yellow)" : undefined} />
-						</button>
-						<button ref={labelBtn} type="button" className="pg-icon-btn" title={tip("label", "Label")} aria-label="Label" aria-expanded={pickerOpen} onClick={() => openPicker()} disabled={!row}><TagIcon size={16} /></button>
-					</div>
-					{incoming && (
-						<div className="pg-group">
-							{unsubscribe && <button type="button" className="pg-icon-btn" title={`Unsubscribe · ${UNSUBSCRIBE_HINT[unsubscribe]}`} aria-label="Unsubscribe" onClick={() => props.onUnsubscribe(incoming, unsubscribe)}><BellSlashIcon size={16} /></button>}
-							<button
-								type="button"
-								className="pg-icon-btn"
-								title={blocked ? `Unblock sender · New mail from ${incoming.sender} goes to the Inbox` : `Block sender · New mail from ${incoming.sender} goes to Trash`}
-								aria-label={blocked ? "Unblock sender" : "Block sender"}
-								aria-pressed={blocked}
-								onClick={() => props.onBlock(incoming, !blocked)}
-							>
-								<ProhibitIcon size={16} color={blocked ? "var(--pg-danger-text)" : undefined} />
+					{!phone && (
+						<div className="pg-group" style={{ position: "relative" }}>
+							<button type="button" className="pg-icon-btn" title={unread ? tip("markRead", "Mark read") : tip("markUnread", "Mark unread")} aria-label={unread ? "Mark read" : "Mark unread"} onClick={() => props.onAction("read")} disabled={!row}>
+								{unread ? <EnvelopeOpenIcon size={16} /> : <EnvelopeSimpleIcon size={16} />}
 							</button>
+							<button type="button" className="pg-icon-btn" title={tip("star", starred ? "Unstar" : "Star")} aria-label={starred ? "Unstar" : "Star"} aria-pressed={starred} onClick={() => props.onAction("star")} disabled={!row}>
+								<StarIcon size={16} weight={starred ? "fill" : "regular"} color={starred ? "var(--pg-yellow)" : undefined} />
+							</button>
+							<button ref={labelBtn} type="button" className="pg-icon-btn" title={tip("label", "Label")} aria-label="Label" aria-expanded={pickerOpen} onClick={() => openPicker()} disabled={!row}><TagIcon size={16} /></button>
 						</div>
 					)}
-					<div style={{ flex: 1 }} />
-					<button type="button" className="pg-icon-btn" title="View source" aria-label="View source" onClick={() => head && setSource(head)} disabled={!head}><CodeIcon size={16} /></button>
+					{!phone && <div style={{ flex: 1 }} />}
+					<button
+						ref={moreBtn}
+						type="button"
+						className="pg-icon-btn"
+						title="More"
+						aria-label="More"
+						aria-haspopup="menu"
+						aria-expanded={more === "open"}
+						onClick={() => (more === "open" ? closeMore() : openMore())}
+					>
+						<DotsThreeIcon size={phone ? 20 : 16} weight="bold" />
+					</button>
 				</div>
 			</div>
+			{more && (
+				<>
+					<div className="pg-scrim-click pg-msgmenu-scrim" data-leaving={more === "leaving" || undefined} onClick={() => closeMore()} aria-hidden />
+					<div
+						ref={moreRef}
+						className="pg-popover pg-msgmenu"
+						role="menu"
+						aria-label="More actions"
+						data-leaving={more === "leaving" || undefined}
+						style={phone ? undefined : { top: moreTop, right: 8 }}
+					>
+						{phone && (
+							<>
+								<span className="pg-msgmenu-grab" aria-hidden />
+								<div className="pg-well pg-msgmenu-quick">
+									<button type="button" role="menuitem" className="pg-msgmenu-q" disabled={!row} onClick={() => { closeMore(false); props.onAction("read"); }}>
+										{unread ? <EnvelopeOpenIcon size={20} /> : <EnvelopeSimpleIcon size={20} />}{unread ? "Read" : "Unread"}
+									</button>
+									<button type="button" role="menuitem" className="pg-msgmenu-q" disabled={!row} aria-pressed={starred} onClick={() => { closeMore(false); props.onAction("star"); }}>
+										<StarIcon size={20} weight={starred ? "fill" : "regular"} color={starred ? "var(--pg-yellow)" : undefined} />{starred ? "Unstar" : "Star"}
+									</button>
+									<button type="button" role="menuitem" className="pg-msgmenu-q" disabled={!row} onClick={() => { closeMore(false); openPicker(true); }}>
+										<TagIcon size={20} />Label
+									</button>
+									<button type="button" role="menuitem" className="pg-msgmenu-q" disabled={!original} onClick={() => { closeMore(false); reply("forward"); }}>
+										<ArrowBendUpRightIcon size={20} />Forward
+									</button>
+								</div>
+							</>
+						)}
+						{unsubscribe && incoming && (
+							<button type="button" role="menuitem" className="pg-menu-item" title={UNSUBSCRIBE_HINT[unsubscribe]} onClick={() => { closeMore(false); props.onUnsubscribe(incoming, unsubscribe); }}>
+								<BellSlashIcon size={phone ? 20 : 16} />Unsubscribe
+							</button>
+						)}
+						{props.canSpam && (
+							<button type="button" role="menuitem" className="pg-menu-item" disabled={!row} onClick={() => { closeMore(false); props.onAction("spam"); }}>
+								<WarningOctagonIcon size={phone ? 20 : 16} />Report spam
+							</button>
+						)}
+						{incoming && (
+							<button
+								type="button"
+								role="menuitem"
+								className="pg-menu-item"
+								data-danger={!blocked || undefined}
+								title={blocked ? `New mail from ${incoming.sender} goes to the Inbox` : `New mail from ${incoming.sender} goes to Trash`}
+								onClick={() => { closeMore(false); props.onBlock(incoming, !blocked); }}
+							>
+								<ProhibitIcon size={phone ? 20 : 16} />{blocked ? "Unblock sender" : "Block sender"}
+								<small>{blocked ? "mail to Inbox" : "mail to Trash"}</small>
+							</button>
+						)}
+						{(incoming || props.canSpam) && <div className="pg-menu-rule" />}
+						<button type="button" role="menuitem" className="pg-menu-item" disabled={!head} onClick={() => { closeMore(false); if (head) setSource(head); }}>
+							<CodeIcon size={phone ? 20 : 16} />View source
+						</button>
+					</div>
+				</>
+			)}
 			<div className="pg-reader-scroll" ref={scrollRef}>
 				<div className="pg-reader-main">
-					<h1 className="pg-subject">{row?.subject || email?.subject || "(no subject)"}</h1>
+					<div className="pg-subject-row">
+						<h1 className="pg-subject">{row?.subject || email?.subject || "(no subject)"}</h1>
+						{phone && (
+							<button type="button" className="pg-icon-btn pg-subject-star" title={starred ? "Unstar" : "Star"} aria-label={starred ? "Unstar" : "Star"} aria-pressed={starred} onClick={() => props.onAction("star")} disabled={!row}>
+								<StarIcon size={20} weight={starred ? "fill" : "regular"} color={starred ? "var(--pg-yellow)" : undefined} />
+							</button>
+						)}
+					</div>
 					{/* TODO(roadmap): per-email agent card (what the agent did, its steps and one-click actions) returns with rules. */}
 					<div className="pg-reader-content">
 						{!email && <div className="pg-skel" style={{ border: 0, padding: 0 }}><span className="pg-pulse" style={{ width: "80%" }} /></div>}
@@ -342,6 +452,23 @@ export function Reader(props: ReaderProps) {
 					)}
 				</div>
 			</div>
+			{dock && original && (
+				<div className="pg-reader-dock" role="toolbar" aria-label="Reply">
+					{draft ? (
+						<button type="button" className="pg-dock-reply" onClick={() => props.onEditDraft(draft)}><PencilSimpleLineIcon size={20} />Edit draft</button>
+					) : (
+						<button type="button" className="pg-dock-reply" onClick={() => reply("reply")}><ArrowBendUpLeftIcon size={20} />Reply</button>
+					)}
+					<span className="pg-well" role="group" aria-label="Reply all and forward">
+						<button type="button" className="pg-key" title="Reply all" aria-label="Reply all" onClick={() => reply("reply-all")}><ArrowBendDoubleUpLeftIcon size={20} /></button>
+						<button type="button" className="pg-key" title="Forward" aria-label="Forward" onClick={() => reply("forward")}><ArrowBendUpRightIcon size={20} /></button>
+					</span>
+					<span className="pg-flex" />
+					{!draftHasText && (
+						<AgentKey open={false} busy={false} label="Draft reply" onPress={() => (draft ? props.onEditDraft(draft, true) : props.startReply("reply", original, undefined, true))} />
+					)}
+				</div>
+			)}
 			{source && <SourceModal email={source} onClose={() => setSource(null)} />}
 		</section>
 	);
