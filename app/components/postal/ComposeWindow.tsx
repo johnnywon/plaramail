@@ -227,7 +227,7 @@ function QuotePreview({ head, body }: { head: string; body: string }) {
 /** Phones get the dock and the cards; wider screens keep the foot and the format bar. */
 const PHONE = "(max-width: 600px)";
 
-function usePhone(): boolean {
+export function usePhone(): boolean {
 	const [phone, setPhone] = useState(() => typeof window !== "undefined" && window.matchMedia(PHONE).matches);
 	useEffect(() => {
 		const m = window.matchMedia(PHONE);
@@ -300,7 +300,7 @@ const isImage = (f: ComposeFile) => f.type.startsWith("image/");
  * foot. Rest: a green tint and ring. Open (its card showing): solid green.
  * Busy: Stop. Ported from Plara Design's AgentKey (.pl-agent-btn).
  */
-function AgentKey({ open, busy, label, onPress }: { open: boolean; busy: boolean; label: string; onPress: () => void }) {
+export function AgentKey({ open, busy, label, onPress }: { open: boolean; busy: boolean; label: string; onPress: () => void }) {
 	return (
 		<button
 			type="button"

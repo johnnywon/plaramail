@@ -54,6 +54,7 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
   .pg-cw-head,
   .pg-cw-row,
   .pg-cw-summary,
+  .pg-reader-dock,
   .pg-files,
   .pg-warn,
   .pg-cw-foot,
@@ -506,6 +507,20 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-folder:hover, .pg-folder[aria-expanded="true"] { background: var(--pg-hover); }
 .pg-scope-menu.pg-folder-menu { left: 70px; width: 220px; }
 .pg-menu-rule { height: 1px; margin: 5px 6px; background: var(--pg-line); }
+
+/* ── The message's More menu ──────────────────────────────────────────
+   Unsubscribe, Block sender and View source, under their button; on a phone also the quick
+   actions (read, star, label, forward) and Report spam, as a sheet from the bottom edge.
+   It leaves the way it came over MORE_OUT_MS (Reader.tsx). */
+@keyframes pg-drop-out { to { opacity: 0; transform: translateY(-4px); } }
+@keyframes pg-sheet-in { from { translate: 0 100%; } }
+@keyframes pg-sheet-out { to { translate: 0 100%; } }
+@keyframes pg-fade-out { to { opacity: 0; } }
+.pg-msgmenu { min-width: 220px; padding: 4px; }
+.pg-msgmenu[data-leaving] { animation: pg-drop-out .2s var(--pg-side-ease) forwards; pointer-events: none; }
+.pg-msgmenu small { margin-left: auto; padding-left: 12px; font: 500 11px var(--pg-mono); color: var(--pg-text-7); }
+.pg-msgmenu .pg-menu-item[data-danger] { color: var(--pg-danger-text); }
+.pg-msgmenu-scrim[data-leaving] { pointer-events: none; }
 .pg-folder .pg-scope-icon { width: 16px; height: 16px; flex: none; display: flex; align-items: center; justify-content: center; color: var(--pg-text-4); }
 .pg-folder .pg-title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--pg-text-2); }
 .pg-title-note { font-weight: 400; color: var(--pg-text-6); }
@@ -631,6 +646,8 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-reader-scroll { flex: 1; overflow-y: auto; padding: 22px 26px 28px; display: flex; gap: 28px; align-items: flex-start; }
 .pg-reader-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* The subject sits on the letterhead's left edge (its 28px inset plus the frame's 1px border), so headline, sender and body share one axis. */
+.pg-subject-row { display: flex; align-items: flex-start; gap: 4px; }
+.pg-subject-row h1.pg-subject { flex: 1; min-width: 0; }
 .pg-reader h1.pg-subject { margin: 4px 0 0; padding-inline: 29px; font: 600 26px/1.2 var(--pg-font); letter-spacing: -.02em; text-wrap: pretty; color: var(--pg-text-1); overflow-wrap: anywhere; }
 /* The letterhead: the top band of the message page. Who and where on the left, the date over the time on the right. */
 .pg-mhead { display: flex; align-items: flex-start; gap: 16px; padding: 18px 28px 16px; border-bottom: 1px solid var(--pg-line-soft); background: var(--pg-raised); }
@@ -1422,15 +1439,44 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
   .pg-cw-card .pg-card-input, .pg-later-other input { font-size: 16px; }
   .pg-adraft-use, .pg-adraft-foot .pg-btn { height: 44px; }
   .pg-adraft { margin-inline: 12px; }
-  /* Every action stays in view: the toolbar wraps to a second row instead of scrolling. */
-  .pg-reader-bar > div { flex-wrap: wrap; row-gap: 4px; }
+  /* The message on a phone: Back, then Archive, Trash and More on top, star on the subject, and
+     Reply in a dock at the bottom, the composer's glass dock, so a reply starts where the thumb is. */
+  .pg-reader-bar .pg-group { border: 0; }
+  .pg-subject-row { margin-right: -10px; }
+  .pg-subject-star { margin-top: -6px; }
+  .pg-reader[data-dock] .pg-reply-bar { display: none; }
+  .pg-reader[data-dock] .pg-reader-scroll { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  .pg-reader-dock { position: absolute; z-index: 5; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding: 6px max(8px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--pg-line); background: color-mix(in oklch, var(--pg-raised) 84%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4); animation: pg-dock-in var(--pg-side-ms) var(--pg-side-ease); }
+  .pg-dock-reply { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px 0 14px; background: var(--pg-raised); box-shadow: 0 1px 2px rgba(0, 0, 0, .4), inset 0 0 0 1px var(--pg-line-2); color: var(--pg-text-1); font-size: 15px; font-weight: 600; transition: background-color .16s var(--pg-side-ease), translate .08s ease-out; }
+  .pg-dock-reply:active { translate: 0 1px; background: var(--pg-active); }
+  .pg-reader-dock .pg-well .pg-key { width: 44px; }
+  .pg-reader-dock .pg-agent-key { width: 58px; height: 44px; }
+  .pg-reader-dock .pg-agent-icon { width: 33px; height: 22px; }
+  .pg-msgmenu { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; top: auto; display: flex; flex-direction: column; padding: 6px 8px calc(16px + env(safe-area-inset-bottom, 0px)); border: 0; box-shadow: 0 -12px 32px rgba(0, 0, 0, .45), inset 0 1px 0 var(--pg-line-2); animation: pg-sheet-in var(--pg-side-ms) var(--pg-side-ease); }
+  .pg-msgmenu[data-leaving] { animation: pg-sheet-out .2s var(--pg-side-ease) forwards; }
+  .pg-msgmenu-scrim { z-index: 49; background: rgba(0, 0, 0, .45); animation: pg-fade .2s var(--pg-side-ease); }
+  .pg-msgmenu-scrim[data-leaving] { animation: pg-fade-out .2s var(--pg-side-ease) forwards; }
+  .pg-msgmenu-grab { width: 36px; height: 4px; margin: 2px auto 10px; background: var(--pg-line-2); }
+  .pg-msgmenu-quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; margin-bottom: 8px; }
+  .pg-msgmenu-q { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0 8px; font-size: 12px; color: var(--pg-text-3); transition: background-color .16s var(--pg-side-ease), translate .08s ease-out; }
+  .pg-msgmenu-q svg { color: var(--pg-text-5); }
+  .pg-msgmenu-q:active:not(:disabled) { translate: 0 1px; background: var(--pg-active); }
+  .pg-msgmenu .pg-menu-item { height: auto; min-height: 48px; gap: 12px; padding: 0 12px; font-size: 15px; color: var(--pg-text-1); transition: background-color .16s var(--pg-side-ease), translate .08s ease-out; }
+  .pg-msgmenu .pg-menu-item svg { color: var(--pg-text-5); }
+  .pg-msgmenu .pg-menu-item[data-danger], .pg-msgmenu .pg-menu-item[data-danger] svg { color: var(--pg-danger-text); }
+  .pg-msgmenu .pg-menu-item:active:not(:disabled) { translate: 0 1px; background: var(--pg-active); }
+  .pg-msgmenu .pg-menu-rule { margin: 6px 12px; }
 }
+@keyframes pg-dock-in { from { translate: 0 100%; } }
 @media (max-width: 600px), (pointer: coarse) {
   .pg-icon-btn, .pg-head-btn, .pg-tool-btn, .pg-new-btn, .pg-search .pg-clear, .pg-modal-x, .pg-row-checkonly > button, .pg-bulk-bar .pg-tool, .pg-format button, .pg-cw-head .pg-cw-btn, .pg-chip > button, .pg-file button, .pg-toast .pg-x { min-width: 44px; min-height: 44px; }
   .pg-nav-item, .pg-nav-small, .pg-nav-domain, .pg-nav-address, .pg-nav-folder, .pg-nav-label, .pg-menu-item, .pg-foot-btn, .pg-tabs button { min-height: 44px; }
   .pg-btn, .pg-send-split, .pg-toast .pg-undo { min-height: 44px; }
   .pg-search, .pg-rail-head, .pg-list-head { height: 52px; }
   .pg-reader-bar { height: auto; min-height: 52px; padding-block: 4px; }
+  /* One row on a touch tablet: grouped buttons touch, so 40px wide still leaves no gap between targets. */
+  .pg-reader-bar > div { gap: 4px !important; }
+  .pg-reader-bar .pg-group .pg-icon-btn { min-width: 40px; }
   .pg-group { padding: 0; }
   .pg-switch { min-height: 20px; }
 }

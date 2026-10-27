@@ -39,7 +39,7 @@ An address always renders as **bold handle**, muted `@`, then the domain in its 
 ### Layout
 
 - Left column 236px (collapses to a 52px rail), centre, and the agent column 328px (collapses to a 44px rail: its head mirrors the left rail's, the caret then the robot on the outer edge, over "PLARAMAIL AGENT" set vertically in mono). Both rail states persist per browser.
-- The reader takes what the other columns leave and never slides under the agent rail. When it is under 560px wide (a small window with both rails), its toolbar wraps to a second row and the sender line breaks, name and address over the date.
+- The reader takes what the other columns leave and never slides under the agent rail. Its toolbar holds Reply, Reply all and Forward; Archive, Trash (Move to Inbox in Archive and Trash); Mark read, Star and Label; then More, a menu with Unsubscribe, Report spam, Block sender (in the danger color, with where new mail goes) and View source. That fits one row down to a touch tablet's 432px reader, where grouped buttons are 40px wide and 44px tall. Under 560px with a mouse it can still wrap; the sender line breaks, name and address over the date.
 - Every column starts with a 38px header bar on one line: PLARAMAIL, the search bar, PLARAMAIL AGENT.
 - While search is focused, the bar and its window lift off the columns beside them: a soft side shadow (`--pg-shadow-lift`) falls onto the sidebar and the agent panel.
 - Mail is always which addresses plus which folder, and the list header reads them in that order, each with its own icon: the address picker as its mark and a caret (the PO-box wall for All addresses, a domain's or address's swatch otherwise; the name is in its title and the menu), a caret-right, then the folder with its sidebar icon and name (or a label with its tag). The folder is a menu too, with no caret. The two are one unit: the folder menu lists exactly what the sidebar shows under the picked parent (`ALL_FOLDERS` then the labels for All addresses, `ADDRESS_FOLDERS` for a domain or address, both in `NavIcons.tsx`, which the sidebar also reads), and switching address keeps the folder when the new parent has it.
@@ -70,6 +70,13 @@ Ported from Plara Design's compose lab (`site/compose-lab.html`), with PlaraMail
 - Under 420px tall (the keyboard up on a small phone), writing the body folds From, To and Subject into one line: "To Dana Park · Friday walkthrough". Tapping it opens the fields again in To.
 - Discard waits 5 seconds with Undo, as Send does, and Undo reopens what was written. One message or discard is held at a time (`oneHold` in `send-hold.ts`).
 - Switching Reply, Reply all and Forward keeps the body, the edited subject and the attachments; the recipients follow the new mode. Enter, Space and comma leave To alone while an IME is composing.
+
+### Message on a phone
+
+- Top bar, 52px: Back, then Archive, Trash and More, bare icons with no group frame. Star sits at the end of the subject.
+- Reply moves to a dock at the bottom, in the thumb zone: the composer's glass dock (`.pg-reader-dock`), with Reply (Edit draft when a draft is waiting) as the one labelled button, a well with Reply all and Forward, and the agent key for Draft reply. The reply bar under the message steps aside while the dock is there, and the dock goes when the composer opens. It rises in from the bottom edge on the side-column curve.
+- More is a sheet from the bottom edge over a dimmed page: a grab handle, a well of quick actions (Read or Unread, Star, Label, Forward), then Unsubscribe, Report spam, Block sender and View source, each 48px. It rises on the side-column curve and drops away over 200ms; a tap on the page or Escape closes it and hands focus back to More. Escape never reaches the mail shortcuts while it is open. Wider, the same menu drops under its button.
+- Every press sinks 1px into `--pg-active`. Reduced motion shows the end states.
 
 ### State
 
