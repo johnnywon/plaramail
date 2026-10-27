@@ -78,6 +78,12 @@ Ported from Plara Design's compose lab (`site/compose-lab.html`), with PlaraMail
 - More is a sheet from the bottom edge over a dimmed page: a grab handle, a well of quick actions (Read or Unread, Star, Label, Forward), then Unsubscribe, Report spam, Block sender and View source, each 48px. It rises on the side-column curve and drops away over 200ms; a tap on the page or Escape closes it and hands focus back to More. Escape never reaches the mail shortcuts while it is open. Wider, the same menu drops under its button.
 - Every press sinks 1px into `--pg-active`. Reduced motion shows the end states.
 
+### Tab titles and icons
+
+- A tab title names where you are, narrowest first, then the app, joined by " · " (`tabTitle` in `app/lib/brand.ts`): "Inbox · PlaraMail", the open message's subject, "“invoice” · Search · PlaraMail", "Your agents · Console · PlaraMail", "New message · PlaraMail" for a composer window, "Not found · PlaraMail". The app name is the deployment's `APP_NAME`.
+- With unread mail the count goes in front, "(34) Inbox · PlaraMail", and on the tab icon as a Signal badge (`useUnreadTab`). Only the mail view and the composer window write `document.title`.
+- A deployment has one mark. Its favicon (SVG and ICO), apple-touch icon, app icons, link preview and lockups all show it; the engine's set in `public/` is the fold mark. A deployment that brings its own art replaces the whole set, never part of it.
+
 ### State
 
 - Unread: a lifted row fill (`#191a1e`) plus bright, bold text. Read rows are dimmed.

@@ -11,6 +11,7 @@ import { AgentDraftIcon, type AgentAnim, AgentIcon } from "./AgentIcon";
 import type { Editor as TipTap } from "@tiptap/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DOMPurify from "dompurify";
+import { tabTitle, useAppName } from "~/lib/brand";
 import { useEffect, useId, useRef, useState } from "react";
 import EmailIframe from "~/components/EmailIframe";
 import { htmlToPlainText } from "~/lib/utils";
@@ -323,6 +324,7 @@ export function Composer(props: ComposerProps) {
 	const { tip } = useShortcuts();
 	const { identities, info, sender, variant } = props;
 	const phone = usePhone();
+	const appName = useAppName();
 	const [state, setState] = useState<ComposeState>(props.initial);
 	const [mode, setMode] = useState<"normal" | "min" | "max">(props.maximised ? "max" : "normal");
 	const [fromOpen, setFromOpen] = useState(false);
@@ -437,8 +439,8 @@ export function Composer(props: ComposerProps) {
 	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 	useEffect(() => {
-		if (variant === "standalone") document.title = state.subject.trim() || "New message";
-	}, [variant, state.subject]);
+		if (variant === "standalone") document.title = tabTitle(appName, state.subject.trim() || "New message");
+	}, [variant, state.subject, appName]);
 
 	// The body scrolls clear of the open card.
 	useEffect(() => {

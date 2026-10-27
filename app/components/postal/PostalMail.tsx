@@ -20,6 +20,7 @@ import type { Email } from "~/types";
 import { AgentPanel, AgentRail, useDraftWithAgent } from "./Agent";
 import { DemoContext } from "~/lib/demo";
 import { markLayoutMoving } from "~/lib/layout-motion";
+import { tabTitle, useAppName } from "~/lib/brand";
 import { useUnreadTab } from "~/lib/unread-tab";
 import { useEmail } from "~/queries/emails";
 import {
@@ -33,7 +34,7 @@ import { LogoutModal, ShortcutsModal, Toast, type ToastState } from "./Modals";
 import { ConsolePage } from "./Console";
 import { oneHold, warnBeforeUnload } from "./send-hold";
 import type { ConsoleSearchHandle } from "./ConsoleSearch";
-import { type ConsoleTab, consoleTabFrom } from "./console-tabs";
+import { CONSOLE_LABELS, type ConsoleTab, consoleTabFrom } from "./console-tabs";
 import { conversations, HOME, labelOf, type MailAction, parsePostalFilter, RESTORABLE, scoped, scopeOf, searchErrors, searchTerms, withSearch } from "./model";
 import { withOrder } from "./search-window";
 import { useDeleteSavedSearch, useSavedSearches, useSaveSearch, useSuggest } from "~/queries/search";
@@ -145,7 +146,6 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 	// The store ranks searches (D1), or the search asks for date order.
 	const rankable = pages[0]?.order === "relevance" || !!pages[0]?.rankSkipped || /(^|\s)sort:date\b/i.test(debounced);
 	const counts = useViewCounts();
-	useUnreadTab(counts.unread);
 	const unreadFacets = useMailFacets({ view: "inbox", chips: [{ kind: "is", value: "unread" }], sort: "date", dir: "desc" }, true);
 	const unreadByAddress = useMemo(() => new Map((unreadFacets.data?.address ?? []).map((f) => [f.value.toLowerCase(), f.count])), [unreadFacets.data]);
 	const [facetsWanted, setFacetsWanted] = useState(false);
@@ -241,6 +241,16 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 	// data-arrive is set before paint on the switch only, never on first load, and cleared once the move is done.
 	const shellRef = useRef<HTMLDivElement>(null);
 	const inConsole = !!consoleTab;
+	// The tab names where you are, then the app: a console page, the open message, a search, or the view.
+	const appName = useAppName();
+	const title = consoleTab
+		? tabTitle(appName, CONSOLE_LABELS[consoleTab], "Console")
+		: open
+			? tabTitle(appName, openRow?.subject || "Message")
+			: debounced.trim()
+				? tabTitle(appName, `“${debounced.trim()}”`, "Search")
+				: tabTitle(appName, VIEW_LABELS[filter.view] ?? "Mail");
+	useUnreadTab(counts.unread, title);
 	const wasConsole = useRef(inConsole);
 	useLayoutEffect(() => {
 		const el = shellRef.current;
