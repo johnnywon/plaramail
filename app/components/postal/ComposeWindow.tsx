@@ -273,6 +273,22 @@ function useKeyboardDock(ref: React.RefObject<HTMLDivElement | null>, on: boolea
 
 type Card = "format" | "attach" | "agent" | "later";
 
+/** How long a closing card stays on screen to leave (pg-card-out). */
+const CARD_OUT_MS = 180;
+
+/** The card on screen: the open one, or for CARD_OUT_MS the one that just closed, flagged as leaving. */
+function useShownCard(card: Card | null): [Card | null, boolean] {
+	const [last, setLast] = useState(card);
+	useEffect(() => {
+		if (card) return setLast(card);
+		const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+		const id = setTimeout(() => setLast(null), still ? 0 : CARD_OUT_MS);
+		return () => clearTimeout(id);
+	}, [card]);
+	const shown = card ?? last;
+	return [shown, !card && !!shown];
+}
+
 /** Send later's quick times on the phone's day picker. */
 const LATER_TIMES = [["7:00", "07:00"], ["8:00", "08:00"], ["9:00", "09:00"], ["12:00", "12:00"], ["13:00", "13:00"], ["17:00", "17:00"]] as const;
 const shortWhen = (d: Date) => `${d.toLocaleDateString("en-US", { weekday: "short" })} ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
@@ -325,6 +341,7 @@ export function Composer(props: ComposerProps) {
 	const [instruction, setInstruction] = useState("");
 	// One card over the dock at a time: Format, Photos and files, the agent, Send later.
 	const [card, setCard] = useState<Card | null>(null);
+	const [shownCard, cardLeaving] = useShownCard(card);
 	const [attachTab, setAttachTab] = useState<"photos" | "files">("files");
 	// The agent's draft, in its own card until the writer uses or drops it (agent-draft.ts).
 	const [agentDraft, setAgentDraftState] = useState<AgentDraft | null>(() =>
@@ -434,7 +451,7 @@ export function Composer(props: ComposerProps) {
 		const ro = new ResizeObserver(() => root.style.setProperty("--pg-card-h", `${Math.ceil(el.getBoundingClientRect().height) + 8}px`));
 		ro.observe(el);
 		return () => ro.disconnect();
-	}, [card, phone]);
+	}, [shownCard, phone]);
 
 	// The agent reads for a moment (agent-think), then writes (agent-write) until the draft lands.
 	const writing = agentDraft?.status === "writing";
@@ -826,8 +843,8 @@ export function Composer(props: ComposerProps) {
 					{later && !fromSlot && <time>{shortWhen(later)}</time>}
 					<CaretUpIcon size={14} className="pg-pick-caret" />
 				</button>
-				{picking && (
-					<>
+				<div className="pg-later-pick" data-open={picking || undefined} inert={!picking}>
+					<div>
 						<div className="pg-days" role="radiogroup" aria-label="Day">
 							{days.map((d) => (
 								<button key={isoDay(d)} type="button" role="radio" aria-checked={pickDay === isoDay(d)} onClick={() => pick(isoDay(d), pickTime)}>
@@ -844,9 +861,9 @@ export function Composer(props: ComposerProps) {
 							<input type="date" aria-label="Date" value={pickDay} min={isoDay(today)} max={lastScheduleDay(today)} onChange={(e) => pick(e.target.value, pickTime)} />
 							<input type="time" aria-label="Time" value={pickTime} onChange={(e) => pick(pickDay, e.target.value)} />
 						</div>
-					</>
-				)}
-				<span className="pg-card-note">{later ? `${who ? `${who} gets it` : "It sends"} ${sendTimeLabel(later)}.` : "Pick a time. Send changes to show it."}</span>
+					</div>
+				</div>
+				<span className="pg-card-note" key={later?.getTime() ?? "none"}>{later ? `${who ? `${who} gets it` : "It sends"} ${sendTimeLabel(later)}.` : "Pick a time. Send changes to show it."}</span>
 			</div>
 		);
 	};
@@ -1139,11 +1156,11 @@ export function Composer(props: ComposerProps) {
 						}}
 					/>
 					{phone ? (
-						<div className="pg-cw-foot pg-dock" role="toolbar" aria-label="Compose tools">
-							{card === "format" && formatCard()}
-							{card === "attach" && attachCard()}
-							{card === "agent" && agentCard()}
-							{card === "later" && laterCard()}
+						<div className="pg-cw-foot pg-dock" role="toolbar" aria-label="Compose tools" data-card-leaving={cardLeaving || undefined}>
+							{shownCard === "format" && formatCard()}
+							{shownCard === "attach" && attachCard()}
+							{shownCard === "agent" && agentCard()}
+							{shownCard === "later" && laterCard()}
 							<span className="pg-well" role="group" aria-label="Tools">
 								<button type="button" className="pg-key" title="Format" aria-label="Format" aria-pressed={card === "format"} onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => toggleCard("format")}>
 									<TextAaIcon size={20} />
@@ -1159,7 +1176,9 @@ export function Composer(props: ComposerProps) {
 							<span className="pg-flex" />
 							<div className="pg-send-split pg-dock-send" data-later={later ? "" : undefined}>
 								<button type="button" className="pg-send" aria-label={sendLabel} onClick={() => send()} disabled={busy}>
-									{later ? <><ClockIcon size={16} weight="bold" />{shortWhen(later)}</> : <>Send<PaperPlaneRightIcon size={14} weight="bold" /></>}
+									<span className="pg-send-label" key={later?.getTime() ?? "now"}>
+										{later ? <><ClockIcon size={16} weight="bold" />{shortWhen(later)}</> : <>Send<PaperPlaneRightIcon size={14} weight="bold" /></>}
+									</span>
 								</button>
 								<button type="button" className="pg-caret" title="Send later" aria-label="Send later" aria-expanded={card === "later"} onClick={() => toggleCard("later")}>
 									<CaretUpIcon size={14} weight="bold" />

@@ -954,12 +954,16 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
    Each lifts 8px as it fades in on the side curve. The body scrolls clear of the open card (--pg-card-h). */
 .pg-cw-foot { position: relative; }
 @keyframes pg-card-in { from { opacity: 0; translate: 0 8px; } }
+@keyframes pg-card-out { to { opacity: 0; translate: 0 8px; } }
+/* A value that changes in place (a picked time, the Send label) rises in over the old one. */
+@keyframes pg-swap-in { from { opacity: 0; translate: 0 3px; } }
 .pg-cw-card { position: absolute; z-index: 6; left: 8px; right: 8px; bottom: calc(100% + 8px); display: flex; flex-direction: column; gap: 10px; max-height: calc(var(--pg-vv-h, 100dvh) - 150px); overflow-y: auto; padding: 12px; background: var(--pg-raised); box-shadow: var(--pg-shadow-pop), inset 0 0 0 1px var(--pg-line-2); font-size: 13px; animation: pg-card-in .3s var(--pg-side-ease); }
 .pg-cw[data-card] .pg-cw-scroll { padding-bottom: var(--pg-card-h, 0px); }
+.pg-dock[data-card-leaving] .pg-cw-card { animation: pg-card-out .18s var(--pg-side-ease) forwards; pointer-events: none; }
 .pg-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; color: var(--pg-text-1); }
 .pg-card-head.is-agent { color: var(--pg-green-text); }
 .pg-card-meta { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 11px var(--pg-mono); color: var(--pg-text-7); }
-.pg-card-note { font: 500 11px/1.45 var(--pg-mono); color: var(--pg-text-7); }
+.pg-card-note { font: 500 11px/1.45 var(--pg-mono); color: var(--pg-text-7); animation: pg-swap-in .24s var(--pg-side-ease); }
 .pg-card-row { display: flex; align-items: center; gap: 8px; }
 .pg-card-label { font: 500 11px var(--pg-mono); color: var(--pg-text-7); }
 .pg-card-input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 0; outline: none; background: var(--pg-recess-face); box-shadow: var(--pg-recess); color: var(--pg-text-1); font: 13px var(--pg-font); }
@@ -1010,22 +1014,32 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
 .pg-meter[data-over] i { background: var(--pg-yellow); }
 /* Send later: three slots in a well, the chosen one rises with a mail-orange ring; or a day and a time. */
 .pg-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; }
-.pg-slot { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 10px; text-align: left; color: var(--pg-text-5); transition: background-color .16s var(--pg-side-ease); }
+.pg-slot { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 10px; text-align: left; color: var(--pg-text-5); box-shadow: 0 0 0 0 transparent, inset 0 0 0 0 transparent; transition: background-color .16s var(--pg-side-ease), box-shadow .22s var(--pg-side-ease), translate .08s ease-out; }
 .pg-slot b { font-size: 13px; font-weight: 600; line-height: 1.25; color: var(--pg-text-1); }
 .pg-slot time { font: 500 11px var(--pg-mono); color: var(--pg-text-6); }
 .pg-slot:hover { background: var(--pg-hover); }
-.pg-slot:active, .pg-days button:active { translate: 0 1px; }
+/* Held, a choice sinks 1px into a darker face; let go, it settles into its selected look. */
+.pg-slot:active, .pg-days button:active, .pg-pickrow:active { translate: 0 1px; }
+.pg-slot:active, .pg-pickrow:active { background: var(--pg-active); }
+.pg-days button:active:not([aria-checked="true"]) { background: var(--pg-active); }
 .pg-slot[aria-checked="true"] { background: var(--pg-raised); box-shadow: 0 1px 2px rgba(0, 0, 0, .35), inset 0 0 0 1.5px var(--pg-mail); }
+.pg-slot time { transition: color .16s var(--pg-side-ease); }
 .pg-slot[aria-checked="true"] time { color: var(--pg-text-1); }
-.pg-pickrow { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; text-align: left; color: var(--pg-text-2); }
+.pg-pickrow { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; text-align: left; color: var(--pg-text-2); transition: background-color .16s var(--pg-side-ease), translate .08s ease-out; }
+.pg-pickrow > svg:first-child { transition: color .16s var(--pg-side-ease); }
 .pg-pickrow:hover { background: var(--pg-hover-raised); }
 .pg-pickrow > svg:first-child { color: var(--pg-text-5); }
 .pg-pickrow[aria-checked="true"] > svg:first-child { color: var(--pg-mail); }
-.pg-pickrow time { font: 600 12px var(--pg-mono); color: var(--pg-text-1); }
+.pg-pickrow time { font: 600 12px var(--pg-mono); color: var(--pg-text-1); animation: pg-swap-in .24s var(--pg-side-ease); }
 .pg-pick-caret { color: var(--pg-text-6); rotate: 180deg; transition: rotate .2s var(--pg-side-ease); }
 .pg-pickrow[aria-expanded="true"] .pg-pick-caret { rotate: 0deg; }
+/* The day and time picker folds open under its row: rows from 0fr to 1fr, so it eases both ways
+   and stays mounted (inert while shut). The negative margin takes back the card's gap when shut. */
+.pg-later-pick { display: grid; grid-template-rows: 0fr; margin-top: -10px; opacity: 0; transition: grid-template-rows .32s var(--pg-side-ease), margin-top .32s var(--pg-side-ease), opacity .2s var(--pg-side-ease); }
+.pg-later-pick[data-open] { grid-template-rows: 1fr; margin-top: 0; opacity: 1; }
+.pg-later-pick > div { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden; }
 .pg-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-.pg-days button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 52px; font-size: 16px; font-weight: 600; color: var(--pg-text-1); box-shadow: inset 0 0 0 1px var(--pg-line-2); }
+.pg-days button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 52px; font-size: 16px; font-weight: 600; color: var(--pg-text-1); box-shadow: inset 0 0 0 1px var(--pg-line-2); transition: background-color .18s var(--pg-side-ease), color .18s var(--pg-side-ease), box-shadow .18s var(--pg-side-ease), translate .08s ease-out; }
 .pg-days small { font: 500 10px var(--pg-mono); text-transform: uppercase; color: var(--pg-text-7); }
 .pg-days button[aria-checked="true"] { background: var(--pg-mail); color: var(--pg-ink); box-shadow: none; }
 .pg-days button[aria-checked="true"] small { color: inherit; }
@@ -1400,6 +1414,7 @@ html:has(.postal), html:has(.postal) body { background: var(--pg-base, #141518);
   .pg-dock-send { height: 44px; box-shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 8px 18px -8px color-mix(in srgb, var(--pg-signal) 75%, transparent); }
   .pg-dock-send .pg-send { gap: 8px; padding: 0 14px 0 13px; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .pg-dock-send .pg-caret { width: 40px; }
+  .pg-send-label { display: inline-flex; align-items: center; gap: 8px; animation: pg-swap-in .24s var(--pg-side-ease); }
   .pg-dock-send :is(.pg-send, .pg-caret):active { background: var(--pg-signal-deep); }
   .pg-dock-send .pg-caret svg { transition: rotate .2s var(--pg-side-ease); }
   .pg-dock-send .pg-caret[aria-expanded="true"] svg { rotate: 180deg; }
