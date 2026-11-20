@@ -858,8 +858,10 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 		return;
 	}
 	const allowedAddresses = configuredAddresses(env).map((a) => a.toLowerCase());
-	const mailboxId = event.to?.toLowerCase();
-	if (!mailboxId) throw new Error("received email with no envelope recipient");
+	const recipient = event.to?.toLowerCase();
+	if (!recipient) throw new Error("received email with no envelope recipient");
+	// name+tag@domain goes to name@domain when only the base address is configured. The To header keeps the tag.
+	const mailboxId = allowedAddresses.includes(recipient) ? recipient : recipient.replace(/^([^+@]+)\+[^@]*@/, "$1@");
 	if (allowedAddresses.length > 0 && !allowedAddresses.includes(mailboxId)) {
 		event.setReject("Unknown recipient");
 		return;

@@ -74,3 +74,35 @@ test("unknown envelope recipients are rejected before reading the message", asyn
 	assert.deepEqual(configuredRejections, []);
 	assert.equal(await configured.stored(), 1);
 });
+
+test("a plus tag delivers to the configured address it is added to", async () => {
+	const { env, stored } = await environment(["hello@example.com"]);
+	const rejections = [];
+	await receiveEmail({
+		to: "Hello+m_42@example.com",
+		...message(),
+		setReject: (reason) => rejections.push(reason),
+	}, env, { waitUntil: () => {} });
+	assert.deepEqual(rejections, []);
+	assert.equal(await stored(), 1);
+
+	const other = [];
+	await receiveEmail({
+		to: "other+m_42@example.com",
+		...message(),
+		setReject: (reason) => other.push(reason),
+	}, env, { waitUntil: () => {} });
+	assert.deepEqual(other, ["Unknown recipient"]);
+});
+
+test("an address configured with a plus keeps its own mailbox", async () => {
+	const { env, stored } = await environment(["hello@example.com", "hello+list@example.com"]);
+	const rejections = [];
+	await receiveEmail({
+		to: "hello+list@example.com",
+		...message(),
+		setReject: (reason) => rejections.push(reason),
+	}, env, { waitUntil: () => {} });
+	assert.deepEqual(rejections, []);
+	assert.equal(await stored(), 1);
+});

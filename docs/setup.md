@@ -103,7 +103,7 @@ Bounces: because Email Sending sets the Return-Path, most bounces for mail sent 
 | --- | --- | --- |
 | `APP_NAME` | `vars` | Name in the header, status bar and page titles |
 | `DOMAINS` | `vars` | Comma-separated domains that receive mail |
-| `EMAIL_ADDRESSES` | `vars` | Addresses that get a mailbox, as a list or a comma-separated string. Mail to other addresses bounces. |
+| `EMAIL_ADDRESSES` | `vars` | Addresses that get a mailbox, as a list or a comma-separated string. Mail to other addresses bounces. Mail to `name+tag@` goes to `name@`. |
 | `ATTACHMENT_SEARCH` | `vars` | `true` makes attachment text searchable. Uses one Workers AI `toMarkdown` call per PDF, Word or Excel file. |
 | `MCP_SEND_ENABLED` | `vars` | `false` takes the send tools away from every MCP client, whatever it was granted |
 | `ALERT_TO` | `vars` | An address for error alerts, best one this deployment doesn't receive. Once an hour, if a request threw, inbound mail failed, a cron step failed or `/health` fails, the Worker mails it the errors since the last alert, from the first address in `EMAIL_ADDRESSES`. Unset sends none. |
