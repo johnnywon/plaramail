@@ -35,6 +35,7 @@ export type MailboxStore = Pick<
 	| "deleteEmail"
 	| "trashOrDelete"
 	| "moveEmail"
+	| "returnToDrafts"
 	| "getAttachment"
 	| "findThreadBySubject"
 	| "findThreadByMessageIds"

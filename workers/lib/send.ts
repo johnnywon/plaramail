@@ -45,7 +45,7 @@ export interface SendStub {
 	getEmail(id: string): Promise<unknown>;
 	createEmail(folder: string, email: any, attachments: any[]): Promise<unknown>;
 	markThreadRead(threadId: string): Promise<unknown>;
-	moveEmail(id: string, folderId: string): Promise<unknown>;
+	returnToDrafts(id: string, inReplyTo: string | null): Promise<unknown>;
 	takeSendBudget(actor: SendActor, recipients: number, agentDay?: number): Promise<{ ok: true; id: number } | { ok: false; error: string }>;
 	refundSendBudget(id: number): Promise<void>;
 	claimSendKey(key: string, contentHash?: string | null): Promise<SendKeyClaim>;
@@ -163,6 +163,8 @@ async function sendOnce(
 	let references: string[] = [];
 	let threadId: string | null = null;
 	let markRead: string | null = null;
+	// The original's email id, which a reply draft keeps in in_reply_to.
+	let draftReplyTo: string | null = null;
 	if (mode.kind !== "new") {
 		const rawOriginal = (await stub.getEmail(mode.originalId)) as EmailFull | null;
 		if (!rawOriginal) return { ok: false, status: 404, error: "Original email not found" };
@@ -178,6 +180,7 @@ async function sendOnce(
 			references = chain.references;
 			threadId = chain.threadId;
 			markRead = chain.threadId;
+			draftReplyTo = original.id;
 		}
 	} else {
 		inReplyTo = body.in_reply_to || null;
@@ -291,7 +294,7 @@ async function sendOnce(
 				}
 				// Nothing went out: give back the slot and put the message where the sender will see it.
 				await stub.refundSendBudget(budget.id).catch(() => {});
-				await stub.moveEmail(messageId, Folders.DRAFT).catch(() => {});
+				await stub.returnToDrafts(messageId, draftReplyTo).catch(() => {});
 				if (key) await stub.failSendKey(key, error).catch(() => {});
 			},
 		));

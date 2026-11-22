@@ -33,7 +33,7 @@ async function harness({ failDelivery = 0, failStore = 0, hold = null, deliveryE
 	const stub = Object.assign(Object.create(box), {
 		getEmail: async () => null,
 		markThreadRead: async () => {},
-		moveEmail: async (id, folder) => { moved.push({ id, folder }); return true; },
+		returnToDrafts: async (id, inReplyTo) => { moved.push({ id, inReplyTo }); },
 		createEmail: async (_folder, email) => {
 			stored.push({ email, attempt: row(currentKey) });
 			if (failStore > 0) { failStore--; throw new Error("storage down"); }
@@ -172,7 +172,7 @@ test("a failed deferred delivery fails the key, refunds the budget and moves the
 	await delivery;
 	assert.equal(h.row("k1").state, "failed");
 	assert.equal(h.row("k1").error, "delivery down");
-	assert.deepEqual(h.moved, [{ id: result.id, folder: "draft" }]);
+	assert.deepEqual(h.moved, [{ id: result.id, inReplyTo: null }]);
 	assert.equal(h.d1.exec(`SELECT COUNT(*) AS n FROM send_budget`)[0].n, 0);
 	// The key can be used again, and this time the message goes out.
 	const retry = await h.send("k1", {}, { defer: (p) => { delivery = p; } });
