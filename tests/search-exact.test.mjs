@@ -43,3 +43,17 @@ test("a saved search counts what the list finds by substring", () => {
 	const [saved] = run(sg.listSavedSearchesQuery({ tzOffset: 0 }, NOW));
 	assert.equal(saved.count, 1);
 });
+
+test("from: and to: with a full address match only that address", () => {
+	assert.deepEqual(find("from:ann@example.org"), ["Hey"]);
+	assert.deepEqual(find("from:ann@example.org OR from:orders@example.org"), ["Hey", "Order XK7731Q shipped"]);
+	assert.deepEqual(find("-from:ann@example.org"), ["Hello", "Order XK7731Q shipped", "To Jo", "To both", "invoice"]);
+	assert.deepEqual(find("to:ann@example.org"), ["To both"]);
+	assert.deepEqual(find("to:ann@example.org OR to:jo.ann@example.org"), ["To Jo", "To both"]);
+	assert.deepEqual(find("-to:ann@example.org from:a@example.com"), ["To Jo"]);
+	assert.deepEqual(find("FROM:Ann@Example.org"), ["Hey"], "case does not matter");
+	// Names and domains still match as documented.
+	assert.deepEqual(find("from:ann"), ["Hello", "Hey"]);
+	assert.deepEqual(find("from:example.org"), ["Hello", "Hey", "Order XK7731Q shipped"]);
+	assert.deepEqual(find("from:@example.net"), ["invoice"]);
+});
