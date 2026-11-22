@@ -243,6 +243,18 @@ export class D1Mailbox {
 		return true;
 	}
 
+	/**
+	 * Put a Sent copy whose delivery was rejected back in Drafts. A reply draft
+	 * names its original by email id in in_reply_to, as saved drafts do, so it
+	 * opens and sends as a reply.
+	 */
+	async returnToDrafts(id: string, inReplyTo: string | null) {
+		await this.sql.run(
+			`UPDATE messages SET folder_id = ?, in_reply_to = ? WHERE mailbox_id = ? AND email_id = ?`,
+			Folders.DRAFT, inReplyTo, this.#id, id,
+		);
+	}
+
 	async getAttachment(id: string): Promise<AttachmentRow | null> {
 		const row = await this.sql.first(
 			`SELECT a.id, a.email_id, a.filename, a.mimetype, a.size, a.content_id, a.disposition FROM attachments a
