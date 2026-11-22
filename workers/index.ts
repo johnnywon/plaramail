@@ -9,7 +9,7 @@ import { parseMail } from "./lib/parse-mail";
 import { bounceLink } from "./lib/bounce";
 import { z } from "zod";
 import { generateText } from "ai";
-import { deleteAttachmentFiles, type StoredAttachment } from "./lib/attachments";
+import { deleteAttachmentFiles, inboundDisposition, type StoredAttachment } from "./lib/attachments";
 import { ensureDevMail, seedMail, seedProfile } from "./lib/dev-seed";
 import { claimDemoAiCall, DEMO, demoAiCap, demoRefusal } from "./lib/demo";
 import {
@@ -909,7 +909,7 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 			await withAttachmentCleanup(() => env.BUCKET.put(key, att.content));
 			attachmentData.push({ id: attId, email_id: messageId, filename, mimetype: att.mimeType,
 				size: typeof att.content === "string" ? att.content.length : att.content.byteLength,
-				content_id: att.contentId || null, disposition: att.disposition || "attachment" });
+				content_id: att.contentId || null, disposition: inboundDisposition(att, parsedEmail.html) });
 		}
 	}
 

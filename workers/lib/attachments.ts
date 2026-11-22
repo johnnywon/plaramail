@@ -18,6 +18,22 @@ export interface StoredAttachment {
 	disposition: string;
 }
 
+/**
+ * The disposition to store for a received part. postal-mime gives null when
+ * the part has no Content-Disposition. Such a part is inline when the HTML
+ * body shows it through cid:, so the reader rewrites the image and the message
+ * is not marked as having a file. postal-mime's `related` flag is not used: it
+ * is set on every part with a Content-ID, inside multipart/related or not.
+ */
+export function inboundDisposition(
+	part: { disposition?: string | null; contentId?: string },
+	html: string | undefined,
+): string {
+	if (part.disposition) return part.disposition;
+	const cid = part.contentId?.replace(/^<|>$/g, "").trim();
+	return cid && (html ?? "").toLowerCase().includes(`cid:${cid.toLowerCase()}`) ? "inline" : "attachment";
+}
+
 export async function deleteAttachmentFiles(
 	bucket: Env["BUCKET"],
 	emailId: string,
