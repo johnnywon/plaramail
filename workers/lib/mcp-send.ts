@@ -43,7 +43,7 @@ export type McpSendResult =
 	| { status: "sent" | "already_sent"; sentId: string; mailboxId: string; to: string; subject: string }
 	| McpSendError;
 
-const fail = (code: McpSendError["code"], error: string, detail: Record<string, unknown> = {}): McpSendError =>
+export const fail = (code: McpSendError["code"], error: string, detail: Record<string, unknown> = {}): McpSendError =>
 	({ error, code, retryable: false, ...detail });
 
 /** Where a reply to this email goes: its Reply-To addresses, or its sender. Lowercase. */
@@ -90,6 +90,11 @@ async function storedKey(clientId: string, key: string): Promise<string> {
 
 function sendOutcome(result: SendResult, mailboxId: string, to: string[], subject: string): McpSendResult {
 	if (result.ok) return { status: result.duplicate ? "already_sent" : "sent", sentId: result.id, mailboxId, to: to.join(", "), subject };
+	return sendFailure(result);
+}
+
+/** The send-tool error for a send sendMail refused. */
+export function sendFailure(result: Extract<SendResult, { ok: false }>): McpSendError {
 	if (result.status === 429) return fail("send_limit", result.error);
 	if (result.status === 404) return fail("not_found", result.error);
 	if (result.status === 409) {
