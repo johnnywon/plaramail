@@ -9,7 +9,7 @@ import { createRequestHandler } from "react-router";
 import { runCron } from "./cron";
 import { consumeAutoDrafts } from "./agent/queue";
 import type { AutoDraftJob } from "./agent/runs";
-import { accessConfigError, accessJwks, getAccessUrls } from "./lib/access-config";
+import { accessConfigError, accessJwks, getAccessUrls, serviceTokenRefusal } from "./lib/access-config";
 import { recordError } from "./lib/alerts";
 import { DEMO, demoBlocksPath } from "./lib/demo";
 import { errorResponse } from "./lib/error-page";
@@ -84,18 +84,21 @@ app.use("*", async (c, next) => {
 		return errorResponse(c.req.raw, 403, "Not signed in", "Missing required CF Access JWT");
 	}
 
+	let payload: Awaited<ReturnType<typeof jwtVerify>>["payload"];
 	try {
 		const { issuer, certsUrl } = getAccessUrls(TEAM_DOMAIN);
-		const { payload } = await jwtVerify(token, accessJwks(certsUrl), {
+		({ payload } = await jwtVerify(token, accessJwks(certsUrl), {
 			issuer,
 			audience: POLICY_AUD,
 			algorithms: ["RS256"],
-		});
-		// A person's token has their email; a service token has only its common name.
-		c.set("viewer", String(payload.email ?? payload.common_name ?? payload.sub ?? "access"));
+		}));
 	} catch {
 		return errorResponse(c.req.raw, 403, "Sign in again", "Invalid or expired Access token");
 	}
+	const refusal = serviceTokenRefusal(payload as { email?: unknown; common_name?: unknown }, c.req.method, c.req.path, c.env);
+	if (refusal) return c.json({ error: refusal }, 403);
+	// A person's token has their email; a service token has only its common name.
+	c.set("viewer", String(payload.email ?? payload.common_name ?? payload.sub ?? "access"));
 
 	// Authorization model note: once a teammate passes the shared Cloudflare
 	// Access policy, they can access all mailboxes in this app by design.

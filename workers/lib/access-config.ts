@@ -57,3 +57,23 @@ export function accessJwks(certsUrl: URL): ReturnType<typeof createRemoteJWKSet>
 	}
 	return jwks;
 }
+
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * A service token signs in a machine, not a person: its JWT has a common_name and no email.
+ * It may read mail and nothing else unless SERVICE_TOKEN_WRITES is "true". The agent socket
+ * and the MCP consent page act for a person, so a service token can't open them either.
+ */
+export function serviceTokenRefusal(
+	payload: { email?: unknown; common_name?: unknown },
+	method: string,
+	path: string,
+	env: { SERVICE_TOKEN_WRITES?: string },
+): string | null {
+	if (payload.email || !payload.common_name) return null;
+	if (env.SERVICE_TOKEN_WRITES === "true") return null;
+	if (path.startsWith("/agents/") || path === "/authorize") return "A service token can't use the agent or authorize apps";
+	if (!READ_METHODS.has(method.toUpperCase())) return "A service token can only read";
+	return null;
+}

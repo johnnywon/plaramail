@@ -143,7 +143,7 @@ async function appWith(define) {
 		"agents": "export const routeAgentRequest = async () => new Response('agent');",
 		"jose": "export const jwtVerify = async () => ({}); export const createRemoteJWKSet = () => ({});",
 		"./cron": "export const runCron = async () => {};",
-		"./lib/access-config": "export const accessConfigError = () => 'not set up'; export const accessJwks = () => ({}); export const getAccessUrls = () => ({});",
+		"./lib/access-config": "export const accessConfigError = () => 'not set up'; export const accessJwks = () => ({}); export const getAccessUrls = () => ({}); export const serviceTokenRefusal = () => null;",
 		"./lib/error-page": "export const errorResponse = (_r, status) => new Response('error', { status });",
 		"./index": "import { Hono } from 'hono'; export const app = new Hono(); export const receiveEmail = async () => {};",
 		"./mcp": "export class EmailMCP { static serve() { return { fetch: async () => new Response('mcp') }; } }",

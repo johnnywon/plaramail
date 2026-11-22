@@ -14,6 +14,9 @@ test("security headers add frame protections and merge the CSP directive", () =>
 	}));
 	assert.equal(response.headers.get("X-Frame-Options"), "DENY");
 	assert.equal(response.headers.get("Content-Security-Policy"), "default-src 'self'; sandbox; frame-ancestors 'none'");
+	assert.equal(response.headers.get("Strict-Transport-Security"), "max-age=31536000");
+	assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+	assert.equal(response.headers.get("Referrer-Policy"), "same-origin");
 
 	const withoutPolicy = withSecurityHeaders(new Response("ok"));
 	assert.equal(withoutPolicy.headers.get("Content-Security-Policy"), "frame-ancestors 'none'");
@@ -109,7 +112,7 @@ const appBundle = await build({
 				"agents": "export const routeAgentRequest = async () => new Response('agent');",
 				"jose": "export const jwtVerify = async () => ({}); export const createRemoteJWKSet = () => ({});",
 				"./cron": "export const runCron = async () => {};",
-				"./lib/access-config": "export const accessConfigError = () => null; export const accessJwks = () => ({}); export const getAccessUrls = () => ({});",
+				"./lib/access-config": "export const accessConfigError = () => null; export const accessJwks = () => ({}); export const getAccessUrls = () => ({}); export const serviceTokenRefusal = () => null;",
 				"./lib/error-page": "export const errorResponse = () => new Response('error');",
 				"./index": "import { Hono } from 'hono'; export const app = new Hono(); export const receiveEmail = async () => {};",
 				"./mcp": "export class EmailMCP { static serve() { return { fetch: async () => new Response('mcp') }; } }",

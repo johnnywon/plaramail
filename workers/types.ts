@@ -17,6 +17,8 @@ export interface Env extends Cloudflare.Env {
 	DEMO_AI_DAILY?: string;
 	/** "false" takes the send tools away from every MCP client, whatever its grant. */
 	MCP_SEND_ENABLED?: string;
+	/** "true" lets an Access service token write and send. Unset, a service token can only read (workers/lib/access-config.ts). */
+	SERVICE_TOKEN_WRITES?: string;
 	/** Where the hourly alert mail goes when something fails (workers/lib/alerts.ts). Unset sends none. */
 	ALERT_TO?: string;
 	/** Set by the OAuth provider (workers/mcp/oauth.ts) for /authorize and Console > MCP. Absent on a demo. */

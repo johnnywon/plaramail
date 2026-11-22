@@ -145,6 +145,8 @@ export default function EmailIframe({ body, autoSize, remoteImages = true, paddi
 	const iframeRef = useRef<HTMLIFrameElement>(null);
 	const [height, setHeight] = useState(autoSize ? 100 : 0);
 	const pendingHeight = useRef<number | null>(null);
+	// Only the frame's own scripts run: a sanitiser bypass in the mail can't add one that carries this nonce.
+	const scriptNonce = useRef("");
 
 	// Listen for height reports from the sandboxed iframe
 	const handleMessage = useCallback(
@@ -187,6 +189,9 @@ export default function EmailIframe({ body, autoSize, remoteImages = true, paddi
 		if (!iframe) return;
 
 		const cleanBody = prepareMailBody(body, { remoteImages, frame: true });
+		// One nonce per frame, so writing the same mail again leaves srcdoc unchanged.
+		if (!scriptNonce.current) scriptNonce.current = crypto.randomUUID().replaceAll("-", "");
+		const nonce = scriptNonce.current;
 
 		const padding = `${paddingProp ?? (autoSize ? 0 : 24)}px`;
 
@@ -194,7 +199,7 @@ export default function EmailIframe({ body, autoSize, remoteImages = true, paddi
 		// Runs inside the opaque-origin sandbox so it has zero access to
 		// the parent page — it can only postMessage.
 		const heightScript = autoSize
-			? `<script>
+			? `<script nonce="${nonce}">
 				function reportHeight() {
 					var h = document.body.scrollHeight;
 					if (h > 0) parent.postMessage({ __emailIframeHeight: true, height: h }, "*");
@@ -211,7 +216,7 @@ export default function EmailIframe({ body, autoSize, remoteImages = true, paddi
 		// Mail shortcuts keep working while focus is inside the message. The
 		// frame passes every key up; the parent matches it against the
 		// shortcuts and accepts it only from its own frames.
-		const keyScript = `<script>
+		const keyScript = `<script nonce="${nonce}">
 			document.addEventListener("keydown", function (e) {
 				if (e.isComposing) return;
 				var t = e.target;
@@ -227,7 +232,7 @@ export default function EmailIframe({ body, autoSize, remoteImages = true, paddi
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: cid: ${remoteImages ? "https:" : ""} ${typeof window === "undefined" ? "" : window.location.origin}; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: cid: ${remoteImages ? "https:" : ""} ${typeof window === "undefined" ? "" : window.location.origin}; script-src 'nonce-${nonce}';">
 <style>
 * { box-sizing: border-box; }
 html {

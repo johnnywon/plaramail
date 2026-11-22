@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadTs } from "./helpers/sqlite.mjs";
 
-const { accessConfigured, accessConfigError, accessJwks, getAccessUrls, ACCESS_PLACEHOLDERS } = await loadTs("workers/lib/access-config.ts");
+const { accessConfigured, accessConfigError, accessJwks, getAccessUrls, serviceTokenRefusal, ACCESS_PLACEHOLDERS } = await loadTs("workers/lib/access-config.ts");
 
 test("Access counts as set up only with both secrets present", () => {
 	assert.equal(accessConfigured({ POLICY_AUD: "4714c1358e6a", TEAM_DOMAIN: "https://access.example.com" }), true);
@@ -55,4 +55,22 @@ test("the placeholders match .dev.vars.example, which the button copies", async 
 	const example = readFileSync(new URL("../.dev.vars.example", import.meta.url), "utf8");
 	assert.match(example, new RegExp(`^POLICY_AUD=${ACCESS_PLACEHOLDERS.POLICY_AUD}$`, "m"));
 	assert.match(example, new RegExp(`^TEAM_DOMAIN=https://${ACCESS_PLACEHOLDERS.TEAM_DOMAIN.replace(/\./g, "\\.")}$`, "m"));
+});
+
+test("a service token can read and nothing else", () => {
+	const machine = { common_name: "abc.access" };
+	assert.equal(serviceTokenRefusal(machine, "GET", "/api/v1/mailboxes", {}), null);
+	assert.equal(serviceTokenRefusal(machine, "HEAD", "/api/v1/mail", {}), null);
+	assert.match(serviceTokenRefusal(machine, "POST", "/api/v1/mailboxes/a@example.com/emails", {}), /only read/);
+	assert.match(serviceTokenRefusal(machine, "PUT", "/api/v1/prefs", {}), /only read/);
+	assert.match(serviceTokenRefusal(machine, "DELETE", "/api/v1/labels/1", {}), /only read/);
+	assert.match(serviceTokenRefusal(machine, "GET", "/agents/email-agent/a", {}), /agent/);
+	assert.match(serviceTokenRefusal(machine, "GET", "/authorize", {}), /authorize/);
+});
+
+test("a person, or a deployment that allows it, is not limited", () => {
+	assert.equal(serviceTokenRefusal({ email: "me@example.com" }, "POST", "/api/v1/mail/bulk", {}), null);
+	assert.equal(serviceTokenRefusal({ email: "me@example.com", common_name: "x" }, "GET", "/agents/a", {}), null);
+	assert.equal(serviceTokenRefusal({ common_name: "abc.access" }, "POST", "/api/v1/mail/bulk", { SERVICE_TOKEN_WRITES: "true" }), null);
+	assert.equal(serviceTokenRefusal({ sub: "" }, "POST", "/api/v1/mail/bulk", {}), null);
 });
