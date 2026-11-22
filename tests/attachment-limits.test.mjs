@@ -44,6 +44,24 @@ test("sendMail refuses a message over 5 MiB before it spends any send budget", a
 	assert.equal(budget, 0);
 });
 
+test("sendMail counts the text part it generates for HTML-only mail", async () => {
+	let budget = 0;
+	const stub = {
+		takeSendBudget: async () => { budget++; return { ok: true, id: 1 }; },
+		claimSendKey: async () => ({ state: "new" }),
+	};
+	// About 4.1 MB of HTML: under 5 MiB alone, about 8 MB with its text part.
+	const html = `<p>${"word ".repeat(820_000)}</p>`;
+	assert.equal(messageSizeError(messageBytes({ html, fileBytes: [] })), null);
+	const result = await sendMail({ EMAIL: { send: async () => { throw new Error("sent"); } } }, "a@example.com", stub, {
+		to: "b@example.org", from: "a@example.com", subject: "Long", html,
+	}, { kind: "new" }, {});
+	assert.equal(result.ok, false);
+	assert.equal(result.status, 400);
+	assert.match(result.error, /Mail can be up to 5 MB\./);
+	assert.equal(budget, 0);
+});
+
 test("the composer checks size before sending and on every way files come in", () => {
 	const compose = readFileSync(new URL("../app/components/postal/compose.ts", import.meta.url), "utf8");
 	assert.match(compose, /const tooLarge = composeSizeError\(state\.files, html\);\n\t\t\tif \(tooLarge\) throw new ComposeError\(tooLarge\);/);
