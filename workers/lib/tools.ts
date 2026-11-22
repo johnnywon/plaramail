@@ -27,6 +27,8 @@ import {
 } from "./email-helpers";
 import { verifyDraft } from "./ai";
 import { sendMail } from "./send";
+import { fail, sendFailure } from "./mcp-send";
+import { htmlToTextAlternative } from "./text-alternative";
 import type { SendActor } from "./send-budget";
 import type { DraftNotes } from "../../shared/draft-notes";
 import { deleteAttachmentFiles } from "./attachments";
@@ -722,10 +724,14 @@ export async function toolDeleteEmail(
 export async function toolSendDraft(env: Env, mailboxId: string, draftId: string, actor: SendActor = "agent") {
 	const stub = mailStore(env).mailbox(mailboxId);
 	const draft = (await stub.getEmail(draftId)) as EmailFull | null;
-	if (!draft) return { error: "Draft not found" };
-	if (draft.folder_id !== Folders.DRAFT) return { error: "Cannot send: email is not a draft" };
+	if (!draft) return fail("not_found", "Draft not found");
+	if (draft.folder_id !== Folders.DRAFT) return fail("invalid_input", "Cannot send: email is not a draft");
 	const to = splitList(draft.recipient);
-	if (to.length === 0) return { error: "Cannot send: the draft has no recipient" };
+	if (to.length === 0) return fail("invalid_input", "Cannot send: the draft has no recipient");
+	// A scheduled send keeps its attachments and forward mode in the schedule, not on the draft.
+	if ((await stub.listScheduled()).some((s) => s.emailId === draftId)) {
+		return fail("invalid_input", "This draft is scheduled. Cancel the schedule or send it from the app.");
+	}
 
 	const settings = (await mailStore(env).mailboxes.get(mailboxId)) ?? {};
 	const name = typeof settings.fromName === "string" ? settings.fromName.trim() : "";
@@ -740,9 +746,9 @@ export async function toolSendDraft(env: Env, mailboxId: string, draftId: string
 		from: name && name.toLowerCase() !== mailboxId.toLowerCase() ? { email: mailboxId, name } : mailboxId,
 		subject: draft.subject || "(no subject)",
 		html,
-		text: html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
+		text: htmlToTextAlternative(html),
 	}, original ? { kind: "reply", originalId: original.id } : { kind: "new" }, { idempotencyKey: `draft:${draftId}`, actor });
-	if (!result.ok) return { error: result.error, ...(result.attempt ? { attempt: result.attempt } : {}) };
+	if (!result.ok) return sendFailure(result);
 	const attachments = await stub.deleteEmail(draftId);
 	if (attachments) await deleteAttachmentFiles(env.BUCKET, draftId, attachments);
 	return { status: result.duplicate ? "already_sent" : "sent", sentId: result.id, to: to.join(", "), subject: draft.subject || "" };

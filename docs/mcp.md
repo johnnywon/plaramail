@@ -139,7 +139,7 @@ The reply is refused, and nothing is sent, when:
 
 | Tool | Arguments | Does |
 | --- | --- | --- |
-| `send_draft` | `mailboxId`, `draftId` | Sends a draft and removes it from Drafts. A sent draft is gone, so it can't go out twice. Needs `mail.send`. |
+| `send_draft` | `mailboxId`, `draftId` | Sends a draft and removes it from Drafts. A sent draft is gone, so it can't go out twice. A draft with a scheduled send is refused. Needs `mail.send`. |
 | `reply_to_email` | `mailboxId`, `emailId`, `expectedRecipients`, `text`, `idempotencyKey`, `attachments`? | Replies now. Needs `mail.send`. |
 | `send_email` | `mailboxId`, `to` (1 to 20), `subject`, `text`, `idempotencyKey`, `cc`?, `attachments`? | Sends a new email now. Needs `mail.send`. |
 | `delete_email` | `mailboxId`, `emailId` | Moves an email to Trash |
