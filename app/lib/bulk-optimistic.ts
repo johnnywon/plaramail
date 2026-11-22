@@ -7,7 +7,10 @@
  * the patched row, or null when the row no longer belongs in the view.
  */
 
+import { BULK_MAX_THREADS } from "../../shared/bulk";
 import { type MailFilter, type MatchableRow, matchesFilter } from "./mail-filter";
+
+export { BULK_MAX_THREADS };
 
 export const MOVE_FOLDERS = ["inbox", "archive", "spam", "trash"] as const;
 export type MoveFolder = (typeof MOVE_FOLDERS)[number];
@@ -66,4 +69,33 @@ export function applyAction<T extends MatchableRow & { thread_unread_count: numb
 		next = { ...row, labels: row.labels.filter((l) => l !== action.labelId) };
 	}
 	return matchesFilter(next, filter) ? next : null;
+}
+
+type ThreadTarget = { threadKeys: string[]; view: string; filter?: string };
+type BatchResult = { affected: number; undoId: string; failed?: { mailboxId: string; error: string }[] };
+
+/** What a bulk action did, over every batch it took. */
+export interface BulkOutcome {
+	affected: number;
+	undoIds: string[];
+	failed: { mailboxId: string; error: string }[];
+}
+
+/**
+ * Send a bulk action on selected conversations, in batches of at most
+ * BULK_MAX_THREADS, one after another. Undo reverses every batch.
+ */
+export async function sendBulk(
+	send: (target: ThreadTarget, action: BulkAction) => Promise<BatchResult>,
+	target: ThreadTarget,
+	action: BulkAction,
+): Promise<BulkOutcome> {
+	const out: BulkOutcome = { affected: 0, undoIds: [], failed: [] };
+	for (let i = 0; i < target.threadKeys.length; i += BULK_MAX_THREADS) {
+		const result = await send({ ...target, threadKeys: target.threadKeys.slice(i, i + BULK_MAX_THREADS) }, action);
+		out.affected += result.affected;
+		if (result.undoId) out.undoIds.push(result.undoId);
+		out.failed.push(...(result.failed ?? []));
+	}
+	return out;
 }

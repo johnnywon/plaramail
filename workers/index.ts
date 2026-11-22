@@ -35,6 +35,7 @@ import { parseMailParams } from "./lib/mail-filter-params";
 import { MAX_SEARCH_LENGTH } from "../shared/search-query";
 import { mailboxIds, mailStore, storageStatus, recordsSql } from "./store";
 import { MOVE_FOLDERS } from "./lib/mail-bulk-sql";
+import { BULK_MAX_THREADS } from "../shared/bulk";
 import { automatedMailReason } from "./lib/message-meta";
 import { parseReferences, resolveThreadId } from "./lib/threading";
 import { configuredAddresses } from "./lib/addresses";
@@ -80,7 +81,7 @@ const DraftBody = z.object({
 
 const BulkBody = z.object({
 	target: z.union([
-		z.object({ threadKeys: z.array(z.string().min(1).max(600)).min(1).max(500), view: z.string().max(100) }),
+		z.object({ threadKeys: z.array(z.string().min(1).max(600)).min(1).max(BULK_MAX_THREADS), view: z.string().max(100), filter: z.string().max(8000).optional() }),
 		z.object({ filter: z.string().max(8000), asOf: z.string().datetime(), expectedCount: z.number().int().min(0) }),
 	]),
 	action: z.discriminatedUnion("type", [
@@ -479,7 +480,12 @@ app.post("/api/v1/mail/bulk", async (c) => {
 	const { target, action } = parsed.data;
 	try {
 		const resolved = "threadKeys" in target
-			? { threadKeys: target.threadKeys, view: parseMailParams(new URLSearchParams({ view: target.view })).filter.view }
+			? {
+				threadKeys: target.threadKeys,
+				view: parseMailParams(new URLSearchParams({ view: target.view })).filter.view,
+				// The list's filter, when sent, carries the search's in: scope.
+				filter: target.filter === undefined ? undefined : parseMailParams(new URLSearchParams(target.filter)).filter,
+			}
 			: { filter: parseMailParams(new URLSearchParams(target.filter)).filter, asOf: target.asOf, expectedCount: target.expectedCount };
 		const result = await mailStore(c.env).all().bulk(resolved, action);
 		if ("conflict" in result) return c.json({ error: "The list changed. Check the selection and try again.", count: result.conflict }, 409);

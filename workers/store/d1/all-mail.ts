@@ -12,6 +12,7 @@
  */
 import {
 	BulkConflictError,
+	bulkScope,
 	type BulkAction,
 	LabelError,
 	createLabelQuery,
@@ -127,7 +128,8 @@ export class D1AllMail {
 			throw e;
 		}
 		const view = "threadKeys" in target ? target.view : target.filter.view;
-		const plan = await this.#run(planBulkQuery(threadKeys, view, action));
+		// A search's in: scope replaces the view in the list, so it decides what a move takes.
+		const plan = await this.#run(planBulkQuery(threadKeys, view, action, target.filter ? bulkScope(target.filter) : null));
 		const undoId = crypto.randomUUID();
 		await this.#run(saveUndoQuery(undoId, { action, entries: plan.entries }));
 		const result = await applyOps(this.sql, plan.ops);

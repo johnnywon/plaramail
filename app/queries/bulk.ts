@@ -3,9 +3,9 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { type InfiniteData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type BulkAction, applyAction } from "~/lib/bulk-optimistic";
+import { type BulkAction, type BulkOutcome, applyAction, sendBulk } from "~/lib/bulk-optimistic";
 import type { MailFilter } from "~/lib/mail-filter";
-import api, { type BulkTarget, type MailPage } from "~/services/api";
+import api, { type BulkJobStarted, type BulkResult, type BulkTarget, type MailPage } from "~/services/api";
 import { mailListKey } from "./mail";
 
 export interface BulkVariables {
@@ -26,7 +26,10 @@ export function useBulkAction(filter: MailFilter) {
 		mutationKey: ["bulk"],
 		// The caller shows a toast for a changed count.
 		meta: { handledStatuses: [409] },
-		mutationFn: ({ target, action }: BulkVariables) => api.bulk(target, action),
+		// Selected conversations go in batches the server accepts; a filter target is one request.
+		mutationFn: ({ target, action }: BulkVariables): Promise<BulkOutcome | BulkResult | BulkJobStarted> => ("threadKeys" in target
+			? sendBulk((t, a) => api.bulk(t, a) as Promise<BulkResult>, target, action)
+			: api.bulk(target, action)),
 		onMutate: async ({ action, patchKeys }) => {
 			await queryClient.cancelQueries({ queryKey: key });
 			const previous = queryClient.getQueryData<InfiniteData<MailPage>>(key);
@@ -58,7 +61,11 @@ export function useBulkAction(filter: MailFilter) {
 export function useUndoBulk() {
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: (undoId: string) => api.undoBulk(undoId),
+		mutationFn: async (undoIds: string | string[]) => {
+			let affected = 0;
+			for (const id of [undoIds].flat().reverse()) affected += (await api.undoBulk(id)).affected;
+			return { affected };
+		},
 		onSettled: () => {
 			queryClient.invalidateQueries({ queryKey: ["mail"] });
 			queryClient.invalidateQueries({ queryKey: ["mail-facets"] });

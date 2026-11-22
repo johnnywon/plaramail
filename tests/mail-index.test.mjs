@@ -474,3 +474,18 @@ test("rows carry the recipient, so Sent can say who mail went to (#34)", () => {
 	const [sent] = q(exec, { view: "sent" }).conversations;
 	assert.equal(sent.recipient, "bob@example.org, cy@example.net");
 });
+
+test("a move from a search with an in: scope takes messages from what the search shows", () => {
+	const { exec } = d1Db();
+	const k = seedThread(exec);
+	const scoped = (view, text) => bulk.bulkScope(filter({ view, q: text }), NOW);
+	// The Inbox view with in:receipts lists the receipts thread; Trash moves it.
+	assert.deepEqual(ids(run(exec, "planBulk", [k.f], "inbox", { type: "trash" }, scoped("inbox", "in:receipts"))), ["f1"]);
+	const plan = run(exec, "planBulk", [k.f], "inbox", { type: "archive" }, scoped("inbox", "in:receipts"));
+	assert.deepEqual(plan.ops, [{ mailboxId: "a@example.com", kind: "move", emailIds: ["f1"], to: "archive", from: "receipts" }]);
+	// in:anywhere moves what isn't already there, leaving Sent and Drafts as All mail does.
+	assert.deepEqual(ids(run(exec, "planBulk", [k.t], "inbox", { type: "trash" }, scoped("inbox", "in:anywhere"))), ["in1", "in2"]);
+	// Without in:, the view decides as before.
+	assert.equal(scoped("inbox", "invoice"), null);
+	assert.deepEqual(run(exec, "planBulk", [k.f], "inbox", { type: "trash" }, null).ops, []);
+});

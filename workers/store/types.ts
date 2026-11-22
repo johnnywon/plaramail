@@ -13,7 +13,7 @@ import type { MailFilter } from "../lib/mail-index-sql";
 
 /** What a bulk action applies to: picked conversations, or everything a filter matched when the list was shown. */
 export type BulkTarget =
-	| { threadKeys: string[]; view: string }
+	| { threadKeys: string[]; view: string; filter?: MailFilter }
 	| { filter: MailFilter; asOf: string; expectedCount: number };
 
 export interface BulkFailure {

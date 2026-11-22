@@ -9,13 +9,13 @@ import { useSearchParams } from "react-router";
 import { LABEL_COLORS } from "shared/label-colors";
 import type { UnsubscribeMethod } from "shared/unsubscribe";
 import { cleanOverrides, cycleView, describeChanges, KeyMatcher, type KeyLike, type MailShortcutId, ownerOf, resolveBindings, type ShortcutOverrides, stepOf } from "shared/shortcuts";
-import { type BulkAction, applyAction, readToggle, starToggle } from "~/lib/bulk-optimistic";
-import { type MailFilter, type OpenRef, filterToParams, openParam, parseOpen, VIEW_LABELS } from "~/lib/mail-filter";
+import { type BulkAction, type BulkOutcome, applyAction, readToggle, starToggle } from "~/lib/bulk-optimistic";
+import { type MailFilter, type OpenRef, apiParams, filterToParams, openParam, parseOpen, VIEW_LABELS } from "~/lib/mail-filter";
 import * as sel from "~/lib/selection";
 import { useBulkAction, useUndoBulk } from "~/queries/bulk";
 import { useCreateLabel, useLabels } from "~/queries/labels";
 import { useMailFacets, useMailList, useViewCounts } from "~/queries/mail";
-import api, { ApiError, type BulkResult, type Conversation, type Label, type SavedSearch } from "~/services/api";
+import api, { ApiError, type Conversation, type Label, type SavedSearch } from "~/services/api";
 import type { Email } from "~/types";
 import { AgentPanel, AgentRail, useDraftWithAgent } from "./Agent";
 import { DemoContext } from "~/lib/demo";
@@ -381,7 +381,7 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 		return openRow ? [openRow] : [];
 	};
 
-	const undoAction = (undoId: string) => {
+	const undoAction = (undoId: string | string[]) => {
 		setToast(null);
 		undo.mutate(undoId, {
 			onSuccess: () => showToast({ text: "Undone" }),
@@ -395,12 +395,13 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 		const removed = new Set(list.filter((r) => !applyAction(r, action, effective)).map((r) => r.thread_key));
 		const [text, icon] = actionText(action, list.length, labelName);
 		bulk.mutate(
-			{ target: { threadKeys: list.map((r) => r.thread_key), view: effective.view }, action, patchKeys: list.map((r) => r.thread_key) },
+			// The list's filter goes along: a search's in: scope decides what a move takes (mail-bulk-sql.ts).
+			{ target: { threadKeys: list.map((r) => r.thread_key), view: effective.view, filter: apiParams(effective).toString() }, action, patchKeys: list.map((r) => r.thread_key) },
 			{
 				onSuccess: (result) => {
-					const done = result as BulkResult;
+					const done = result as BulkOutcome;
 					const failed = done.failed?.length ? ` ${done.failed.length} address${done.failed.length === 1 ? "" : "es"} failed.` : "";
-					showToast({ text: text + failed, icon, onUndo: done.undoId ? () => undoAction(done.undoId) : undefined });
+					showToast({ text: text + failed, icon, onUndo: done.undoIds?.length ? () => undoAction(done.undoIds) : undefined });
 				},
 				onError: (e) => {
 					const msg = e instanceof ApiError && e.status === 409 ? "The list changed. Try again." : `Could not update mail. ${(e as Error).message}`;
