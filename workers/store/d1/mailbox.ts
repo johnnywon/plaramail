@@ -110,7 +110,41 @@ export class D1Mailbox {
 		const email = { ...toEmailRow(row, await this.#body(row)), attachments };
 		if (email.folder_id !== Folders.DRAFT) return email;
 		const notes = await this.getDraftNotes(id);
-		return notes ? { ...email, draft_notes: notes } : email;
+		return this.#withForward(notes ? { ...email, draft_notes: notes } : email);
+	}
+
+	// ── Forward drafts ─────────────────────────────────────────────
+
+	/** The original's attachments a saved forward carries, or null when the draft is not a forward. */
+	async getDraftForward(emailId: string): Promise<string[] | null> {
+		const row = await this.sql.first(
+			`SELECT f.attachment_ids FROM draft_forwards f JOIN messages m ON m.email_id = f.email_id WHERE m.mailbox_id = ? AND f.email_id = ?`,
+			this.#id, emailId,
+		);
+		if (!row) return null;
+		try {
+			const ids = JSON.parse(String(row.attachment_ids ?? "[]"));
+			return Array.isArray(ids) ? ids.filter((v): v is string => typeof v === "string") : [];
+		} catch {
+			return [];
+		}
+	}
+
+	/** Mark a draft as a forward of its in_reply_to, carrying these attachments of the original. */
+	async setDraftForward(emailId: string, attachmentIds: string[]): Promise<void> {
+		await this.sql.run(
+			`INSERT OR REPLACE INTO draft_forwards (email_id, attachment_ids) SELECT email_id, ? FROM messages WHERE mailbox_id = ? AND email_id = ?`,
+			JSON.stringify(attachmentIds), this.#id, emailId,
+		);
+	}
+
+	/** A forward draft with `forward`: the original's attachments it carries, in the saved order. */
+	async #withForward<T extends { id: string; in_reply_to: string | null }>(draft: T): Promise<T | (T & { forward: { attachments: AttachmentRow[] } })> {
+		const ids = await this.getDraftForward(draft.id);
+		if (!ids) return draft;
+		const original = draft.in_reply_to ? (await this.#attachments([draft.in_reply_to])).get(draft.in_reply_to) ?? [] : [];
+		const attachments = ids.flatMap((id) => original.filter((a) => a.id === id));
+		return { ...draft, forward: { attachments } };
 	}
 
 	// ── Draft notes ────────────────────────────────────────────────
@@ -167,7 +201,8 @@ export class D1Mailbox {
 		return Promise.all(rows.map(async (row) => {
 			const email = { ...toEmailRow(row, await this.#body(row)), attachments: attachments.get(String(row.id)) ?? [] };
 			const note = notes.get(String(row.id));
-			return note ? { ...email, draft_notes: note } : email;
+			const draft = note ? { ...email, draft_notes: note } : email;
+			return draft.folder_id === Folders.DRAFT ? this.#withForward(draft) : draft;
 		}));
 	}
 
@@ -510,6 +545,8 @@ export class D1Mailbox {
 			in_reply_to: originalId || null, email_references: null,
 			thread_id: threadId || originalId || id,
 		}, []);
+		// The draft opens as a forward if the schedule is cancelled or edited.
+		if (mode === "forward" && originalId) await this.setDraftForward(id, email.forward_attachments ?? []);
 		const payload: ScheduledPayload = { mode, original_id: originalId, email };
 		await this.sql.run(
 			`INSERT OR REPLACE INTO scheduled_sends (email_id, mailbox_id, send_at, payload, attempts, error) VALUES (?, ?, ?, ?, 0, NULL)`,

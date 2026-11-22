@@ -45,6 +45,8 @@ export interface Email {
 	attachments?: Attachment[];
 	/** Drafts an agent made: how it made them. */
 	draft_notes?: DraftNotes;
+	/** A saved forward draft: the original's attachments it carries. */
+	forward?: { attachments: Attachment[] };
 	snippet?: string | null;
 	// Thread aggregate fields (only present in threaded list view)
 	thread_count?: number;

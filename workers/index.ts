@@ -77,6 +77,10 @@ const DraftBody = z.object({
 	in_reply_to: HeaderValueSchema.optional(),
 	thread_id: HeaderValueSchema.optional(),
 	draft_id: z.string().optional(),
+	/** "forward": the draft forwards in_reply_to. Anything else saves a reply or new mail, as before. */
+	mode: z.enum(["new", "reply", "reply-all", "forward"]).optional(),
+	/** The original's attachments a forward carries. */
+	forward_attachments: z.array(z.string().min(1).max(100)).max(50).optional(),
 });
 
 const BulkBody = z.object({
@@ -652,7 +656,7 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 	const mailboxId = c.req.param("mailboxId")!;
 	const parsed = DraftBody.safeParse(await c.req.json().catch(() => null));
 	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" }, 400);
-	const { to, cc, bcc, subject, body, in_reply_to, thread_id, draft_id } = parsed.data;
+	const { to, cc, bcc, subject, body, in_reply_to, thread_id, draft_id, mode, forward_attachments } = parsed.data;
 	const stub = c.var.mailbox;
 	// An agent draft keeps its notes when it is edited and saved.
 	const notes = draft_id ? await stub.getDraftNotes(draft_id) : null;
@@ -669,6 +673,7 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 		thread_id: thread_id || in_reply_to || messageId,
 	}, []);
 	if (notes) await stub.setDraftNotes(messageId, notes);
+	if (mode === "forward" && in_reply_to) await stub.setDraftForward(messageId, forward_attachments ?? []);
 	return c.json({ id: messageId, status: "draft", subject: subject || "", recipient: to || "", date: now }, 201);
 });
 
