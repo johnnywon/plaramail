@@ -122,7 +122,7 @@ test("References keeps every Message-ID, with or without space between them", ()
 });
 
 test("inbound mail whose References has no space between ids joins the referenced thread", async () => {
-	const bundle = await build({ entryPoints: ["workers/index.ts"], bundle: true, platform: "node", format: "esm", write: false });
+	const bundle = await build({ entryPoints: ["workers/index.ts"], bundle: true, platform: "node", banner: NODE_REQUIRE, format: "esm", write: false });
 	const { receiveEmail } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 	const d1 = await openD1();
 	await d1.addMailboxes("jane@example.com");
