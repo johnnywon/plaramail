@@ -78,17 +78,40 @@ export function resolveDate(value: DateValue, now: number, tzOffset: number): st
 		case "instant": return value.iso;
 		case "day": return new Date(Date.UTC(value.year, value.month - 1, value.day) + tzOffset * 60_000).toISOString();
 		case "ago": {
-			const d = new Date(now);
 			if (value.unit === "d") return new Date(now - value.amount * DAY_MS).toISOString();
 			if (value.unit === "w") return new Date(now - value.amount * 7 * DAY_MS).toISOString();
-			if (value.unit === "m") d.setUTCMonth(d.getUTCMonth() - value.amount);
-			else d.setUTCFullYear(d.getUTCFullYear() - value.amount);
+			// The same day in the target month, or its last day: 1m before March 31 is February 28.
+			const d = new Date(now);
+			const months = d.getUTCFullYear() * 12 + d.getUTCMonth() - (value.unit === "m" ? value.amount : value.amount * 12);
+			const year = Math.floor(months / 12);
+			const month = months - year * 12;
+			const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+			d.setUTCFullYear(year, month, Math.min(d.getUTCDate(), lastDay));
 			return d.toISOString();
 		}
 	}
 }
 
-type Compiled = { fts: string } | { sql: Clause } | { error: string } | null;
+/**
+ * A word-index phrase also matches addresses that end the same way
+ * (`ann@example.org` is the words of `jo.ann@example.org`), so a full address
+ * carries the exact check too.
+ */
+type Compiled = { fts: string; exact?: Clause } | { sql: Clause } | { error: string } | null;
+
+const FULL_ADDRESS = /^[^@\s]+@[^@\s]+$/;
+
+/** `from:` or `to:` with a full address: that address and no other. */
+function exactAddress(op: "from" | "to", value: string): Clause | null {
+	const v = value.trim().toLowerCase();
+	if (!FULL_ADDRESS.test(v)) return null;
+	if (op === "from") return { sql: `m.sender_addr = ?`, params: [v] };
+	// `recipients` is To, Cc and Bcc joined with ", ", lowercased.
+	return {
+		sql: `instr(' ' || replace(replace(replace(replace(m.recipients, ',', ' '), ';', ' '), '<', ' '), '>', ' ') || ' ', ?) > 0`,
+		params: [` ${v} `],
+	};
+}
 
 function compileLeaf(leaf: Leaf, now: number, tzOffset: number): Compiled {
 	const fts = (expr: string | null): Compiled => (expr ? { fts: expr } : null);
@@ -102,8 +125,14 @@ function compileLeaf(leaf: Leaf, now: number, tzOffset: number): Compiled {
 	const { value } = leaf;
 	switch (leaf.op) {
 		case "subject": return fts(textLeaf(value, leaf.phrase, "subject : "));
-		case "from": return fts(personLeaf(value, leaf.phrase, "{sender_name sender_addr}", "sender_addr"));
-		case "to": return fts(personLeaf(value, leaf.phrase, "recipients", "recipients"));
+		case "from":
+		case "to": {
+			const expr = leaf.op === "from"
+				? personLeaf(value, leaf.phrase, "{sender_name sender_addr}", "sender_addr")
+				: personLeaf(value, leaf.phrase, "recipients", "recipients");
+			const exact = leaf.phrase ? null : exactAddress(leaf.op, value);
+			return expr && exact ? { fts: expr, exact } : fts(expr);
+		}
 		case "filename": return fts(textLeaf(value, leaf.phrase, "attachment_names : "));
 		case "cc": return sql(`instr(lower(COALESCE(m.cc, '')), ?) > 0`, value.replace(/^@/, ""));
 		case "list": return sql(`instr(lower(COALESCE(m.list_id, '')), ?) > 0`, value);
@@ -187,6 +216,19 @@ export function compileSearch(query: Pick<SearchQuery, "terms" | "errors">, opti
 		if (failed) {
 			errors.push(failed.error);
 			continue;
+		}
+		const exacts = parts.flatMap((p) => (p && "exact" in p && p.exact ? [p.exact] : []));
+		if (exacts.length > 0 && exacts.length === parts.length) {
+			// Only full addresses: the exact check decides. A positive term keeps
+			// the phrases too, so the word index narrows the rows first.
+			const joined: Clause = exacts.length === 1
+				? exacts[0]
+				: { sql: `(${exacts.map((c) => c.sql).join(" OR ")})`, params: exacts.flatMap((c) => c.params) };
+			if (term.negate) {
+				clauses.push({ sql: `NOT (${joined.sql})`, params: joined.params });
+				continue;
+			}
+			clauses.push(joined);
 		}
 		const ftsParts = parts.flatMap((p) => (p && "fts" in p ? [p.fts] : []));
 		const sqlParts = parts.flatMap((p) => (p && "sql" in p ? [p.sql] : []));
