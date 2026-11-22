@@ -41,6 +41,8 @@ export async function sendDueScheduled(env: Env, sql: Sql, now = Date.now()) {
 		const mailboxId = String(row.mailbox_id);
 		const mailbox = new D1Mailbox(sql, env.BUCKET, mailboxId);
 		let error: string | null;
+		// A refusal by the hourly or daily limit is not a failed attempt: it waits for the limit.
+		let limited = false;
 		// An attempt left in sending may have gone out; retrying can't send it again, so stop.
 		let stuck = false;
 		try {
@@ -52,11 +54,21 @@ export async function sendDueScheduled(env: Env, sql: Sql, now = Date.now()) {
 			const payload = JSON.parse(String(row.payload)) as ScheduledPayload;
 			const result = await sendMail(env, mailboxId, mailbox, payload.email, sendModeOf(payload), { idempotencyKey: `draft:${emailId}` });
 			error = result.ok ? null : result.error;
+			limited = !result.ok && result.status === 429;
 			stuck = !result.ok && result.attempt?.state === "sending";
 		} catch (e) {
 			error = (e as Error).message || "Delivery failed";
 			const key = await sql.first(`SELECT state FROM send_keys WHERE mailbox_id = ? AND key = ?`, mailboxId, `draft:${emailId}`).catch(() => null);
 			stuck = key?.state === "sending";
+		}
+		if (error && limited) {
+			// Try again in 15 minutes without counting an attempt, until the limit frees up.
+			await sql.run(
+				`UPDATE scheduled_sends SET error = ?, claimed_at = NULL, send_at = ? WHERE email_id = ?`,
+				error.slice(0, 1000), new Date(now + SCHEDULE_RETRY_MS).toISOString(), emailId,
+			);
+			failed.push(emailId);
+			continue;
 		}
 		if (error) {
 			// Count the attempt. With attempts left it retries in 15 minutes; after the last, or when stuck, it keeps its error.
