@@ -68,6 +68,19 @@ test("scheduling validates the sender, the mode and the payload size", async () 
 	assert.deepEqual(await route.scheduled(), []);
 });
 
+test("scheduling refuses more than 50 recipients, as sending does", async () => {
+	const route = await routeEnv();
+	const people = (n, at) => Array.from({ length: n }, (_, i) => `p${i}@${at}`);
+	const tooMany = await schedule({
+		sendAt: inMinutes(10), mode: "new", email: email({ to: people(40, "example.org"), cc: people(11, "example.net") }),
+	}, route);
+	assert.equal(tooMany.status, 400);
+	assert.match(tooMany.json.error, /Too many recipients: max 50 per message/);
+	assert.deepEqual(await route.scheduled(), []);
+	const fifty = await schedule({ sendAt: inMinutes(10), mode: "new", email: email({ to: people(50, "example.org") }) }, route);
+	assert.equal(fifty.status, 201);
+});
+
 test("a valid schedule reaches the mailbox and answers 201", async () => {
 	const route = await routeEnv();
 	const sendAt = inMinutes(60);

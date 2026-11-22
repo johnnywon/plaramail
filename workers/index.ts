@@ -18,6 +18,7 @@ import {
 	stripHtmlToText,
 } from "./lib/email-helpers";
 import { checkSendAt, ScheduleBody, SCHEDULE_MAX_PAYLOAD_BYTES } from "./lib/scheduled-send";
+import { countRecipients, recipientLimitError } from "./lib/send-budget";
 import { handleReplyEmail, handleForwardEmail, handleSendEmail } from "./routes/reply-forward";
 import { Folders } from "../shared/folders";
 import type { Env } from "./types";
@@ -708,6 +709,9 @@ app.post("/api/v1/mailboxes/:mailboxId/scheduled", async (c: AppContext) => {
 	const { sendAt, draft_id, mode, original_id, email } = parsed.data;
 	const sendAtError = checkSendAt(sendAt);
 	if (sendAtError) return c.json({ error: sendAtError }, 400);
+	// The cron sends as a person, so the person's cap applies.
+	const tooMany = recipientLimitError("person", countRecipients(email.to, email.cc, email.bcc));
+	if (tooMany) return c.json({ error: tooMany }, 400);
 	try {
 		validateSender(email.to, email.from, mailboxId);
 	} catch (e) {
