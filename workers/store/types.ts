@@ -52,6 +52,8 @@ export type MailboxStore = Pick<
 	// Sending
 	| "getDraftNotes"
 	| "setDraftNotes"
+	| "getDraftForward"
+	| "setDraftForward"
 	| "takeSendBudget"
 	| "refundSendBudget"
 	| "claimSendKey"

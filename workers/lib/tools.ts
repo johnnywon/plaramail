@@ -312,6 +312,7 @@ export async function toolUpdateDraft(
 	}
 
 	const notes = await stub.getDraftNotes(params.draftId);
+	const forward = await stub.getDraftForward(params.draftId);
 	const attachments = await stub.deleteEmail(params.draftId);
 	if (attachments) await deleteAttachmentFiles(env.BUCKET, params.draftId, attachments);
 	await stub.createEmail(
@@ -330,6 +331,7 @@ export async function toolUpdateDraft(
 		[],
 	);
 	if (notes) await stub.setDraftNotes(newDraftId, notes);
+	if (forward) await stub.setDraftForward(newDraftId, forward);
 
 	return {
 		status: "draft_updated",
@@ -739,6 +741,9 @@ export async function toolSendDraft(env: Env, mailboxId: string, draftId: string
 	const bcc = splitList(draft.bcc);
 	const html = draft.body || "";
 	const original = draft.in_reply_to ? await stub.getEmail(draft.in_reply_to) : null;
+	// A saved forward goes out as a forward with the original's attachments it kept.
+	const forward = original ? await stub.getDraftForward(draftId) : null;
+	const mode = !original ? { kind: "new" as const } : forward ? { kind: "forward" as const, originalId: original.id } : { kind: "reply" as const, originalId: original.id };
 	const result = await sendMail(env, mailboxId, stub, {
 		to,
 		...(cc.length ? { cc } : {}),
@@ -747,7 +752,8 @@ export async function toolSendDraft(env: Env, mailboxId: string, draftId: string
 		subject: draft.subject || "(no subject)",
 		html,
 		text: htmlToTextAlternative(html),
-	}, original ? { kind: "reply", originalId: original.id } : { kind: "new" }, { idempotencyKey: `draft:${draftId}`, actor });
+		...(forward?.length ? { forward_attachments: forward } : {}),
+	}, mode, { idempotencyKey: `draft:${draftId}`, actor });
 	if (!result.ok) return sendFailure(result);
 	const attachments = await stub.deleteEmail(draftId);
 	if (attachments) await deleteAttachmentFiles(env.BUCKET, draftId, attachments);

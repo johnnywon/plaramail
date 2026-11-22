@@ -8,6 +8,7 @@ import { useCallback, useMemo } from "react";
 import { extractReplyQuote, getReplyAddresses } from "~/lib/reply";
 import { escapeHtml, getSignatureBlock, htmlToPlainText, splitEmailList } from "~/lib/utils";
 import { messageBytes, messageSizeError } from "../../../shared/message-size";
+import { draftFiles, draftMode, draftSaveFields } from "./draft-mode";
 import { queryKeys } from "~/queries/keys";
 import api from "~/services/api";
 import type { DraftNotes } from "shared/draft-notes";
@@ -191,7 +192,7 @@ export function composeFromDraft(draft: Email, mailboxId: string): ComposeState 
 	const cc = recipientsFromText(draft.cc || "");
 	const bcc = recipientsFromText(draft.bcc || "");
 	return {
-		mode: draft.in_reply_to ? "reply" : "new",
+		mode: draftMode(draft),
 		from: mailboxId,
 		to,
 		cc,
@@ -200,7 +201,7 @@ export function composeFromDraft(draft: Email, mailboxId: string): ComposeState 
 		showBcc: bcc.length > 0,
 		subject: draft.subject || "",
 		html: draft.body || "",
-		files: [],
+		files: draftFiles(draft),
 		draftId: draft.id,
 		originalId: draft.in_reply_to || undefined,
 		originalMailbox: mailboxId,
@@ -339,6 +340,7 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 				body: `${state.html}${state.quoteHtml ?? ""}`,
 				in_reply_to: state.originalId,
 				draft_id: state.draftId,
+				...draftSaveFields(state),
 			});
 			refresh(state.from);
 			return (result as { id?: string; draft_id?: string }).id ?? (result as { draft_id?: string }).draft_id ?? "";
