@@ -206,6 +206,21 @@ test("a bounce for mail this mailbox did not send starts its own conversation", 
 	assert.equal(bounce.in_reply_to, null);
 });
 
+test("an encoded-word subject in the returned headers is decoded", async () => {
+	const bounce = parseBounce(await parseMail(dsn({ subject: "=?UTF-8?Q?Caf=C3=A9_plan?=" })));
+	assert.equal(bounce.originalSubject, "Café plan");
+	const folded = parseBounce(await parseMail(dsn({ subject: "=?UTF-8?B?Q2Fmw6k=?=\r\n =?UTF-8?Q?_plan?=" })));
+	assert.equal(folded.originalSubject, "Café plan");
+});
+
+test("a bounce with an encoded-word subject matches the Sent message by subject", async () => {
+	const { sent, deliver, row } = await mailbox();
+	await sent("sent-4", { subject: "Café plan" });
+	const bounce = await deliver(dsn({ messageId: "<0100def.provider@email.example.net>", subject: "=?UTF-8?Q?Caf=C3=A9_plan?=" }));
+	assert.equal(bounce.thread_id, (await row("sent-4")).thread_id);
+	assert.equal(bounce.in_reply_to, "sent-4@example.com");
+});
+
 // ── DMARC docs ────────────────────────────────────────────────────
 
 test("docs/setup.md explains DMARC with an example.com record that starts at p=none", () => {
