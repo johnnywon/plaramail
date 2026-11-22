@@ -102,3 +102,42 @@ test("inbound mail with a References header for unknown mail starts its own thre
 	assert.equal(saved.thread_id, saved.id);
 	assert.notEqual(saved.thread_id, "guess@example.com");
 });
+
+test("every reply prefix the subject fallback accepts is stripped before comparing", () => {
+	for (const s of ["Re: Plan", "Antw: Plan", "RE[2]: Plan", "Aw[3]: Re: Plan", "SV: Plan"]) {
+		assert.equal(t.normalizeThreadSubject(s), "plan", s);
+	}
+	const row = { thread_id: "t1", subject: "Plan", sender: "ann@example.net", recipient: A, folder_id: "inbox", date: hoursAgo(1) };
+	assert.equal(t.pickSubjectThread([row], "Antw: Plan", "ann@example.net", NOW), "t1");
+	assert.equal(t.pickSubjectThread([row], "RE[2]: Plan", "ann@example.net", NOW), "t1");
+});
+
+test("References keeps every Message-ID, with or without space between them", () => {
+	assert.deepEqual(t.parseReferences("<a@x> <b@x>"), ["a@x", "b@x"]);
+	assert.deepEqual(t.parseReferences("<a@x><b@x>"), ["a@x", "b@x"]);
+	assert.deepEqual(t.parseReferences("<a@x>,\r\n <b@x>"), ["a@x", "b@x"]);
+	assert.deepEqual(t.parseReferences("a@x b@x"), ["a@x", "b@x"], "ids without angle brackets");
+	assert.deepEqual(t.parseReferences(""), []);
+});
+
+test("inbound mail whose References has no space between ids joins the referenced thread", async () => {
+	const bundle = await build({ entryPoints: ["workers/index.ts"], bundle: true, platform: "node", format: "esm", write: false });
+	const { receiveEmail } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+	const d1 = await openD1();
+	await d1.addMailboxes("jane@example.com");
+	await new D1Mailbox(d1.sql, {}, "jane@example.com").createEmail("sent", {
+		id: "s1", subject: "Plan", sender: "jane@example.com", recipient: "bob@example.net", date: hoursAgo(1), body: "", thread_id: "t-sent", message_id: "orig@example.com",
+	}, []);
+	const raw = new TextEncoder().encode(
+		"From: bob@example.net\r\nTo: jane@example.com\r\nSubject: Update\r\nMessage-ID: <r1@example.net>\r\n"
+		+ "References: <other@example.net><orig@example.com>\r\n\r\nHello",
+	);
+	await receiveEmail(
+		{ to: "jane@example.com", rawSize: raw.length, raw: new ReadableStream({ start(c) { c.enqueue(raw); c.close(); } }), setReject: () => {} },
+		{ EMAIL_ADDRESSES: ["jane@example.com"], BUCKET: { head: async () => ({}) }, DB: d1.DB },
+		{ waitUntil: () => {} },
+	);
+	const saved = await d1.sql.first(`SELECT thread_id, email_references FROM messages WHERE message_id = 'r1@example.net'`);
+	assert.equal(saved.thread_id, "t-sent");
+	assert.deepEqual(JSON.parse(saved.email_references), ["other@example.net", "orig@example.com"]);
+});
