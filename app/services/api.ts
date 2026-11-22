@@ -345,7 +345,7 @@ export interface ScheduleRequest {
 }
 
 export type BulkTarget =
-	| { threadKeys: string[]; view: string }
+	| { threadKeys: string[]; view: string; filter?: string }
 	| { filter: string; asOf: string; expectedCount: number };
 
 export interface BulkResult {

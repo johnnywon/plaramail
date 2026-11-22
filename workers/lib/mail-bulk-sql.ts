@@ -9,7 +9,7 @@
  */
 
 import { DEFAULT_LABEL_COLOR, isLabelColor } from "../../shared/label-colors";
-import { type MailFilter, type Query, filterWhere, sqlStep } from "./mail-index-sql";
+import { type MailFilter, type Query, filterWhere, searchOf, sqlStep } from "./mail-index-sql";
 
 export const MAX_OP_IDS = 100;
 export const UNDO_TTL_MS = 60 * 60 * 1000;
@@ -112,6 +112,7 @@ interface PlanRow {
 	unread: boolean;
 	starred: boolean;
 	has_label: boolean;
+	in_scope: boolean;
 }
 
 function groupOps<T extends BulkOp>(make: (mailboxId: string, ids: string[], key: string) => T, rows: { mailbox_id: string; email_id: string; key: string }[]): T[] {
@@ -131,17 +132,31 @@ function groupOps<T extends BulkOp>(make: (mailboxId: string, ids: string[], key
 	return ops;
 }
 
-/** Ops that apply an action to these threads, and the undo entries that reverse them. */
-export function* planBulkQuery(threadKeys: string[], view: string, action: BulkAction): Query<{ ops: BulkOp[]; entries: UndoEntry[] }> {
+/** A search's in: scope, which takes the place of the view in the list and in a move. */
+export type BulkScope = { sql: string; params: unknown[] };
+
+/** The in: scope of a list's search, or null when the view decides. */
+export function bulkScope(filter: MailFilter, now = Date.now()): BulkScope | null {
+	return searchOf(filter, now).scope;
+}
+
+/**
+ * Ops that apply an action to these threads, and the undo entries that reverse them.
+ * With a scope, a move takes the messages the search shows instead of the view's
+ * state; Sent and Drafts stay, as in All mail.
+ */
+export function* planBulkQuery(threadKeys: string[], view: string, action: BulkAction, scope: BulkScope | null = null): Query<{ ops: BulkOp[]; entries: UndoEntry[] }> {
 	if (threadKeys.length === 0) return { ops: [], entries: [] };
 	const labelId = action.type === "label_add" || action.type === "label_remove" ? action.labelId : "";
 	const rows: PlanRow[] = (yield sqlStep(
 		`SELECT m.id, m.mailbox_id, m.email_id, m.thread_key, m.state, m.date, m.unread, m.starred,
-			EXISTS (SELECT 1 FROM message_labels l WHERE l.message = m.id AND l.label_id = ?) AS has_label
+			EXISTS (SELECT 1 FROM message_labels l WHERE l.message = m.id AND l.label_id = ?) AS has_label,
+			${scope ? `(${scope.sql})` : "1"} AS in_scope
 		FROM messages m
 		WHERE m.deleted = 0 AND m.thread_key IN (SELECT value FROM json_each(?))
 		ORDER BY m.thread_key, m.date DESC, m.id DESC`,
 		labelId,
+		...(scope?.params ?? []),
 		JSON.stringify([...new Set(threadKeys)]),
 	)).map((r) => ({
 		id: Number(r.id),
@@ -153,17 +168,20 @@ export function* planBulkQuery(threadKeys: string[], view: string, action: BulkA
 		unread: !!r.unread,
 		starred: !!r.starred,
 		has_label: !!r.has_label,
+		in_scope: !!r.in_scope,
 	}));
 
 	const target = moveTarget(action);
 	if (target !== null) {
 		const from = sourceState(view);
-		if (from === target) return { ops: [], entries: [] };
-		const chosen = rows.filter((r) => r.state === from);
+		if (!scope && from === target) return { ops: [], entries: [] };
+		const chosen = scope
+			? rows.filter((r) => r.in_scope && r.state !== target && r.state !== "sent" && r.state !== "draft")
+			: rows.filter((r) => r.state === from);
 		const entries = chosen.map((r) => ({ mailbox_id: r.mailbox_id, email_id: r.email_id, state: r.state, to: target }));
 		const ops = groupOps(
-			(mailboxId, emailIds) => ({ mailboxId, kind: "move" as const, emailIds, to: target, from: stateToFolder(from) }),
-			chosen.map((r) => ({ ...r, key: "" })),
+			(mailboxId, emailIds, state) => ({ mailboxId, kind: "move" as const, emailIds, to: target, from: stateToFolder(state) }),
+			chosen.map((r) => ({ ...r, key: r.state })),
 		);
 		return { ops, entries };
 	}
