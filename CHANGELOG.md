@@ -2,6 +2,12 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## Unreleased
+
+### Changed
+
+- Mail to `name+tag@example.com` goes to the `name@example.com` mailbox when only the base address is in `EMAIL_ADDRESSES`. The To header keeps the tag. An address configured with a plus still gets its own mailbox. Email Routing must also send the tagged address to the Worker: turn on subaddressing for the zone.
+
 ## 0.9.6
 
 ### Added
