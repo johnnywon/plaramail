@@ -321,7 +321,7 @@ export function* listSavedSearchesQuery(counts?: { tzOffset: number }, now = Dat
 			view: "all", address: [], from: [], label: [], is: [], has: [], subject: [], q: saved.query,
 			sort: "date", dir: "desc", tzOffset: counts.tzOffset,
 		};
-		saved.count = yield* countOf(filter, now);
+		saved.count = yield* countOf(yield* withSubstrings(filter), now);
 	}
 	return list;
 }
