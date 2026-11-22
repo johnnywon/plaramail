@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./helpers/node-require.mjs";
 
 const bundle = await build({
-	entryPoints: ["app/components/plain-text.ts"], bundle: true, platform: "node", format: "esm", write: false,
+	entryPoints: ["app/components/plain-text.ts"], bundle: true, platform: "node", banner: NODE_REQUIRE, format: "esm", write: false,
 });
 const tmp = new URL(`./plain-text.bundle.${process.pid}.mjs`, pathToFileURL(`${process.cwd()}/tests/`));
 const { writeFile, rm } = await import("node:fs/promises");

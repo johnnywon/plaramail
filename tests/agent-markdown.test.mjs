@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./helpers/node-require.mjs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 // Packages stay external so the module and this test share one React.
 const bundle = await build({
-	entryPoints: ["app/components/postal/agent-markdown.tsx"], bundle: true, platform: "node", format: "esm",
+	entryPoints: ["app/components/postal/agent-markdown.tsx"], bundle: true, platform: "node", banner: NODE_REQUIRE, format: "esm",
 	packages: "external", jsx: "automatic", write: false,
 });
 const tmp = new URL(`./agent-markdown.bundle.${process.pid}.mjs`, pathToFileURL(`${process.cwd()}/tests/`));

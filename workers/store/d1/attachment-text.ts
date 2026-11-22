@@ -160,6 +160,7 @@ export async function extractAttachmentText(sql: Sql, sources: TextSources, now 
 export function workersAiMarkdown(ai: Ai): TextSources["toMarkdown"] {
 	return async (name, blob) => {
 		const out = await ai.toMarkdown({ name, blob });
-		return out.format === "markdown" ? { text: out.data } : { error: out.error };
+		if (out.format === "error") return { error: out.error };
+		return out.format === "markdown" ? { text: out.data } : { error: `Unexpected ${out.format} output` };
 	};
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./helpers/node-require.mjs";
 import { Miniflare } from "miniflare";
 import { statements } from "./helpers/schema.mjs";
 import { D1_SCHEMA } from "./helpers/d1-schema.mjs";
@@ -102,7 +103,7 @@ test("the MCP server and the agent socket are off", () => {
 });
 
 const api = await asModule(await build({
-	entryPoints: ["workers/index.ts"], bundle: true, platform: "node", format: "esm", write: false, define: DEMO_DEFINE,
+	entryPoints: ["workers/index.ts"], bundle: true, platform: "node", banner: NODE_REQUIRE, format: "esm", write: false, define: DEMO_DEFINE,
 }));
 const ENV = { DOMAINS: "example.com", EMAIL_ADDRESSES: ["hello@example.com"], DEV_SEED: "off", AUTO_DRAFT_ENABLED: "true" };
 const WRITE_HEADERS = { "content-type": "application/json", "sec-fetch-site": "same-origin" };
@@ -151,7 +152,7 @@ async function appWith(define) {
 		"./agent": "export class EmailAgent {}",
 	};
 	const bundle = await build({
-		entryPoints: ["workers/app.ts"], bundle: true, platform: "node", format: "esm", write: false,
+		entryPoints: ["workers/app.ts"], bundle: true, platform: "node", banner: NODE_REQUIRE, format: "esm", write: false,
 		define: { "import.meta.env": JSON.stringify({ DEV: false, MODE: "production" }), ...define },
 		plugins: [{
 			name: "app-test-stubs",

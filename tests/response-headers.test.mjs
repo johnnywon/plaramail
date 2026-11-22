@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./helpers/node-require.mjs";
 import { openD1 } from "./helpers/d1.mjs";
 import { loadTs } from "./helpers/sqlite.mjs";
 
@@ -44,7 +45,7 @@ test("security headers skip WebSocket upgrades and rebuild immutable responses",
 const apiBundle = await build({
 	entryPoints: ["workers/index.ts"],
 	bundle: true,
-	platform: "node",
+	platform: "node", banner: NODE_REQUIRE,
 	format: "esm",
 	write: false,
 });
@@ -95,7 +96,7 @@ test("production bundles do not grant localhost CORS", async () => {
 const appBundle = await build({
 	entryPoints: ["workers/app.ts"],
 	bundle: true,
-	platform: "node",
+	platform: "node", banner: NODE_REQUIRE,
 	format: "esm",
 	write: false,
 	define: { "import.meta.env": JSON.stringify({ DEV: true, MODE: "test" }) },

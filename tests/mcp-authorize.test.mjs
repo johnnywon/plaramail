@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./helpers/node-require.mjs";
 
 // /authorize turns any error it doesn't know into the "Can't connect this app" page, never a bare 500 (#31).
 
 // The OAuth library imports cloudflare:workers, which only workerd has; its WorkerEntrypoint isn't used here.
 const bundle = await build({
-	entryPoints: ["workers/mcp/authorize.ts"], bundle: true, platform: "node", format: "esm", write: false,
+	entryPoints: ["workers/mcp/authorize.ts"], bundle: true, platform: "node", banner: NODE_REQUIRE, format: "esm", write: false,
 	plugins: [{ name: "workerd", setup(b) {
 		b.onResolve({ filter: /^cloudflare:workers$/ }, () => ({ path: "cloudflare:workers", namespace: "stub" }));
 		b.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: "export class WorkerEntrypoint {}", loader: "js" }));

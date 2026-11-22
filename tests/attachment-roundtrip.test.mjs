@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./helpers/node-require.mjs";
 import { openD1 } from "./helpers/d1.mjs";
 
 // #59: a text attachment gained a 0x0a on every trip. The send side hands the file's bytes to
@@ -11,7 +12,7 @@ import { openD1 } from "./helpers/d1.mjs";
 // receive path, byte for byte.
 
 const load = async (entry) => {
-	const out = await build({ entryPoints: [entry], bundle: true, platform: "node", format: "esm", write: false });
+	const out = await build({ entryPoints: [entry], bundle: true, platform: "node", banner: NODE_REQUIRE, format: "esm", write: false });
 	return import(`data:text/javascript;base64,${Buffer.from(out.outputFiles[0].text).toString("base64")}`);
 };
 const { parseMail } = await load("workers/lib/parse-mail.ts");
