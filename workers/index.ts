@@ -35,7 +35,7 @@ import { MAX_SEARCH_LENGTH } from "../shared/search-query";
 import { mailboxIds, mailStore, storageStatus, recordsSql } from "./store";
 import { MOVE_FOLDERS } from "./lib/mail-bulk-sql";
 import { automatedMailReason } from "./lib/message-meta";
-import { resolveThreadId } from "./lib/threading";
+import { parseReferences, resolveThreadId } from "./lib/threading";
 import { configuredAddresses } from "./lib/addresses";
 import { dryRunFolderImport, importDeps, runFolderImport } from "./lib/folder-import";
 import { startAutoDraft } from "./agent/queue";
@@ -919,7 +919,7 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 		return null;
 	});
 	const inReplyTo = bounced?.link?.messageId ?? (parsedEmail.inReplyTo ? extractMsgId(parsedEmail.inReplyTo) : null);
-	const emailReferences = parsedEmail.references ? parsedEmail.references.split(/\s+/).filter(Boolean).map(extractMsgId) : [];
+	const emailReferences = parsedEmail.references ? parseReferences(parsedEmail.references) : [];
 	// Join a thread only through mail this mailbox already holds (lib/threading.ts).
 	const threadId = bounced?.link?.threadId ?? await withAttachmentCleanup(() => resolveThreadId(stub, {
 		messageId, inReplyTo, references: emailReferences,

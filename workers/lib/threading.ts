@@ -15,13 +15,19 @@
  */
 
 /** Prefixes stripped before comparing subjects. */
-export const SUBJECT_PREFIX = /^(?:(?:re|fwd?|fw|aw|wg|r[eé]f|sv)\s*:\s*)+/i;
+export const SUBJECT_PREFIX = /^(?:(?:re|fwd?|fw|aw|wg|r[eé]f|sv|antw)\s*(?:\[\d+\])?\s*:\s*)+/i;
 /** Prefixes that mark a reply. Forwards start a new thread. */
 const REPLY_PREFIX = /^\s*(?:re|aw|sv|r[eé]f|antw)\s*(?:\[\d+\])?\s*:/i;
 /** How far back a subject match may reach. */
 export const SUBJECT_JOIN_WINDOW_MS = 2 * 86_400_000;
 /** Most Message-IDs looked up per message, nearest first. D1 binds at most 100 parameters. */
 export const MAX_REFERENCED_IDS = 50;
+
+/** The Message-IDs in a References header. RFC 5322 does not require space between them. */
+export function parseReferences(header: string): string[] {
+	const bracketed = [...header.matchAll(/<([^<>]+)>/g)].map((m) => m[1].trim()).filter(Boolean);
+	return bracketed.length > 0 ? bracketed : header.split(/[\s,]+/).filter(Boolean);
+}
 
 export function normalizeThreadSubject(subject: string): string {
 	return subject.replace(SUBJECT_PREFIX, "").trim().toLowerCase();
