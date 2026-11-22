@@ -211,7 +211,9 @@ async function notAllowed(env: Env, ref: { provider: string; id: string }, keys:
 }
 
 app.put("/api/v1/agent-model", async (c) => {
-	const body = AgentModelBody.parse(await c.req.json());
+	const parsed = AgentModelBody.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" }, 400);
+	const body = parsed.data;
 	const next = mergeAgentModelConfig(await readAgentModelConfig(c.env), body);
 	if ("error" in next) return c.json({ error: next.error }, 400);
 	if (body.selected && next.selected) {
@@ -227,7 +229,9 @@ const TestBody = z.object({ provider: z.enum(PROVIDERS), id: z.string().max(200)
 
 /** Send one short prompt to a model, with the given key or the saved one. */
 app.post("/api/v1/agent-model/test", async (c) => {
-	const body = TestBody.parse(await c.req.json());
+	const parsed = TestBody.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request body" }, 400);
+	const body = parsed.data;
 	const label = PROVIDER_INFO[body.provider].label;
 	if (!validModelId(body.provider, body.id.trim())) return c.json({ ok: false, error: `That isn't a ${label} model id.` }, 400);
 	const stored = await readAgentModelConfig(c.env);
