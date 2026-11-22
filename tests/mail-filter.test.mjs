@@ -4,6 +4,7 @@ import { loadTs } from "./helpers/sqlite.mjs";
 
 const f = await loadTs("app/lib/mail-filter.ts");
 const P = (s) => new URLSearchParams(s);
+const OWN = { addresses: ["billing@example.com", "ops@example.com"], domains: ["example.com", "example.net"] };
 
 test("a bare URL lands on unread Inbox; an explicit view does not", () => {
 	assert.deepEqual(f.parseFilter(P("")), { view: "inbox", chips: [{ kind: "is", value: "unread" }], sort: "date", dir: "desc" });
@@ -56,7 +57,7 @@ test("open param round trip", () => {
 });
 
 test("search text: operators become chips, in: sets the view, the rest is text", () => {
-	const parsed = f.parseSearchText(`from:ann@b.example.com to:billing subject:"q 3 report" subject:lunch in:archive is:Starred has:attachment before:2026-09-01 after:2026-08-01 label:x rest words`);
+	const parsed = f.parseSearchText(`from:ann@b.example.com to:billing subject:"q 3 report" subject:lunch in:archive is:Starred has:attachment before:2026-09-01 after:2026-08-01 label:x rest words`, [], OWN);
 	assert.equal(parsed.view, "archive");
 	assert.deepEqual(parsed.chips, [
 		{ kind: "from", value: "ann@b.example.com" }, { kind: "address", value: "billing" }, { kind: "subject", value: "lunch" },
@@ -68,6 +69,21 @@ test("search text: operators become chips, in: sets the view, the rest is text",
 	assert.equal(bad.text, "in:nowhere hello", "bad values are left out; a folder name stays for the server");
 	assert.deepEqual(bad.errors.map((e) => e.op), ["is", "before"]);
 	assert.equal(f.parseSearchText("email:foo@bar.example.com").text, "email:foo@bar.example.com");
+});
+
+test("to: is an address chip only for your own address, domain or local part", () => {
+	const chips = (s) => f.parseSearchText(s, [], OWN).chips;
+	const text = (s) => f.parseSearchText(s, [], OWN).text;
+	assert.deepEqual(chips("to:billing@example.com"), [{ kind: "address", value: "billing@example.com" }]);
+	assert.deepEqual(chips("to:Billing"), [{ kind: "address", value: "billing" }]);
+	assert.deepEqual(chips("to:example.com"), [{ kind: "address", value: "example.com" }]);
+	assert.deepEqual(chips("to:@example.net"), [{ kind: "address", value: "@example.net" }], "a domain you receive on with no address listed");
+	assert.equal(text("to:ann@example.org"), "to:ann@example.org", "someone you wrote to is a recipient search");
+	assert.equal(text("to:ann"), "to:ann");
+	assert.equal(text("to:example.org"), "to:example.org");
+	assert.deepEqual(f.parseSearchText("to:billing").chips, [], "without your addresses nothing becomes a chip");
+	const next = f.applySearch({ view: "inbox", chips: [], sort: "date", dir: "desc" }, "to:ann@example.org", [], OWN);
+	assert.deepEqual(next.chips, [{ kind: "q", value: "to:ann@example.org" }]);
 });
 
 test("search text the URL has no chip for stays text", () => {

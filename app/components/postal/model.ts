@@ -16,6 +16,7 @@ import {
 	chipValues,
 	type LabelRef,
 	type MailFilter,
+	type OwnAddresses,
 	parseFilter,
 	parseSearchText,
 	removeChip,
@@ -46,15 +47,15 @@ export function normalizeSearch(input: string): string {
 	});
 }
 
-export function withSearch(filter: MailFilter, search: string, labels: readonly LabelRef[]): MailFilter {
+export function withSearch(filter: MailFilter, search: string, labels: readonly LabelRef[], own?: OwnAddresses): MailFilter {
 	const text = search.trim();
 	if (!text) return filter;
-	return applySearch(filter, normalizeSearch(text), labels);
+	return applySearch(filter, normalizeSearch(text), labels, own);
 }
 
 /** Free-text words of the search, for highlighting. Excluded words and operators are left out. */
-export function searchTerms(search: string, labels: readonly LabelRef[]): string[] {
-	const parsed = parseSearchText(normalizeSearch(search), labels);
+export function searchTerms(search: string, labels: readonly LabelRef[], own?: OwnAddresses): string[] {
+	const parsed = parseSearchText(normalizeSearch(search), labels, own);
 	return highlightTerms(parseSearch(parsed.text));
 }
 
