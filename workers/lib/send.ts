@@ -18,6 +18,7 @@ import {
 	validateSender,
 } from "./email-helpers";
 import { hasHeaderLineBreaks } from "./schemas";
+import { htmlToTextAlternative } from "./text-alternative";
 import { base64Bytes, messageBytes, messageSizeError } from "../../shared/message-size";
 import type { EmailFull, SendEmailRequestSchema } from "./schemas";
 import { readAgentLimits } from "./agent-limits";
@@ -187,7 +188,9 @@ async function sendOnce(
 	if (hasHeaderLineBreaks(subject, inReplyTo, ...references)) {
 		return { ok: false, status: 400, error: "Email headers must not contain line breaks" };
 	}
-	const tooLarge = messageSizeError(messageBytes({ html, text, fileBytes: (attachments ?? []).map((a) => base64Bytes(a.content)) }));
+	// HTML-only mail goes out with a generated text part (email-sender.ts), so count it too.
+	const textPart = text || (html ? htmlToTextAlternative(html) : undefined);
+	const tooLarge = messageSizeError(messageBytes({ html, text: textPart, fileBytes: (attachments ?? []).map((a) => base64Bytes(a.content)) }));
 	if (tooLarge) return { ok: false, status: 400, error: tooLarge };
 
 	let toStr: string, fromEmail: string, fromDomain: string;
@@ -213,7 +216,7 @@ async function sendOnce(
 
 	const deliver = () =>
 		sendEmail(env.EMAIL, {
-			to, cc, bcc, from, subject, html, text,
+			to, cc, bcc, from, subject, html, text: textPart,
 			attachments: attachments?.map((att) => ({
 				content: att.content, filename: att.filename, type: att.type,
 				disposition: att.disposition || "attachment", contentId: att.contentId,
