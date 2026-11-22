@@ -78,11 +78,15 @@ export function resolveDate(value: DateValue, now: number, tzOffset: number): st
 		case "instant": return value.iso;
 		case "day": return new Date(Date.UTC(value.year, value.month - 1, value.day) + tzOffset * 60_000).toISOString();
 		case "ago": {
-			const d = new Date(now);
 			if (value.unit === "d") return new Date(now - value.amount * DAY_MS).toISOString();
 			if (value.unit === "w") return new Date(now - value.amount * 7 * DAY_MS).toISOString();
-			if (value.unit === "m") d.setUTCMonth(d.getUTCMonth() - value.amount);
-			else d.setUTCFullYear(d.getUTCFullYear() - value.amount);
+			// The same day in the target month, or its last day: 1m before March 31 is February 28.
+			const d = new Date(now);
+			const months = d.getUTCFullYear() * 12 + d.getUTCMonth() - (value.unit === "m" ? value.amount : value.amount * 12);
+			const year = Math.floor(months / 12);
+			const month = months - year * 12;
+			const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+			d.setUTCFullYear(year, month, Math.min(d.getUTCDate(), lastDay));
 			return d.toISOString();
 		}
 	}

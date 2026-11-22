@@ -57,3 +57,13 @@ test("from: and to: with a full address match only that address", () => {
 	assert.deepEqual(find("from:example.org"), ["Hello", "Hey", "Order XK7731Q shipped"]);
 	assert.deepEqual(find("from:@example.net"), ["invoice"]);
 });
+
+test("month and year ages stay in the target month", () => {
+	const ago = (amount, unit, now) => search.resolveDate({ kind: "ago", amount, unit }, Date.parse(now), 0);
+	assert.equal(ago(1, "m", "2026-03-31T12:00:00Z"), "2026-02-28T12:00:00.000Z");
+	assert.equal(ago(1, "m", "2024-03-31T12:00:00Z"), "2024-02-29T12:00:00.000Z");
+	assert.equal(ago(2, "m", "2026-05-31T12:00:00Z"), "2026-03-31T12:00:00.000Z");
+	assert.equal(ago(3, "m", "2026-01-15T12:00:00Z"), "2025-10-15T12:00:00.000Z");
+	assert.equal(ago(13, "m", "2026-03-31T12:00:00Z"), "2025-02-28T12:00:00.000Z");
+	assert.equal(ago(1, "y", "2028-02-29T12:00:00Z"), "2027-02-28T12:00:00.000Z");
+});
