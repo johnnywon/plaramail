@@ -184,7 +184,16 @@ export class D1Mailbox {
 		const conversationId = conversationFor(email, folderId, subjectNorm, (same?.id as string | null | undefined) ?? null);
 		const bodyInR2 = new TextEncoder().encode(email.body ?? "").length > BODY_INLINE_MAX;
 		if (bodyInR2) await this.bucket.put(bodyKey(email.id), email.body, { httpMetadata: { contentType: "text/html" } });
-		await this.sql.batch(insertStatements(this.#id, folderId, email, attachments, conversationId, { bodyInR2 }));
+		try {
+			await this.sql.batch(insertStatements(this.#id, folderId, email, attachments, conversationId, { bodyInR2 }));
+		} catch (e) {
+			// No row points at the body, so remove it. A message already stored under this id keeps its key.
+			if (bodyInR2) {
+				const owner = await this.sql.first(`SELECT 1 FROM messages WHERE email_id = ?`, email.id).catch(() => true);
+				if (!owner) await this.bucket.delete(bodyKey(email.id)).catch(() => {});
+			}
+			throw e;
+		}
 	}
 
 	async updateEmail(id: string, { read, starred }: { read?: boolean; starred?: boolean }) {
