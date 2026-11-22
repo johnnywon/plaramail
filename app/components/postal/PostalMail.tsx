@@ -110,9 +110,10 @@ function PostalApp({ addresses, domains, autoDraft, demo }: PostalProps) {
 	const debounced = useDebounced(search, 120);
 	const { labels, byId: labelsById } = useLabels();
 	const labelRefs = useMemo(() => labels.map((l) => ({ id: l.id, name: l.name })), [labels]);
-	const effective = useMemo(() => withSearch(filter, debounced, labelRefs), [filter, debounced, labelRefs]);
+	const own = useMemo(() => ({ addresses, domains }), [addresses, domains]);
+	const effective = useMemo(() => withSearch(filter, debounced, labelRefs, own), [filter, debounced, labelRefs, own]);
 	const effectiveKey = filterToParams(effective).toString();
-	const terms = useMemo(() => searchTerms(debounced, labelRefs), [debounced, labelRefs]);
+	const terms = useMemo(() => searchTerms(debounced, labelRefs, own), [debounced, labelRefs, own]);
 	const searchError = useMemo(() => searchErrors(debounced)[0]?.message, [debounced]);
 
 	const write = useCallback(
