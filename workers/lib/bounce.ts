@@ -17,7 +17,7 @@
  * mailbox. A DSN arrives here when the remote server sends it to the From
  * address, or for mail sent through another provider.
  */
-import type { Attachment, Email } from "postal-mime";
+import { decodeWords, type Attachment, type Email } from "postal-mime";
 import type { Sql } from "../store/sql";
 
 export interface BounceRecipient {
@@ -91,7 +91,9 @@ function returnedHeaders(text: string) {
 	const head = text.replace(/\r\n/g, "\n").split(/\n[ \t]*\n/)[0] ?? "";
 	const fields = headerFields(head);
 	const id = fields.get("message-id")?.match(/<([^>]+)>/)?.[1] ?? fields.get("message-id")?.trim();
-	return { messageId: id || null, subject: fields.get("subject") ?? null, date: fields.get("date") ?? null };
+	// The Sent copy stores the decoded subject, so an encoded-word subject (RFC 2047) is decoded to match it.
+	const subject = fields.get("subject");
+	return { messageId: id || null, subject: subject == null ? null : decodeWords(subject), date: fields.get("date") ?? null };
 }
 
 /** The bounce in a parsed message, or null when it is not a delivery status notification. */
