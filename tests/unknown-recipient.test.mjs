@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./helpers/node-require.mjs";
 import { openD1 } from "./helpers/d1.mjs";
 
 const bundle = await build({
 	entryPoints: ["workers/index.ts"],
 	bundle: true,
-	platform: "node",
+	platform: "node", banner: NODE_REQUIRE,
 	format: "esm",
 	write: false,
 });

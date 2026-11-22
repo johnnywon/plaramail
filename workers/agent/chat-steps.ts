@@ -24,6 +24,8 @@ export function stepLimitNote(limit = CHAT_STEP_LIMIT): string {
  * `prepareStep` for streamText: no tools and the note above on the last step.
  * `activeTools: []` leaves the tools out of the request, because Workers AI
  * doesn't pass `toolChoice: "none"` on and the model could still call one.
+ * There is no `toolChoice: "none"` as well: the AI SDK (6.0.314 on) turns a
+ * tool call under it into an error, and the run should end on the stopped line.
  * Every step's messages are held to the request budget (request-budget.ts);
  * `fixed` is what the system prompt and tool definitions take of it.
  */
@@ -32,7 +34,7 @@ export function chatPrepareStep(system: string, limit = CHAT_STEP_LIMIT, size: {
 		const bounded = messages ? boundRequest(messages, size.budget ?? CHAT_REQUEST_BUDGET, size.fixed ?? system.length) : messages;
 		const cut = bounded !== messages ? { messages: bounded } : {};
 		return stepNumber >= limit - 1
-			? { toolChoice: "none" as const, activeTools: [] as never[], system: `${system}\n\n${stepLimitNote(limit)}`, ...cut }
+			? { activeTools: [] as never[], system: `${system}\n\n${stepLimitNote(limit)}`, ...cut }
 			: cut;
 	};
 }

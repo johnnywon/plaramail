@@ -25,8 +25,9 @@ test("steps before the last keep their tools and prompt", () => {
 
 test("the last step has no tools and says the run stopped", () => {
 	const last = chatPrepareStep("PROMPT", 4)({ stepNumber: 3 });
-	assert.equal(last.toolChoice, "none");
-	// Workers AI drops toolChoice, so the tools themselves are left out.
+	// Workers AI drops toolChoice, so the tools themselves are left out. No toolChoice "none":
+	// the AI SDK makes a tool call under it an error instead of a run that ends on the stopped line.
+	assert.equal(last.toolChoice, undefined);
 	assert.deepEqual(last.activeTools, []);
 	assert.ok(last.system.startsWith("PROMPT\n\n"));
 	assert.match(last.system, /Stopped after 3 steps\./);

@@ -7,6 +7,10 @@ export function withSecurityHeaders(res: Response): Response {
 
 	const applyHeaders = (response: Response) => {
 		response.headers.set("X-Frame-Options", "DENY");
+		// The browser keeps to HTTPS, doesn't guess content types, and links out don't carry the mail's URL.
+		response.headers.set("Strict-Transport-Security", "max-age=31536000");
+		response.headers.set("X-Content-Type-Options", "nosniff");
+		if (!response.headers.has("Referrer-Policy")) response.headers.set("Referrer-Policy", "same-origin");
 		const policy = response.headers.get("Content-Security-Policy");
 		if (policy) {
 			const directive = /(^|;)\s*frame-ancestors\b[^;]*/i;

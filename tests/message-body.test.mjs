@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./helpers/node-require.mjs";
 
 // The reader's message body: text-only mail is app-written HTML, and inline images are for HTML mail.
 const bundle = await build({
-	entryPoints: ["app/lib/utils.ts"], bundle: true, platform: "node", format: "esm", write: false,
+	entryPoints: ["app/lib/utils.ts"], bundle: true, platform: "node", banner: NODE_REQUIRE, format: "esm", write: false,
 	alias: { "~": `${process.cwd()}/app` },
 });
 const tmp = new URL(`./message-body.bundle.${process.pid}.mjs`, pathToFileURL(`${process.cwd()}/tests/`));

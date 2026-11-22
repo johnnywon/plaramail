@@ -108,6 +108,7 @@ Bounces: because Email Sending sets the Return-Path, most bounces for mail sent 
 | `MCP_SEND_ENABLED` | `vars` | `false` takes the send tools away from every MCP client, whatever it was granted |
 | `ALERT_TO` | `vars` | An address for error alerts, best one this deployment doesn't receive. Once an hour, if a request threw, inbound mail failed, a cron step failed or `/health` fails, the Worker mails it the errors since the last alert, from the first address in `EMAIL_ADDRESSES`. Unset sends none. |
 | `POLICY_AUD`, `TEAM_DOMAIN` | secrets | Cloudflare Access verification |
+| `SERVICE_TOKEN_WRITES` | `vars` | `true` lets an Access service token send and change mail. Unset, a service token can only read: `GET` and `HEAD` requests, no agent socket and no MCP consent page. A person signed in through Access is not affected. |
 | `global_fetch_strictly_public` | `compatibility_flags` | Lets MCP clients sign in with a Client ID Metadata Document URL as their `client_id`. Without it the OAuth metadata reports `client_id_metadata_document_supported: false` and such clients get "Can't connect this app". `wrangler.jsonc` sets it; a deployment with its own config adds it next to `nodejs_compat`. |
 
 To rebrand a deployment, set `APP_NAME` and replace the files listed in [`public/brand/README.md`](../public/brand/README.md).

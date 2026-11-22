@@ -1,9 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./node-require.mjs";
 
 /** Bundle a TypeScript module and import it. */
 export async function loadTs(entry) {
-	const bundle = await build({ entryPoints: [entry], bundle: true, platform: "node", format: "esm", write: false });
+	const bundle = await build({ entryPoints: [entry], bundle: true, platform: "node", banner: NODE_REQUIRE, format: "esm", write: false });
 	return import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 }
 
