@@ -219,7 +219,7 @@ function createEmailTools(env: Env, bound: string | null, { crossAddress = false
 
 		move_email: defineTool({
 			description:
-				"Move an email to a different folder (inbox, sent, draft, archive, trash).",
+				"Move an email to a system folder (inbox, archive, spam, trash). Custom folders are labels; use label_conversation.",
 			parameters: z.object({
 				...where(IN),
 				emailId: z.string().describe("The email ID"),

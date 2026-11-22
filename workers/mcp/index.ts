@@ -558,8 +558,7 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 			async ({ mailboxId, emailId, read }) => {
 				const denied = await verifyMailbox(mailboxId);
 				if (denied) return denied;
-				const result = await toolMarkEmailRead(env, mailboxId, emailId, read);
-				return mcpText(result);
+				return mcpResult(await toolMarkEmailRead(env, mailboxId, emailId, read));
 			},
 		);
 

@@ -16,6 +16,7 @@
 
 import { mailStore } from "../store";
 import { DATE_TOKENS, emptyFilter, InvalidFilterError, type MailFilter, searchOf, VIEWS } from "./mail-index-sql";
+import { MOVE_FOLDERS } from "./mail-bulk-sql";
 import type { EmailFull } from "./schemas";
 import { snippetText } from "./snippets";
 import {
@@ -294,6 +295,10 @@ export async function toolUpdateDraft(
 	if (!oldDraft) {
 		return { error: "Draft not found" };
 	}
+	// Updating deletes the old message, so only a draft may be replaced.
+	if (oldDraft.folder_id !== Folders.DRAFT) {
+		return { error: "Cannot update: email is not a draft" };
+	}
 
 	// Verify the body BEFORE deleting the old draft to prevent data loss
 	const newDraftId = crypto.randomUUID();
@@ -341,7 +346,8 @@ export async function toolMarkEmailRead(
 	read: boolean,
 ) {
 	const stub = mailStore(env).mailbox(mailboxId);
-	await stub.updateEmail(emailId, { read });
+	const email = await stub.updateEmail(emailId, { read });
+	if (!email) return { error: "Email not found", emailId };
 	return { status: "updated", emailId, read };
 }
 
@@ -353,13 +359,17 @@ export async function toolMoveEmail(
 	emailId: string,
 	folderId: string,
 ) {
+	// The same targets as the REST move action. Sent and Drafts hold only what this mailbox wrote.
+	if (!(MOVE_FOLDERS as readonly string[]).includes(folderId)) {
+		if (!isSystemFolder(folderId)) {
+			return { error: "Custom folders are labels now. Use label_conversation." };
+		}
+		return { error: `Cannot move to ${folderId}. Use inbox, archive, spam or trash.` };
+	}
 	const stub = mailStore(env).mailbox(mailboxId);
 	const success = await stub.moveEmail(emailId, folderId);
 	if (success) {
 		return { status: "moved", emailId, folder: folderId };
-	}
-	if (!isSystemFolder(folderId)) {
-		return { error: "Custom folders are labels now. Use label_conversation." };
 	}
 	return { error: "Failed to move email" };
 }
