@@ -1,0 +1,59 @@
+name: 🤖 Feature
+description: A feature an agent can pick up and build
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An agent may build this with no one around to ask. Write it so they can finish without questions.
+        Add the `agent` label to hand it off.
+        Use example.com, example.org and example.net for any address or domain. No real deployment details.
+  - type: textarea
+    id: what
+    attributes:
+      label: 🎯 What
+      description: What it does, from the user's side.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The problem it solves or the moment it's missing.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: 🗺️ Where to look
+      description: Files, screens, tools or docs to start from.
+      placeholder: |
+        app/components/postal/PostalMail.tsx
+        shared/shortcuts.ts
+  - type: textarea
+    id: done
+    attributes:
+      label: ✅ Done when
+      description: Checks the agent can run or see. One per line.
+      placeholder: |
+        - [ ] Opening a search result keeps the search text
+        - [ ] npm test, typecheck and build pass
+    validations:
+      required: true
+  - type: textarea
+    id: out
+    attributes:
+      label: Out of scope
+      description: What to leave alone.
+  - type: dropdown
+    id: handoff
+    attributes:
+      label: Handoff
+      description: What an agent does when it picks this up.
+      options:
+        - Build it and open a PR
+        - Post a plan as a comment, then wait
+        - Not for agents
+      default: 0
+    validations:
+      required: true

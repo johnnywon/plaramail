@@ -1,0 +1,57 @@
+name: Agent
+
+# Label an issue `agent` and Claude builds it. The issue's Handoff field
+# says whether to open a PR or post a plan and wait.
+
+on:
+  issues:
+    types: [labeled]
+
+concurrency:
+  group: agent-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: read
+
+jobs:
+  build:
+    if: github.event.label.name == 'agent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          label_trigger: agent
+          track_progress: true
+          prompt: |
+            Build the feature in issue #${{ github.event.issue.number }}.
+
+            Read CLAUDE.md and DESIGN.md first and follow them.
+            The issue's Handoff field decides what you do:
+            - "Build it and open a PR": implement it, meet every "Done when" check,
+              run `npm test`, `npm run typecheck` and `npm run build`, then open a PR
+              against main with `gh pr create`. Put "Closes #${{ github.event.issue.number }}"
+              in the PR body and list each "Done when" check with how you verified it.
+            - "Post a plan as a comment, then wait": change no files. Comment a plan
+              on the issue and stop.
+            - "Not for agents", or no Handoff field: comment that and stop.
+
+            If something in the issue is unclear, make the smallest reasonable call
+            and say so in the PR. Stay inside the issue's scope.
+          claude_args: |
+            --max-turns 200
+            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh issue view:*),Bash(gh issue comment:*)"
