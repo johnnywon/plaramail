@@ -8,7 +8,7 @@ import type { CSSProperties, ReactNode } from "react";
  * Navigation icons, drawn like the robot in AgentIcon: a 24 grid with a 20px
  * live area, 2px round strokes, 3px corners on bodies and 1.5 on small parts.
  * Mail icons carry one solid accent in mail orange (the robot's eye block where
- * it fits); folder icons stay plain. Shells take the current colour.
+ * it fits); folder icons stay plain. Shells take the current color.
  * Each takes Phosphor's props so it can stand in for a Phosphor icon; weight is ignored.
  */
 interface NavIconProps {
@@ -39,6 +39,18 @@ function Svg({ size = 16, color, className, style, width = 24, children }: NavIc
 }
 
 /** All addresses: a wall of PO boxes, the one with mail filled. */
+/** The PlaraMail mark, the Fold: three flaps, the last in Signal. Only in the top-left corner (sidebar header and rail). */
+export function FoldMark({ size = 16, className, style }: { size?: number; className?: string; style?: CSSProperties }) {
+	return (
+		<svg width={size} height={size} viewBox="0 0 48 48" fill="none" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" className={className} style={{ flex: "none", ...style }} aria-hidden="true">
+			{/* Flaps keep full ink or paper contrast, not the muted header text. */}
+			<polyline points="7,9 24,20 41,9" stroke="var(--pg-text-1)" />
+			<polyline points="7,20 24,31 41,20" stroke="var(--pg-text-1)" />
+			<polyline points="7,31 24,42 41,31" stroke="#E46F2C" />
+		</svg>
+	);
+}
+
 export function AllAddressesIcon(props: NavIconProps) {
 	return (
 		<Svg {...props}>
@@ -93,7 +105,7 @@ export function ByAddressIcon(props: NavIconProps) {
 	);
 }
 
-/** Labels: an outline tag. The labels under it carry the colour. */
+/** Labels: an outline tag. The labels under it carry the color. */
 export function LabelsIcon(props: NavIconProps) {
 	return (
 		<Svg {...props}>
@@ -171,3 +183,25 @@ export function TrashIcon(props: NavIconProps) {
 		</Svg>
 	);
 }
+
+/** Each folder's icon, one meaning everywhere: the sidebar, the rail and the list header. */
+export const VIEW_ICONS: Record<string, (props: NavIconProps) => ReactNode> = {
+	inbox: InboxIcon, unread: UnreadIcon, starred: StarredIcon, drafts: DraftsIcon, sent: SentIcon,
+	archive: ArchiveIcon, spam: SpamIcon, trash: TrashIcon, all: AllAddressesIcon,
+};
+
+/** The folders under All addresses' Inbox and Unread in the sidebar. */
+export const SECONDARY_VIEWS = [
+	{ view: "starred", label: "Starred", Icon: StarredIcon },
+	{ view: "drafts", label: "Drafts", Icon: DraftsIcon },
+	{ view: "sent", label: "Sent", Icon: SentIcon },
+	{ view: "archive", label: "Archive", Icon: ArchiveIcon },
+	{ view: "spam", label: "Spam", Icon: SpamIcon },
+	{ view: "trash", label: "Trash", Icon: TrashIcon },
+] as const;
+
+/** One address's (or domain's) folders: what the sidebar lists under it. */
+export const ADDRESS_FOLDERS = [{ view: "inbox", label: "Inbox", Icon: InboxIcon }, ...SECONDARY_VIEWS] as const;
+
+/** All addresses' folders: the sidebar's top group. Labels follow them. */
+export const ALL_FOLDERS = [{ view: "inbox", label: "Inbox", Icon: InboxIcon }, { view: "unread", label: "Unread", Icon: UnreadIcon }, ...SECONDARY_VIEWS] as const;

@@ -3,34 +3,56 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { type Context, Hono } from "hono";
+import pkg from "../package.json";
 import { cors } from "hono/cors";
-import PostalMime from "postal-mime";
+import { parseMail } from "./lib/parse-mail";
+import { bounceLink } from "./lib/bounce";
 import { z } from "zod";
 import { generateText } from "ai";
-import { type StoredAttachment } from "./lib/attachments";
+import { deleteAttachmentFiles, inboundDisposition, type StoredAttachment } from "./lib/attachments";
+import { ensureDevMail, seedMail, seedProfile } from "./lib/dev-seed";
+import { claimDemoAiCall, DEMO, demoAiCap, demoRefusal } from "./lib/demo";
 import {
 	validateSender,
 	SenderValidationError,
+	stripHtmlToText,
 } from "./lib/email-helpers";
 import { checkSendAt, ScheduleBody, SCHEDULE_MAX_PAYLOAD_BYTES } from "./lib/scheduled-send";
+import { countRecipients, recipientLimitError } from "./lib/send-budget";
 import { handleReplyEmail, handleForwardEmail, handleSendEmail } from "./routes/reply-forward";
 import { Folders } from "../shared/folders";
 import type { Env } from "./types";
 import { interpretSearch, MAX_REQUEST_LENGTH } from "./lib/search-interpret";
+import { HeaderValueSchema, MailboxSettingsSchema } from "./lib/schemas";
 import { readPrefs, writePrefs } from "./lib/prefs";
-import { mergeAgentModelConfig, quickModel, OPENROUTER_BASE, openRouterModel, readAgentModelConfig, viewOf, workersAiCatalog, WORKERS_AI_MODEL, writeAgentModelConfig } from "./lib/agent-model";
-import { CATALOG_SNAPSHOT_DATE, SUGGESTED_WORKERS_AI_MODELS } from "../shared/workers-ai-models";
+import { agentModel, modelIdOf } from "./lib/agent-model";
+import { catalogFor, clearCatalogCache, languageModel, mergeAgentModelConfig, openRouterZdr, quickModel, readAgentModelConfig, viewOf, writeAgentModelConfig } from "./lib/agent-model";
+import { KEYED_PROVIDERS, PROVIDERS, PROVIDER_INFO, RECOMMENDED_MODEL, SUGGESTED_MODELS, validModelId } from "../shared/models";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
 import { csrf } from "./lib/csrf";
 import { decodeCursor, InvalidFilterError } from "./lib/mail-index-sql";
 import { parseMailParams } from "./lib/mail-filter-params";
 import { MAX_SEARCH_LENGTH } from "../shared/search-query";
-import { indexedMailboxIds } from "./lib/mail-index-stub";
-import { d1Status, durableObjectInternals, hasD1, mailStore, searchEngine, usesD1 } from "./store";
-import { advanceCopy, copyStartError, copyStatus, mirrorInbound, startCopy } from "./store/copy-job";
+import { mailboxIds, mailStore, storageStatus, recordsSql } from "./store";
 import { MOVE_FOLDERS } from "./lib/mail-bulk-sql";
+import { BULK_MAX_THREADS } from "../shared/bulk";
 import { automatedMailReason } from "./lib/message-meta";
+import { parseReferences, resolveThreadId } from "./lib/threading";
+import { configuredAddresses } from "./lib/addresses";
 import { dryRunFolderImport, importDeps, runFolderImport } from "./lib/folder-import";
+import { startAutoDraft } from "./agent/queue";
+import { listRuns } from "./agent/runs";
+import { readAgentLimits, writeAgentLimits } from "./lib/agent-limits";
+import { agentOverview } from "./lib/agent-overview";
+import { getSystemPrompt } from "./agent/prompt";
+import { ACTIVITY_ACTORS, listActivity, logActivity, logged, mcpUsage, TOOL_ACTIONS } from "./lib/activity";
+import { unsubscribe, unsubscribeSummary } from "./lib/unsubscribe";
+import { verifyDraft } from "./lib/ai";
+import { AgentBody, agentStats, createAgent, deleteAgent, listAgentDrafts, listAgents, matchAgents, orderAgents, updateAgent } from "./lib/agents";
+import { redraft } from "./lib/redraft";
+import { seedAgents } from "./lib/dev-seed-agents";
+import { listAgentActions, mailOps, undoAgentAction } from "./lib/agent-actions";
+import { REDRAFT_INSTRUCTION_MAX } from "../shared/draft-notes";
 
 type AppContext = Context<MailboxContext>;
 
@@ -38,24 +60,32 @@ type AppContext = Context<MailboxContext>;
 
 const CreateMailboxBody = z.object({
 	email: z.string().email(),
-	name: z.string().min(1),
-	settings: z.record(z.any()).optional(), // unvalidated — agentSystemPrompt goes straight to AI
+	name: z.string().min(1).max(200),
+	settings: MailboxSettingsSchema.optional(),
+});
+
+const UpdateMailboxBody = z.object({
+	settings: MailboxSettingsSchema,
 });
 
 const DraftBody = z.object({
 	to: z.string().optional(),
 	cc: z.string().optional(),
 	bcc: z.string().optional(),
-	subject: z.string().optional(),
+	subject: HeaderValueSchema.optional(),
 	body: z.string(),
-	in_reply_to: z.string().optional(),
-	thread_id: z.string().optional(),
+	in_reply_to: HeaderValueSchema.optional(),
+	thread_id: HeaderValueSchema.optional(),
 	draft_id: z.string().optional(),
+	/** "forward": the draft forwards in_reply_to. Anything else saves a reply or new mail, as before. */
+	mode: z.enum(["new", "reply", "reply-all", "forward"]).optional(),
+	/** The original's attachments a forward carries. */
+	forward_attachments: z.array(z.string().min(1).max(100)).max(50).optional(),
 });
 
 const BulkBody = z.object({
 	target: z.union([
-		z.object({ threadKeys: z.array(z.string().min(1).max(600)).min(1).max(500), view: z.string().max(100) }),
+		z.object({ threadKeys: z.array(z.string().min(1).max(600)).min(1).max(BULK_MAX_THREADS), view: z.string().max(100), filter: z.string().max(8000).optional() }),
 		z.object({ filter: z.string().max(8000), asOf: z.string().datetime(), expectedCount: z.number().int().min(0) }),
 	]),
 	action: z.discriminatedUnion("type", [
@@ -77,16 +107,33 @@ app.use("/api/*", cors({
 		// Same-origin requests have no Origin header — allow them.
 		if (!origin) return origin;
 		// In development, allow localhost for Vite dev server.
-		try {
-			const url = new URL(origin);
-			if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return origin;
-		} catch { /* invalid origin */ }
+		if (import.meta.env?.DEV) {
+			try {
+				const url = new URL(origin);
+				if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return origin;
+			} catch { /* invalid origin */ }
+		}
 		// Block all other cross-origin requests. The app is served from the
 		// same origin as the API, so legitimate browser requests never send
 		// an Origin header. Returning undefined omits Access-Control-Allow-Origin.
 		return undefined;
 	},
 }));
+// Local QA and demo builds: the first API request fills an empty inbox with sample mail (workers/lib/dev-seed).
+if (import.meta.env?.DEV || DEMO) {
+	app.use("/api/v1/*", async (c, next) => {
+		await ensureDevMail(c.env);
+		await next();
+	});
+}
+// A demo build refuses sends, AI and settings changes (workers/lib/demo).
+if (DEMO) {
+	app.use("/api/v1/*", async (c, next) => {
+		const refused = demoRefusal(c.req.method, c.req.path);
+		if (refused) return c.json({ error: refused }, 403);
+		await next();
+	});
+}
 app.use("/api/v1/*", csrf);
 app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
 
@@ -95,39 +142,38 @@ app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
 app.get("/api/v1/config", (c) => {
 	const domainsRaw = c.env.DOMAINS || "";
 	const domains = domainsRaw.split(",").map((d) => d.trim()).filter(Boolean);
-	const emailAddresses = c.env.EMAIL_ADDRESSES ?? [];
-	const autoDraft = String(c.env.AUTO_DRAFT_ENABLED ?? "") === "true";
-	return c.json({ domains, emailAddresses, autoDraft });
+	const emailAddresses = configuredAddresses(c.env);
+	// Agents run on new mail on every deployment but a demo; which mail is up to each agent.
+	const autoDraft = !DEMO;
+	// The colophon: the running version and when it was deployed (null without the version_metadata binding).
+	const deployedAt = c.env.CF_VERSION_METADATA?.timestamp ?? null;
+	return c.json({ domains, emailAddresses, autoDraft, demo: DEMO, version: pkg.version, deployedAt });
 });
 
-// Local QA only: fill each configured mailbox with sample inbox mail.
-// import.meta.env.DEV is false in production builds, so this route does not exist there.
+// Local QA only (import.meta.env.DEV is false in production builds, so none of this exists there).
 if (import.meta.env?.DEV) {
+	// A lived-in sample inbox: wipe the sample mail and write it again. Mail you made yourself stays.
+	// Body (all optional): { "profile": "default" or "alex", "tzOffset": minutes behind UTC, "extra": plain messages to add for long lists }.
 	app.post("/api/v1/dev/seed", async (c) => {
-		const { perMailbox = 20 } = (await c.req.json().catch(() => ({}))) as { perMailbox?: number };
-		const senders = ["ann@store.example.com", "billing@code.example.com", "news@letters.example.net", "ops@cloud.example.org", "maria@golf.example.com", "noreply@tracker.example.net"];
-		const subjects = ["Invoice for October", "Your weekly digest", "Tee time confirmed", "Deploy finished", "Re: contract draft", "Security alert"];
-		const ids = await indexedMailboxIds(c.env);
-		let created = 0;
-		for (const [m, mailboxId] of ids.entries()) {
-			if (!usesD1(c.env)) await durableObjectInternals(c.env).mailbox(mailboxId).setMailboxId(mailboxId);
-			const stub = mailStore(c.env).mailbox(mailboxId);
-			for (let i = 0; i < Math.min(perMailbox, 100); i++) {
-				const id = crypto.randomUUID();
-				const sender = senders[(i + m) % senders.length];
-				await stub.createEmail(Folders.INBOX, {
-					id, subject: `${subjects[(i * 7 + m) % subjects.length]} #${i}`, sender, recipient: mailboxId,
-					date: new Date(Date.now() - (i * 9 + m) * 3_600_000).toISOString(),
-					body: `<p>Sample message ${i} for ${mailboxId}. Quarterly numbers and a follow-up.</p>`,
-					read: i % 3 === 0, starred: i % 11 === 0, thread_id: id, message_id: `${id}@seed.local`,
-					raw_headers: JSON.stringify([{ key: "from", value: `"${sender.split("@")[0]}" <${sender}>` },
-						...(sender.startsWith("news") ? [{ key: "list-unsubscribe", value: "<https://letters.example.net/u>" }] : [])]),
-				}, []);
-				created++;
-			}
-		}
-		return c.json({ created });
+		const { profile, tzOffset, extra } = (await c.req.json().catch(() => ({}))) as { profile?: unknown; tzOffset?: unknown; extra?: unknown };
+		return c.json(await seedMail(c.env, {
+			profile: seedProfile(c.env, profile),
+			tzOffset: typeof tzOffset === "number" ? tzOffset : undefined,
+			extra: Math.min(Math.max(Number(extra) || 0, 0), 5000),
+		}));
 	});
+}
+
+// Local QA and demo builds: links in the sample mail open this page instead of leaving the app.
+if (import.meta.env?.DEV || DEMO) {
+	app.get("/api/v1/sample-link", (c) => {
+		const to = (c.req.query("to") ?? "").slice(0, 2000).replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
+		c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
+		return c.html(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sample link</title><body style="font:15px/1.5 system-ui,sans-serif;margin:40px 16px;max-width:600px;color:#1f2933;background:#ffffff"><p>A link in the sample mail. It goes nowhere in the demo.</p><p style="word-break:break-all"><code>${to}</code></p></body></html>`);
+	});
+
+	// A crew of agents mid-work: runs in every state, drafts in Review, a Logs trail.
+	app.post("/api/v1/dev/seed-agents", async (c) => c.json(await seedAgents(c.env)));
 }
 
 // -- Agent model ----------------------------------------------------
@@ -146,68 +192,85 @@ app.get("/api/v1/agent-model", async (c) => {
 	return c.json(viewOf(await readAgentModelConfig(c.env)));
 });
 
+const ModelRefBody = z.object({ provider: z.enum(PROVIDERS), id: z.string().max(200) });
+
 const AgentModelBody = z.object({
-	provider: z.enum(["workers-ai", "openrouter"]).optional(),
-	model: z.string().max(200).optional(),
-	apiKey: z.string().max(500).optional(),
-	workersAiModel: z.string().max(200).optional(),
+	selected: ModelRefBody.nullable().optional(),
+	keys: z.record(z.string(), z.string().max(500)).optional(),
 });
 
+/**
+ * A typed id must be in its provider's allowed catalog: on Cloudflare, priced
+ * models that aren't partner models; on OpenRouter, paid models. So a typed
+ * id can't reach a free or third-party model. When the catalog can't be read
+ * the id is let through; on Cloudflare the agent then falls back to the
+ * recommended model if it isn't listed, and on OpenRouter the request asks
+ * for a zero retention endpoint and fails without one.
+ */
+async function notAllowed(env: Env, ref: { provider: string; id: string }, keys: Parameters<typeof catalogFor>[2]): Promise<string | null> {
+	const catalog = await catalogFor(env, ref.provider === "workers-ai" ? "workers-ai" : "openrouter", keys);
+	if (catalog.source === "none" || catalog.models.some((m) => m.id === ref.id)) return null;
+	return ref.provider === "workers-ai"
+		? "That Cloudflare model isn't allowed. Only priced models that aren't partner models can be used."
+		: "That OpenRouter model isn't allowed. Only paid models can be used.";
+}
+
 app.put("/api/v1/agent-model", async (c) => {
-	const body = AgentModelBody.parse(await c.req.json());
+	const parsed = AgentModelBody.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" }, 400);
+	const body = parsed.data;
 	const next = mergeAgentModelConfig(await readAgentModelConfig(c.env), body);
 	if ("error" in next) return c.json({ error: next.error }, 400);
-	if (body.workersAiModel && next.workersAiModel) {
-		const catalog = await workersAiCatalog(c.env);
-		if (catalog && !catalog.some((m) => m.id === next.workersAiModel)) {
-			return c.json({ error: "Cloudflare doesn't list that model as able to call tools." }, 400);
-		}
+	if (body.selected && next.selected) {
+		const refused = await notAllowed(c.env, next.selected, next.keys);
+		if (refused) return c.json({ error: refused }, 400);
 	}
 	await writeAgentModelConfig(c.env, next);
+	if (body.keys) clearCatalogCache();
 	return c.json(viewOf(next));
 });
 
-/** Send one short prompt to OpenRouter with the given (or stored) key and model. */
+const TestBody = z.object({ provider: z.enum(PROVIDERS), id: z.string().max(200), key: z.string().max(500).optional() });
+
+/** Send one short prompt to a model, with the given key or the saved one. */
 app.post("/api/v1/agent-model/test", async (c) => {
-	const body = AgentModelBody.parse(await c.req.json().catch(() => ({})));
+	const parsed = TestBody.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request body" }, 400);
+	const body = parsed.data;
+	const label = PROVIDER_INFO[body.provider].label;
+	if (!validModelId(body.provider, body.id.trim())) return c.json({ ok: false, error: `That isn't a ${label} model id.` }, 400);
 	const stored = await readAgentModelConfig(c.env);
-	const apiKey = body.apiKey?.trim() || stored.apiKey;
-	const model = body.model?.trim() || stored.model;
-	if (!apiKey || !model) return c.json({ ok: false, error: "Add an API key and a model first." }, 400);
+	const key = body.provider === "workers-ai" ? undefined : body.key?.trim() || stored.keys[body.provider];
+	if (body.provider !== "workers-ai" && !key) return c.json({ ok: false, error: `Add your ${label} key first.` }, 400);
+	const refused = await notAllowed(c.env, { provider: body.provider, id: body.id.trim() }, stored.keys);
+	if (refused) return c.json({ ok: false, error: refused }, 400);
+	const started = Date.now();
 	try {
 		const result = await generateText({
-			model: openRouterModel(apiKey, model),
+			model: languageModel(c.env, { provider: body.provider, id: body.id.trim() }, key, body.provider === "openrouter" ? { zdr: await openRouterZdr(c.env, body.id.trim()) } : {}),
 			prompt: "Reply with the single word OK.",
-			maxOutputTokens: 16,
+			maxOutputTokens: 400,
 		});
-		return c.json({ ok: true, reply: result.text.trim().slice(0, 80) });
+		return c.json({ ok: true, reply: result.text.trim().slice(0, 80), ms: Date.now() - started });
 	} catch (e) {
 		return c.json({ ok: false, error: (e as Error).message.slice(0, 300) }, 502);
 	}
 });
 
 /**
- * Workers AI models that can call tools, with prices and context sizes from
- * Cloudflare's catalog. When the catalog can't be read, the suggested models
- * come back with the prices saved in shared/workers-ai-models.ts and live: false.
+ * Every provider's models, with price per million tokens and context size
+ * where the provider or OpenRouter publishes them. Nothing here limits what
+ * can be saved: any id shaped right for its provider is accepted.
  */
-app.get("/api/v1/agent-model/workers-ai-models", async (c) => {
-	const catalog = await workersAiCatalog(c.env);
+app.get("/api/v1/agent-model/catalog", async (c) => {
+	const { keys } = await readAgentModelConfig(c.env);
+	const entries = await Promise.all(PROVIDERS.map(async (p) => [p, await catalogFor(c.env, p, keys)] as const));
 	return c.json({
-		recommended: WORKERS_AI_MODEL,
-		live: !!catalog,
-		snapshotDate: CATALOG_SNAPSHOT_DATE,
-		models: catalog ?? SUGGESTED_WORKERS_AI_MODELS,
+		recommended: RECOMMENDED_MODEL,
+		suggested: SUGGESTED_MODELS.map(({ provider, id, role }) => ({ provider, id, role })),
+		providers: Object.fromEntries(entries),
+		keyed: KEYED_PROVIDERS.filter((p) => !!keys[p]),
 	});
-});
-
-/** OpenRouter models that can call tools, for the model picker. */
-app.get("/api/v1/agent-model/models", async (c) => {
-	const res = await fetch(`${OPENROUTER_BASE}/models?supported_parameters=tools`);
-	if (!res.ok) return c.json({ models: [] });
-	const data = (await res.json()) as { data?: { id: string; name?: string }[] };
-	const models = (data.data ?? []).map((m) => ({ id: m.id, name: m.name ?? m.id }));
-	return c.json({ models });
 });
 
 // -- Mailboxes ------------------------------------------------------
@@ -218,19 +281,21 @@ app.get("/api/v1/mailboxes", async (c) => {
 });
 
 app.post("/api/v1/mailboxes", async (c) => {
-	const { name, settings, email: rawEmail } = CreateMailboxBody.parse(await c.req.json());
+	const parsed = CreateMailboxBody.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" }, 400);
+	const { name, settings, email: rawEmail } = parsed.data;
 	const email = rawEmail.toLowerCase();
-	const allowedAddresses = (c.env.EMAIL_ADDRESSES ?? []) as string[];
+	const allowedAddresses = configuredAddresses(c.env);
 	if (allowedAddresses.length > 0 && !allowedAddresses.map((a) => a.toLowerCase()).includes(email)) {
 		return c.json({ error: "Mailbox creation is restricted to configured EMAIL_ADDRESSES" }, 403);
 	}
-	if (await mailStore(c.env).mailboxes.exists(email)) return c.json({ error: "Mailbox already exists" }, 409);
+	if (await mailStore(c.env).mailboxes.exists(email)) return c.json({ error: "That address already exists" }, 409);
 	const finalSettings = await createMailbox(c.env, email, name, settings);
 	return c.json({ id: email, email, name, settings: finalSettings }, 201);
 });
 
 /** Create a mailbox with default settings. */
-async function createMailbox(env: Env, email: string, name: string, settings?: Record<string, unknown>) {
+async function createMailbox(env: Env, email: string, name: string, settings?: z.infer<typeof MailboxSettingsSchema>) {
 	const defaultSettings = { fromName: name, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
 	const finalSettings = { ...defaultSettings, ...settings };
 	await mailStore(env).mailboxes.put(email, finalSettings);
@@ -246,24 +311,26 @@ app.get("/api/v1/mailboxes/:mailboxId", async (c) => {
 
 app.put("/api/v1/mailboxes/:mailboxId", async (c) => {
 	const mailboxId = c.req.param("mailboxId")!;
-	const { settings } = (await c.req.json()) as { settings: Record<string, unknown> };
+	const parsed = UpdateMailboxBody.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" }, 400);
+	const { settings } = parsed.data;
 	const mailboxes = mailStore(c.env).mailboxes;
 	if (!(await mailboxes.exists(mailboxId))) return c.json({ error: "Not found" }, 404);
 	await mailboxes.put(mailboxId, settings);
 	return c.json({ id: mailboxId, name: mailboxId, email: mailboxId, settings });
 });
 
-// -- Unified mail (MailIndexDO) -------------------------------------
+// -- Unified mail --------------------------------------------------
 
-function parseMailRequest(env: Env, url: string) {
-	const parsed = parseMailParams(new URL(url).searchParams, searchEngine(env));
+function parseMailRequest(url: string) {
+	const parsed = parseMailParams(new URL(url).searchParams);
 	if (parsed.cursor) decodeCursor(parsed.cursor);
 	return parsed;
 }
 
 app.get("/api/v1/mail", async (c) => {
 	try {
-		const { filter, cursor, limit } = parseMailRequest(c.env, c.req.url);
+		const { filter, cursor, limit } = parseMailRequest(c.req.url);
 		return c.json(await mailStore(c.env).all().queryMail(filter, { cursor, limit }));
 	} catch (error) {
 		if (error instanceof InvalidFilterError) return c.json({ error: error.message }, 400);
@@ -273,7 +340,7 @@ app.get("/api/v1/mail", async (c) => {
 
 app.get("/api/v1/mail/facets", async (c) => {
 	try {
-		const { filter } = parseMailRequest(c.env, c.req.url);
+		const { filter } = parseMailRequest(c.req.url);
 		return c.json(await mailStore(c.env).all().queryFacets(filter));
 	} catch (error) {
 		if (error instanceof InvalidFilterError) return c.json({ error: error.message }, 400);
@@ -283,8 +350,8 @@ app.get("/api/v1/mail/facets", async (c) => {
 
 /** Scheduled sends across every configured mailbox, soonest first. */
 app.get("/api/v1/mail/scheduled", async (c) => {
-	const mailboxIds = await indexedMailboxIds(c.env);
-	const lists = await Promise.all(mailboxIds.map(async (mailboxId) => {
+	const ids = await mailboxIds(c.env);
+	const lists = await Promise.all(ids.map(async (mailboxId) => {
 		const rows = await mailStore(c.env).mailbox(mailboxId).listScheduled().catch((e) => {
 			console.error(`scheduled list failed for ${mailboxId}:`, (e as Error).message);
 			return [];
@@ -296,43 +363,118 @@ app.get("/api/v1/mail/scheduled", async (c) => {
 
 app.get("/api/v1/mail/folders", async (c) => c.json(await mailStore(c.env).all().folderViews()));
 
-/** Index parity: the index's counts beside each mailbox's own counts. */
-app.get("/api/v1/index/status", async (c) => {
-	if (usesD1(c.env)) return c.json(await d1Status(c.env, await indexedMailboxIds(c.env)));
-	const internals = durableObjectInternals(c.env);
-	const index = internals.index();
-	const [status, mailboxIds] = await Promise.all([index.status(), indexedMailboxIds(c.env)]);
-	const mailboxes = await Promise.all(mailboxIds.map(async (mailboxId) => {
-		try {
-			return { mailboxId, source: await internals.mailbox(mailboxId).indexStatus(), index: status.counts[mailboxId] ?? null };
-		} catch (e) {
-			return { mailboxId, error: (e as Error).message, index: status.counts[mailboxId] ?? null };
-		}
+/** Message counts per address, for the Storage page. */
+app.get("/api/v1/storage/status", async (c) => c.json(await storageStatus(c.env, await mailboxIds(c.env))));
+
+// -- Console > Limits and Overview ----------------------------------
+
+app.get("/api/v1/agent-limits", async (c) => c.json(await readAgentLimits(c.env)));
+
+/** Agent limits. Only people set them here; no agent or MCP tool can. Out-of-range values keep what was saved. */
+app.put("/api/v1/agent-limits", async (c) => {
+	const body = await c.req.json().catch(() => null);
+	if (!body || typeof body !== "object") return c.json({ error: "Send the limits as a JSON object" }, 400);
+	return c.json(await writeAgentLimits(c.env, body));
+});
+
+app.get("/api/v1/agents/overview", async (c) =>
+	c.json(await agentOverview(recordsSql(c.env), await mailboxIds(c.env), await readAgentLimits(c.env))));
+
+// -- Agents (Console > Agents) ---------------------------------------
+
+app.get("/api/v1/agents", async (c) => {
+	const sql = recordsSql(c.env);
+	const [agents, stats] = await Promise.all([listAgents(sql), agentStats(sql)]);
+	return c.json({ agents, stats });
+});
+
+/** Agent drafts waiting in Drafts. */
+app.get("/api/v1/agents/review", async (c) => c.json(await listAgentDrafts(recordsSql(c.env), await mailboxIds(c.env))));
+
+app.post("/api/v1/agents", async (c) => {
+	const parsed = AgentBody.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid agent" }, 400);
+	const result = await createAgent(recordsSql(c.env), parsed.data);
+	return "error" in result ? c.json({ error: result.error }, 400) : c.json(result.agent, 201);
+});
+
+/** The list order: ids first to last. */
+app.put("/api/v1/agents/order", async (c) => {
+	const parsed = z.object({ ids: z.array(z.string()).max(100) }).safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "Invalid order" }, 400);
+	await orderAgents(recordsSql(c.env), parsed.data.ids);
+	return c.json({ ok: true });
+});
+
+app.put("/api/v1/agents/:id", async (c) => {
+	const parsed = AgentBody.partial().safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid agent" }, 400);
+	const result = await updateAgent(recordsSql(c.env), c.req.param("id"), parsed.data);
+	if ("error" in result) return c.json({ error: result.error }, 400);
+	return result.agent ? c.json(result.agent) : c.json({ error: "Not found" }, 404);
+});
+
+app.delete("/api/v1/agents/:id", async (c) => {
+	const deleted = await deleteAgent(recordsSql(c.env), c.req.param("id"));
+	return deleted ? c.json({ deleted: true }) : c.json({ error: "Not found" }, 404);
+});
+
+/** One action agent's latest actions. */
+app.get("/api/v1/agents/:id/actions", async (c) =>
+	c.json(await listAgentActions(recordsSql(c.env), c.req.param("id"), Number(c.req.query("limit")) || 50)));
+
+/** Reverse an action agent's action: unstar, remove the label, back to the inbox, mark unread. */
+app.post("/api/v1/agent-actions/:id/undo", async (c) => {
+	const result = await undoAgentAction({ sql: recordsSql(c.env), ops: mailOps(c.env) }, c.req.param("id"));
+	return "error" in result ? c.json({ error: result.error }, result.status) : c.json(result.action);
+});
+
+/** One agent's latest runs. */
+app.get("/api/v1/agents/:id/runs", async (c) =>
+	c.json(await listRuns(recordsSql(c.env), { agentId: c.req.param("id"), limit: Number(c.req.query("limit")) || 50 })));
+
+// -- Activity (Console > Activity) -----------------------------------
+
+/** What agents and MCP clients did, newest first. Filter by mailbox, actor and action; page with before=<last id>. */
+app.get("/api/v1/activity", async (c) => {
+	const pick = (name: string, allowed: readonly string[]) => {
+		const v = c.req.query(name);
+		return v && allowed.includes(v) ? v : null;
+	};
+	const before = Number(c.req.query("before"));
+	return c.json(await listActivity(recordsSql(c.env), {
+		mailboxId: c.req.query("mailbox") || null,
+		actor: pick("actor", ACTIVITY_ACTORS),
+		action: pick("action", Object.values(TOOL_ACTIONS)),
+		before: Number.isInteger(before) && before > 0 ? before : null,
+		limit: Number(c.req.query("limit")) || undefined,
 	}));
-	return c.json({ messages: status.messages, job: status.job, probe: status.probe, mailboxes });
 });
 
-app.post("/api/v1/index/rebuild", async (c) => {
-	if (usesD1(c.env)) return c.json({ error: "D1 keeps one copy of the mail, so there is no separate index to rebuild" }, 409);
-	return c.json(await durableObjectInternals(c.env).index().startRebuild(), 202);
+/** MCP clients that have called, and calls per tool, for Console > MCP. */
+app.get("/api/v1/mcp/usage", async (c) => c.json(await mcpUsage(recordsSql(c.env))));
+
+// Apps the signed-in person connected over OAuth (workers/mcp/authorize.ts), and revoking one.
+app.get("/api/v1/mcp/apps", async (c) => {
+	const oauth = c.env.OAUTH_PROVIDER;
+	if (!oauth) return c.json({ apps: [] });
+	const { items } = await oauth.listUserGrants(encodeURIComponent(c.get("viewer") ?? "local"));
+	const apps = items.map((g) => ({
+		id: g.id, clientId: g.clientId, name: String(g.metadata?.clientName ?? g.clientId), scopes: g.scope,
+		connectedAt: new Date(g.createdAt * 1000).toISOString(),
+	}));
+	return c.json({ apps });
+});
+app.delete("/api/v1/mcp/apps/:id", async (c) => {
+	const oauth = c.env.OAUTH_PROVIDER;
+	if (!oauth) return c.json({ error: "Not found" }, 404);
+	await oauth.revokeGrant(c.req.param("id"), encodeURIComponent(c.get("viewer") ?? "local"));
+	return c.json({ ok: true });
 });
 
-/** The one-time copy to D1: progress and the parity report. */
-app.get("/api/v1/admin/migrate-to-d1", async (c) => {
-	if (!hasD1(c.env)) return c.json({ available: false, storage: "durable-objects", state: "none", mailboxes: [], parity: null });
-	return c.json({ available: true, storage: usesD1(c.env) ? "d1" : "durable-objects", ...(await copyStatus(c.env)) });
-});
-
-/** Start the copy. The cron carries it on; this runs its first slice. */
-app.post("/api/v1/admin/migrate-to-d1", async (c) => {
-	const { confirm } = (await c.req.json().catch(() => ({}))) as { confirm?: unknown };
-	if (confirm !== true) return c.json({ error: "Send { confirm: true } to start the copy" }, 400);
-	const error = await copyStartError(c.env);
-	if (error) return c.json({ error }, 409);
-	await startCopy(c.env);
-	c.executionCtx.waitUntil(advanceCopy(c.env).catch((e) => console.error("copy to D1 failed:", (e as Error).message)));
-	return c.json(await copyStatus(c.env), 202);
-});
+/** The latest auto-draft runs, with their state and any skip reason or error. */
+app.get("/api/v1/auto-draft/runs", async (c) =>
+	c.json(await listRuns(recordsSql(c.env), { mailboxId: c.req.query("mailbox") || null, limit: Number(c.req.query("limit")) || undefined })));
 
 // -- Bulk actions ---------------------------------------------------
 
@@ -342,8 +484,13 @@ app.post("/api/v1/mail/bulk", async (c) => {
 	const { target, action } = parsed.data;
 	try {
 		const resolved = "threadKeys" in target
-			? { threadKeys: target.threadKeys, view: parseMailParams(new URLSearchParams({ view: target.view })).filter.view }
-			: { filter: parseMailParams(new URLSearchParams(target.filter), searchEngine(c.env)).filter, asOf: target.asOf, expectedCount: target.expectedCount };
+			? {
+				threadKeys: target.threadKeys,
+				view: parseMailParams(new URLSearchParams({ view: target.view })).filter.view,
+				// The list's filter, when sent, carries the search's in: scope.
+				filter: target.filter === undefined ? undefined : parseMailParams(new URLSearchParams(target.filter)).filter,
+			}
+			: { filter: parseMailParams(new URLSearchParams(target.filter)).filter, asOf: target.asOf, expectedCount: target.expectedCount };
 		const result = await mailStore(c.env).all().bulk(resolved, action);
 		if ("conflict" in result) return c.json({ error: "The list changed. Check the selection and try again.", count: result.conflict }, 409);
 		if ("job" in result) return c.json(result.job, 202);
@@ -389,7 +536,7 @@ app.get("/api/v1/search/suggest", async (c) => {
 	url.searchParams.delete("q");
 	const at = Number(url.searchParams.get("at") ?? -1);
 	try {
-		const { filter } = parseMailRequest(c.env, url.toString());
+		const { filter } = parseMailRequest(url.toString());
 		return c.json(await mailStore(c.env).all().suggest(filter, text, Number.isInteger(at) ? at : -1));
 	} catch (error) {
 		if (error instanceof InvalidFilterError) return c.json({ error: error.message }, 400);
@@ -397,20 +544,39 @@ app.get("/api/v1/search/suggest", async (c) => {
 	}
 });
 
+/** Compose suggestions for a recipient field (WON-216): `q` is what is typed. Your own addresses are left out. */
+app.get("/api/v1/contacts", async (c) => {
+	const q = (new URL(c.req.url).searchParams.get("q") ?? "").slice(0, 100);
+	const store = mailStore(c.env);
+	const own = [...configuredAddresses(c.env), ...(await store.mailboxes.list()).map((m) => m.id)];
+	return c.json({ contacts: await store.all().contacts(q, own) });
+});
+
 /**
  * "Ask in plain words": one model call turns the request into search text.
  * The text comes back for the box; nothing runs here. A failure returns the
  * request itself as the query, for a word search.
  */
+/**
+ * A demo counts its two AI actions against DEMO_AI_DAILY. Handlers call this once
+ * the request is valid, so refused and malformed requests don't use the allowance.
+ */
+async function demoAiAllowed(env: Env): Promise<boolean> {
+	return !DEMO || claimDemoAiCall(recordsSql(env), demoAiCap(env.DEMO_AI_DAILY));
+}
+const DEMO_AI_USED_UP = "The demo's AI calls for today are used up";
+
 app.post("/api/v1/search/interpret", async (c) => {
 	const body = z.object({ text: z.string().max(MAX_REQUEST_LENGTH * 2), tz: z.number().int().min(-900).max(900).optional() })
 		.safeParse(await c.req.json().catch(() => null));
 	if (!body.success) return c.json({ error: "Invalid request" }, 400);
-	const [labels, addresses, model] = await Promise.all([mailStore(c.env).all().listLabels(), indexedMailboxIds(c.env), quickModel(c.env)]);
+	if (!(await demoAiAllowed(c.env))) return c.json({ error: DEMO_AI_USED_UP }, 429);
+	const [labels, addresses] = await Promise.all([mailStore(c.env).all().listLabels(), mailboxIds(c.env)]);
+	// The model is made inside the guarded call, so a missing binding falls back to a word search like any model failure.
 	const result = await interpretSearch(
 		body.data.text,
-		{ now: new Date(), engine: searchEngine(c.env), tzOffset: body.data.tz ?? 0, labels: labels.map((l) => l.name), addresses },
-		async (prompt) => (await generateText({ model, prompt, maxOutputTokens: 1500, temperature: 0 })).text,
+		{ now: new Date(), tzOffset: body.data.tz ?? 0, labels: labels.map((l) => l.name), addresses },
+		async (prompt) => (await generateText({ model: await quickModel(c.env), prompt, maxOutputTokens: 1500, temperature: 0 })).text,
 	);
 	return c.json(result, "error" in result ? 502 : 200);
 });
@@ -469,7 +635,7 @@ app.put("/api/v1/labels/:id", async (c) => {
 app.delete("/api/v1/labels/:id", async (c) => {
 	const result = await mailStore(c.env).all().deleteLabel(c.req.param("id"));
 	if (!result) return c.json({ error: "Not found" }, 404);
-	if (!result.deleted) return c.json({ error: "Some mailboxes could not drop the label. Try again.", failed: result.failed }, 502);
+	if (!result.deleted) return c.json({ error: "Some addresses could not drop the label. Try again.", failed: result.failed }, 502);
 	return c.json(result);
 });
 
@@ -488,9 +654,16 @@ app.post("/api/v1/mailboxes/:mailboxId/emails", handleSendEmail);
 
 app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 	const mailboxId = c.req.param("mailboxId")!;
-	const { to, cc, bcc, subject, body, in_reply_to, thread_id, draft_id } = DraftBody.parse(await c.req.json());
+	const parsed = DraftBody.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" }, 400);
+	const { to, cc, bcc, subject, body, in_reply_to, thread_id, draft_id, mode, forward_attachments } = parsed.data;
 	const stub = c.var.mailbox;
-	if (draft_id) await stub.deleteEmail(draft_id); // drafts only; not atomic — create-then-delete would be safer
+	// An agent draft keeps its notes when it is edited and saved.
+	const notes = draft_id ? await stub.getDraftNotes(draft_id) : null;
+	if (draft_id) {
+		const attachments = await stub.deleteEmail(draft_id);
+		if (attachments) await deleteAttachmentFiles(c.env.BUCKET, draft_id, attachments);
+	}
 	const messageId = crypto.randomUUID();
 	const now = new Date().toISOString();
 	await stub.createEmail(Folders.DRAFT, {
@@ -499,7 +672,36 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 		date: now, body, in_reply_to: in_reply_to || null, email_references: null,
 		thread_id: thread_id || in_reply_to || messageId,
 	}, []);
+	if (notes) await stub.setDraftNotes(messageId, notes);
+	if (mode === "forward" && in_reply_to) await stub.setDraftForward(messageId, forward_attachments ?? []);
 	return c.json({ id: messageId, status: "draft", subject: subject || "", recipient: to || "", date: now }, 201);
+});
+
+/** Revise an agent draft with a one-off instruction (lib/redraft.ts). The draft is replaced; the reply has its new id. */
+app.post("/api/v1/mailboxes/:mailboxId/drafts/:id/redraft", async (c: AppContext) => {
+	const mailboxId = c.req.param("mailboxId")!;
+	const draftId = c.req.param("id")!;
+	const parsed = z.object({ instruction: z.string().max(REDRAFT_INSTRUCTION_MAX * 2) }).safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success || !parsed.data.instruction.trim()) return c.json({ error: "Say how to change the draft" }, 400);
+	if (DEMO) {
+		// Spend a demo AI action only on a draft that exists.
+		const draft = (await c.var.mailbox.getEmail(draftId)) as { folder_id?: string } | null;
+		if (!draft || draft.folder_id !== Folders.DRAFT) return c.json({ error: "Draft not found" }, 404);
+		if (!(await demoAiAllowed(c.env))) return c.json({ error: DEMO_AI_USED_UP }, 429);
+	}
+	const sql = recordsSql(c.env);
+	const [system, model] = await Promise.all([getSystemPrompt(c.env, mailboxId), agentModel(c.env, { reasoning: false })]);
+	const result = await logged(sql, { actor: "person", bound: mailboxId }, "redraft", { draftId, instruction: parsed.data.instruction }, () =>
+		redraft(c.var.mailbox, mailboxId, draftId, parsed.data.instruction, {
+			ai: c.env.AI,
+			bucket: c.env.BUCKET,
+			system,
+			write: async (systemPrompt, prompt) => (await generateText({ model, system: systemPrompt, prompt, maxOutputTokens: 2000 })).text,
+			verify: (text) => verifyDraft(c.env.AI, text),
+			model: modelIdOf(model),
+		}), (r) => (r.ok ? { draftId: r.draft.id, subject: r.draft.subject } : { error: r.error }));
+	if (!result.ok) return c.json({ error: result.error }, result.status);
+	return c.json({ draft: result.draft, notes: result.notes });
 });
 
 // -- Scheduled send -------------------------------------------------
@@ -522,6 +724,9 @@ app.post("/api/v1/mailboxes/:mailboxId/scheduled", async (c: AppContext) => {
 	const { sendAt, draft_id, mode, original_id, email } = parsed.data;
 	const sendAtError = checkSendAt(sendAt);
 	if (sendAtError) return c.json({ error: sendAtError }, 400);
+	// The cron sends as a person, so the person's cap applies.
+	const tooMany = recipientLimitError("person", countRecipients(email.to, email.cc, email.bcc));
+	if (tooMany) return c.json({ error: tooMany }, 400);
 	try {
 		validateSender(email.to, email.from, mailboxId);
 	} catch (e) {
@@ -553,8 +758,63 @@ app.delete("/api/v1/mailboxes/:mailboxId/emails/:id", async (c: AppContext) => {
 	const id = c.req.param("id")!;
 	const result = await c.var.mailbox.trashOrDelete(id);
 	if (result === null) return c.json({ error: "Not found" }, 404);
-	if (result.attachments.length > 0) await c.env.BUCKET.delete(result.attachments.map((att) => `attachments/${id}/${att.id}/${att.filename}`));
+	await deleteAttachmentFiles(c.env.BUCKET, id, result.attachments);
 	return c.json({ status: result.action });
+});
+
+// -- Unsubscribe and blocked senders (WON-217) ----------------------
+
+/**
+ * Unsubscribe from the list that sent this message, by its stored headers.
+ * One-click is a POST from here; for a link or a mailto the answer says what
+ * the app opens. Each is recorded in the Activity log.
+ */
+app.post("/api/v1/mailboxes/:mailboxId/emails/:id/unsubscribe", async (c: AppContext) => {
+	const mailboxId = c.req.param("mailboxId")!.toLowerCase();
+	const email = await c.var.mailbox.getEmail(c.req.param("id")!);
+	if (!email) return c.json({ error: "Email not found" }, 404);
+	const result = await unsubscribe(email.raw_headers);
+	if (result.method === null) return c.json({ error: result.error }, 400);
+	await logActivity(recordsSql(c.env), {
+		actor: "person", tool: "unsubscribe", mailboxId, target: email.id,
+		summary: unsubscribeSummary(email.sender ?? "", result), ok: result.ok,
+	});
+	if (!result.ok) return c.json({ error: result.error, method: result.method }, result.refused ? 400 : 502);
+	return c.json(result);
+});
+
+/** Block the sender of this message for this address: their new mail goes to Trash, marked read. */
+app.post("/api/v1/mailboxes/:mailboxId/emails/:id/block", async (c: AppContext) => {
+	const mailboxId = c.req.param("mailboxId")!.toLowerCase();
+	const email = await c.var.mailbox.getEmail(c.req.param("id")!);
+	if (!email) return c.json({ error: "Email not found" }, 404);
+	const address = (email.sender ?? "").trim().toLowerCase();
+	if (!address.includes("@")) return c.json({ error: "This message has no sender address" }, 400);
+	if (address === mailboxId || configuredAddresses(c.env).some((a) => a.toLowerCase() === address)) {
+		return c.json({ error: "Your own addresses can't be blocked" }, 400);
+	}
+	const blocked = await c.var.mailbox.blockSender(address);
+	await logActivity(recordsSql(c.env), { actor: "person", tool: "block_sender", mailboxId, target: email.id, summary: address, ok: true });
+	return c.json({ mailboxId, ...blocked });
+});
+
+app.get("/api/v1/mailboxes/:mailboxId/blocked-senders", async (c: AppContext) =>
+	c.json(await c.var.mailbox.listBlockedSenders()));
+
+app.delete("/api/v1/mailboxes/:mailboxId/blocked-senders/:address", async (c: AppContext) => {
+	const mailboxId = c.req.param("mailboxId")!.toLowerCase();
+	const address = c.req.param("address")!.toLowerCase();
+	if (!(await c.var.mailbox.unblockSender(address))) return c.json({ error: "Not found" }, 404);
+	await logActivity(recordsSql(c.env), { actor: "person", tool: "unblock_sender", mailboxId, target: null, summary: address, ok: true });
+	return c.json({ removed: true });
+});
+
+/** Blocked senders for every address, for Console > Addresses. */
+app.get("/api/v1/blocked-senders", async (c) => {
+	const store = mailStore(c.env);
+	const lists = await Promise.all((await mailboxIds(c.env)).map(async (mailboxId) =>
+		(await store.mailbox(mailboxId).listBlockedSenders()).map((b) => ({ mailboxId, ...b }))));
+	return c.json(lists.flat());
 });
 
 // -- Threads --------------------------------------------------------
@@ -584,6 +844,8 @@ app.get("/api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId"
 	if (!obj) return c.json({ error: "Attachment file not found" }, 404);
 	const headers = new Headers();
 	headers.set("Content-Type", attachment.mimetype);
+	headers.set("X-Content-Type-Options", "nosniff");
+	headers.set("Content-Security-Policy", "sandbox");
 	const sanitized = attachment.filename.replace(/[\x00-\x1f"\\]/g, "_");
 	headers.set("Content-Disposition", `attachment; filename="${sanitized}"; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`);
 	return new Response(obj.body, { headers });
@@ -609,21 +871,32 @@ async function streamToArrayBuffer(stream: ReadableStream, streamSize: number) {
 	return result;
 }
 
-async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: number }, env: Env, ctx: ExecutionContext) {
-	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
-	const parsedEmail = await new PostalMime().parse(rawEmail);
+async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: number; setReject(reason: string): void }, env: Env, ctx: ExecutionContext) {
+	if (DEMO) {
+		event.setReject("This address does not take mail");
+		return;
+	}
+	const allowedAddresses = configuredAddresses(env).map((a) => a.toLowerCase());
+	const recipient = event.to?.toLowerCase();
+	if (!recipient) throw new Error("received email with no envelope recipient");
+	// name+tag@domain goes to name@domain when only the base address is configured. The To header keeps the tag.
+	const mailboxId = allowedAddresses.includes(recipient) ? recipient : recipient.replace(/^([^+@]+)\+[^@]*@/, "$1@");
+	if (allowedAddresses.length > 0 && !allowedAddresses.includes(mailboxId)) {
+		event.setReject("Unknown recipient");
+		return;
+	}
+	if (allowedAddresses.length === 0 && !(await mailStore(env).mailboxes.exists(mailboxId))) {
+		event.setReject("Unknown recipient");
+		return;
+	}
 
-	const allowedAddresses = ((env.EMAIL_ADDRESSES ?? []) as string[]).map((a) => a.toLowerCase());
+	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
+	const parsedEmail = await parseMail(rawEmail);
+	const extractMsgId = (s: string) => { const m = s.match(/<([^>]+)>/); return m ? m[1] : s.trim().split(/\s+/)[0]; };
+	const originalMessageId = parsedEmail.messageId ? extractMsgId(parsedEmail.messageId) : null;
 	const allRecipients = (parsedEmail.to || []).map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
 	const ccRecipients = (parsedEmail.cc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 	const bccRecipients = (parsedEmail.bcc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
-
-	const mailboxId = event.to?.toLowerCase();
-	if (!mailboxId) throw new Error("received email with no envelope recipient");
-	if (allowedAddresses.length > 0 && !allowedAddresses.includes(mailboxId)) {
-		console.log(`Ignoring email: envelope recipient does not match EMAIL_ADDRESSES.`);
-		return;
-	}
 
 	const messageId = crypto.randomUUID();
 	if (!(await mailStore(env).mailboxes.exists(mailboxId))) {
@@ -633,33 +906,51 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 	}
 
 	const stub = mailStore(env).mailbox(mailboxId);
+	if (originalMessageId && await stub.hasInboundMessageId(originalMessageId)) {
+		console.log("duplicate delivery ignored");
+		return;
+	}
 
 	const attachmentData: StoredAttachment[] = [];
+	const attachmentKeys: string[] = [];
+	const withAttachmentCleanup = async <T>(operation: () => Promise<T>): Promise<T> => {
+		try {
+			return await operation();
+		} catch (e) {
+			if (attachmentKeys.length > 0) await env.BUCKET.delete(attachmentKeys).catch(() => {});
+			throw e;
+		}
+	};
 	if (parsedEmail.attachments) {
 		for (const att of parsedEmail.attachments) {
 			const attId = crypto.randomUUID();
 			const filename = (att.filename || "untitled").replace(/[\/\\:*?"<>|\x00-\x1f]/g, "_");
-			await env.BUCKET.put(`attachments/${messageId}/${attId}/${filename}`, att.content);
+			const key = `attachments/${messageId}/${attId}/${filename}`;
+			attachmentKeys.push(key);
+			await withAttachmentCleanup(() => env.BUCKET.put(key, att.content));
 			attachmentData.push({ id: attId, email_id: messageId, filename, mimetype: att.mimeType,
 				size: typeof att.content === "string" ? att.content.length : att.content.byteLength,
-				content_id: att.contentId || null, disposition: att.disposition || "attachment" });
+				content_id: att.contentId || null, disposition: inboundDisposition(att, parsedEmail.html) });
 		}
 	}
 
-	const extractMsgId = (s: string) => { const m = s.match(/<([^>]+)>/); return m ? m[1] : s.trim().split(/\s+/)[0]; };
-	const inReplyTo = parsedEmail.inReplyTo ? extractMsgId(parsedEmail.inReplyTo) : null;
-	const emailReferences = parsedEmail.references ? parsedEmail.references.split(/\s+/).filter(Boolean).map(extractMsgId) : [];
-	let threadId = emailReferences[0] || inReplyTo || messageId;
+	// A bounce notice joins the conversation of the Sent message it is about (lib/bounce.ts).
+	const bounced = await bounceLink(recordsSql(env), mailboxId, parsedEmail).catch((e) => {
+		console.error("Bounce lookup failed:", (e as Error).message);
+		return null;
+	});
+	const inReplyTo = bounced?.link?.messageId ?? (parsedEmail.inReplyTo ? extractMsgId(parsedEmail.inReplyTo) : null);
+	const emailReferences = parsedEmail.references ? parseReferences(parsedEmail.references) : [];
+	// Join a thread only through mail this mailbox already holds (lib/threading.ts).
+	const threadId = bounced?.link?.threadId ?? await withAttachmentCleanup(() => resolveThreadId(stub, {
+		messageId, inReplyTo, references: emailReferences,
+		subject: parsedEmail.subject || "", sender: (parsedEmail.from?.address || "").toLowerCase(),
+	}));
 
-	if (!inReplyTo && emailReferences.length === 0) {
-		const subjectThread = await (stub as any).findThreadBySubject(parsedEmail.subject || "", parsedEmail.from?.address || undefined);
-		if (subjectThread) threadId = subjectThread;
-	}
-
-	const originalMessageId = parsedEmail.messageId ? extractMsgId(parsedEmail.messageId) : null;
-
+	// A blocked sender's mail goes straight to Trash, marked read, and no agent sees it (WON-217).
+	const blocked = await withAttachmentCleanup(() => stub.isBlockedSender(parsedEmail.from?.address || ""));
 	const inbound = {
-		id: messageId, subject: parsedEmail.subject || "",
+		id: messageId, subject: parsedEmail.subject || "", read: blocked,
 		sender: (parsedEmail.from?.address || "").toLowerCase(), recipient: allRecipients.join(", ") || mailboxId,
 		cc: ccRecipients.join(", ") || null, bcc: bccRecipients.join(", ") || null,
 		date: new Date().toISOString(), // uses receive time, not the email's Date header
@@ -667,26 +958,36 @@ async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: n
 		in_reply_to: inReplyTo, email_references: emailReferences.length > 0 ? JSON.stringify(emailReferences) : null,
 		thread_id: threadId, message_id: originalMessageId, raw_headers: JSON.stringify(parsedEmail.headers),
 	};
-	await stub.createEmail(Folders.INBOX, inbound, attachmentData);
-	// For two weeks after the move to D1, the old mailbox gets a copy too (store/copy-job.ts).
-	if (usesD1(env)) {
-		ctx.waitUntil(mirrorInbound(env, mailboxId, Folders.INBOX, inbound, attachmentData)
-			.catch((e) => console.error(`inbound mirror failed for ${messageId}:`, (e as Error).message)));
-	}
+	await withAttachmentCleanup(() => stub.createEmail(blocked ? Folders.TRASH : Folders.INBOX, inbound, attachmentData));
+	if (blocked) return;
 
-	const automated = automatedMailReason(JSON.stringify(parsedEmail.headers), parsedEmail.from?.address);
-	if (String(env.AUTO_DRAFT_ENABLED) === "true" && automated) {
+	// Nothing drafts every email. New mail goes to the agent only when an enabled agent's
+	// addresses and rules take it, or the owner chose that the PlaraMail Agent drafts what
+	// no agent takes. Rules only: no model call for mail nobody wants.
+	const automated = bounced ? "bounce notice" : automatedMailReason(JSON.stringify(parsedEmail.headers), parsedEmail.from?.address);
+	const wanted = automated ? false : await agentsWant(env, {
+		mailboxId, from: (parsedEmail.from?.address || "").toLowerCase(), subject: parsedEmail.subject || "",
+		body: parsedEmail.text || (parsedEmail.html ? stripHtmlToText(parsedEmail.html) : ""),
+	}).catch((e) => {
+		console.error("Agent match failed:", (e as Error).message);
+		return false;
+	});
+	if (automated) {
 		console.log(`Auto-draft skipped for ${messageId}: ${automated}`);
-	} else if (String(env.AUTO_DRAFT_ENABLED) === "true") {
-		const agentStub = env.EMAIL_AGENT.get(env.EMAIL_AGENT.idFromName(mailboxId));
-		ctx.waitUntil(agentStub.handleNewEmail({
+	} else if (wanted) {
+		await startAutoDraft(env, ctx, {
 			mailboxId,
 			emailId: messageId,
 			sender: (parsedEmail.from?.address || "").toLowerCase(),
-			subject: parsedEmail.subject || "",
 			threadId,
-		}).catch((e) => console.error("Auto-draft trigger failed:", (e as Error).message)));
+		}).catch((e) => console.error("Auto-draft trigger failed:", (e as Error).message));
 	}
+}
+
+/** Whether an enabled agent takes this mail, or the PlaraMail Agent drafts for mail no agent takes. */
+async function agentsWant(env: Env, mail: { mailboxId: string; from: string; subject: string; body: string }): Promise<boolean> {
+	const [agents, { prefs }] = await Promise.all([listAgents(recordsSql(env)), readPrefs(env)]);
+	return matchAgents(agents, mail).length > 0 || prefs.unmatched === "draft";
 }
 
 export { app, receiveEmail };

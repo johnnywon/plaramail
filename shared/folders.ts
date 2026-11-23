@@ -5,7 +5,7 @@
 /**
  * Canonical folder ID constants.
  *
- * Every part of the stack — API routes, Durable Object, MCP, agent,
+ * Every part of the stack — API routes, mail store, MCP, agent,
  * frontend sidebar — references folder IDs. This module is the single
  * source of truth so we don't scatter magic strings everywhere.
  */
@@ -20,6 +20,13 @@ export const Folders = {
 } as const;
 
 export type FolderId = (typeof Folders)[keyof typeof Folders];
+
+const ALL_SYSTEM_FOLDERS = new Set<string>(Object.values(Folders));
+
+/** True for the six built-in folders; anything else is a custom folder. */
+export function isSystemFolder(folderId: string): boolean {
+	return ALL_SYSTEM_FOLDERS.has(folderId);
+}
 
 /**
  * System folder IDs that appear in the sidebar (excludes spam).

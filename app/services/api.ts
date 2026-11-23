@@ -5,7 +5,9 @@
 import type { BulkAction } from "~/lib/bulk-optimistic";
 import type { Email, Mailbox } from "~/types";
 import type { Prefs } from "shared/prefs";
-import type { WorkersAiModel } from "shared/workers-ai-models";
+import type { DraftNotes } from "shared/draft-notes";
+import type { AgentLimits } from "shared/send-limits";
+import type { CatalogModel, KeyedProvider, ModelRef, ProviderId } from "shared/models";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -94,6 +96,137 @@ function del<T>(url: string) {
 
 // ---------- Typed response shapes ----------
 
+export type ActivityActor = "chat" | "auto-draft" | "mcp" | "person";
+
+export interface ActivityEntry {
+	id: number;
+	at: string;
+	mailboxId: string | null;
+	actor: ActivityActor;
+	client: string | null;
+	action: "read" | "draft" | "send" | "delete" | "label" | "move" | "settings";
+	tool: string;
+	target: string | null;
+	summary: string | null;
+	ok: boolean;
+	/** The action agent's action Undo reverses, while it can. */
+	undo: string | null;
+}
+
+export interface McpUsage {
+	clients: { client: string | null; last: string; calls: number; today: number; errors: number }[];
+	tools: Record<string, { calls: number; last: string }>;
+	lastCall: string | null;
+}
+
+/** An app connected to the MCP server over OAuth. `scopes` has "mail.send" when it may send. */
+export interface McpApp {
+	id: string;
+	clientId: string;
+	name: string;
+	scopes: string[];
+	connectedAt: string;
+}
+
+export interface ActivityPage {
+	entries: ActivityEntry[];
+	next: number | null;
+}
+
+export interface AgentOverview {
+	limits: AgentLimits;
+	addresses: { mailboxId: string; hour: number; day: number; agentDay: number }[];
+	runs: Partial<Record<AutoDraftRun["state"], number>>;
+	failed: number;
+	failures: ActivityEntry[];
+	actions: number;
+}
+
+export interface AutoDraftRun {
+	emailId: string;
+	mailboxId: string;
+	sender: string;
+	state: "queued" | "running" | "drafted" | "watched" | "sent" | "skipped" | "superseded" | "failed";
+	attempts: number;
+	reason: string | null;
+	draftId: string | null;
+	agentId: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+/** Watch, Draft and Send are for reply agents; Watch and On for action agents. */
+export type AgentMode = "watch" | "draft" | "send" | "on";
+
+/** What an agent does with mail it takes. */
+export type AgentDoes = "reply" | "star" | "label" | "archive" | "mark_read";
+
+/** One action an action agent took or would have taken. */
+export interface AgentActionRow {
+	id: string;
+	agentId: string;
+	agentName: string;
+	mailboxId: string;
+	emailId: string;
+	does: Exclude<AgentDoes, "reply">;
+	labelId: string | null;
+	state: "watched" | "done" | "undone" | "limited" | "failed";
+	reason: string | null;
+	createdAt: string;
+	undoneAt: string | null;
+}
+
+export interface AgentRule {
+	field: "from" | "subject" | "body";
+	op: "contains" | "not_contains" | "is" | "domain";
+	value: string;
+}
+
+export interface Agent {
+	id: string;
+	name: string;
+	job: string;
+	/** Addresses it watches. Empty means every address. */
+	addresses: string[];
+	rules: AgentRule[];
+	instructions: string;
+	exampleReply: string;
+	mode: AgentMode;
+	does: AgentDoes;
+	/** The label a Label agent adds. */
+	labelId: string | null;
+	enabled: boolean;
+	position: number;
+	dailyLimit: number;
+	perSenderLimit: number;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export type AgentInput = Pick<Agent, "name" | "job"> & Partial<Omit<Agent, "id" | "name" | "job" | "position" | "createdAt" | "updatedAt">>;
+
+export interface AgentStats {
+	agentId: string;
+	/** An action agent's are its actions: watched, done, skipped and failed. */
+	runs: Partial<Record<AutoDraftRun["state"] | "done", number>>;
+	today: number;
+	/** Queued or running runs that moved in the last 10 minutes. */
+	live: number;
+}
+
+export interface AgentDraft {
+	emailId: string;
+	mailboxId: string;
+	threadId: string | null;
+	subject: string;
+	recipient: string;
+	date: string;
+	snippet: string;
+	/** The reply as written, without the quoted original. */
+	text: string;
+	agent: string | null;
+}
+
 
 export interface Conversation {
 	thread_key: string;
@@ -104,6 +237,8 @@ export interface Conversation {
 	date: string;
 	sender_addr: string;
 	sender_name: string;
+	/** The To line, for showing who sent mail went to. */
+	recipient: string;
 	subject: string;
 	snippet: string;
 	unread: boolean;
@@ -130,7 +265,6 @@ export interface MailPage {
 	order?: "relevance" | "date" | "from" | "subject";
 	/** Too many matches to rank; the list is newest first. `sort:relevance` ranks it anyway. */
 	rankSkipped?: boolean;
-	indexing: { done: number; total: number } | null;
 }
 
 export interface FacetValue {
@@ -183,6 +317,18 @@ export interface Label {
 	auto?: boolean;
 }
 
+/** What Unsubscribe did: posted one-click from the Worker, or what the app opens. */
+export type UnsubscribeResult =
+	| { method: "one-click"; ok: true; status: number; host: string }
+	| { method: "link"; ok: true; url: string }
+	| { method: "mailto"; ok: true; mailto: { to: string; subject: string; body: string } };
+
+export interface BlockedSender {
+	mailboxId: string;
+	address: string;
+	createdAt: string;
+}
+
 export interface ScheduledSend {
 	mailboxId: string;
 	emailId: string;
@@ -199,7 +345,7 @@ export interface ScheduleRequest {
 }
 
 export type BulkTarget =
-	| { threadKeys: string[]; view: string }
+	| { threadKeys: string[]; view: string; filter?: string }
 	| { filter: string; asOf: string; expectedCount: number };
 
 export interface BulkResult {
@@ -229,72 +375,40 @@ export interface FolderImportResult {
 	results: { mailboxId: string; folderId: string; labelId: string; labeled: number; archived: number; error?: string }[];
 }
 
-export interface IndexCounts {
-	states: Record<string, number>;
-	unread: number;
-	starred: number;
-	total: number;
-}
-
-export interface IndexStatusResponse {
+/** Message counts per address (workers/store/d1/status.ts). Unread counts the Inbox only. */
+export interface StorageStatusResponse {
 	messages: number;
-	probe: string | null;
-	job: {
-		generation: number;
-		mailboxes: string[];
-		position: number;
-		startedAt: string;
-		finishedAt: string | null;
-		error: string | null;
-	} | null;
+	/** Every message's size, body plus attachments. */
+	bytes: number;
 	mailboxes: {
 		mailboxId: string;
-		error?: string;
-		source?: { mailboxId: string | null; seq: number; pending: number; counts: IndexCounts; inboxConversations: number };
-		index: (IndexCounts & { inboxConversations: number; appliedSeq: number }) | null;
+		states: Record<string, number>;
+		unread: number;
+		starred: number;
+		total: number;
+		inboxConversations: number;
 	}[];
 }
 
-export interface CopyCounts {
-	states: Record<string, { total: number; unread: number; starred: number }>;
-	labels: Record<string, number>;
-	attachments: number;
-	scheduled: number;
-}
-
-/** The one-time copy from the Durable Objects to D1 (workers/store/copy-job.ts). */
-export interface CopyStatusResponse {
-	available: boolean;
-	storage: "d1" | "durable-objects";
-	state: "none" | "copying" | "catching-up" | "ready" | "done";
-	startedAt?: string;
-	finishedAt?: string | null;
-	error?: string | null;
-	mailboxes: { mailboxId: string; total: number; copied: number; pagesDone: boolean }[];
-	parity: {
-		ok: boolean;
-		checkedAt: string;
-		labels: { ok: boolean; source: string[]; d1: string[] };
-		mailboxes: { mailboxId: string; ok: boolean; source: CopyCounts; d1: CopyCounts; pending: number }[];
-	} | null;
-}
-
-export type AgentProvider = "workers-ai" | "openrouter";
 export interface AgentModelView {
-	provider: AgentProvider;
-	model: string;
-	keySet: boolean;
-	keyHint: string;
-	workersAiModel: string;
-	defaultModel: string;
+	selected: ModelRef | null;
+	recommended: ModelRef;
+	/** The model the agent runs right now. */
+	active: ModelRef;
+	keys: Record<KeyedProvider, { set: boolean; hint: string }>;
 }
 
-export interface WorkersAiModelList {
-	recommended: string;
-	/** False when Cloudflare's catalog couldn't be read and the saved prices are shown. */
-	live: boolean;
-	snapshotDate: string;
-	models: WorkersAiModel[];
+export interface ProviderCatalog {
+	source: "live" | "openrouter" | "none";
+	models: CatalogModel[];
+	error?: string;
+}
+
+export interface ModelCatalog {
+	recommended: ModelRef;
+	suggested: (ModelRef & { role: string })[];
+	providers: Record<ProviderId, ProviderCatalog>;
+	keyed: KeyedProvider[];
 }
 
 // ---------- API client ----------
@@ -302,18 +416,17 @@ export interface WorkersAiModelList {
 const api = {
 	// Config
 	getConfig: () =>
-		get<{ domains: string[]; emailAddresses: string[]; autoDraft?: boolean }>("/api/v1/config"),
+		get<{ domains: string[]; emailAddresses: string[]; autoDraft?: boolean; demo?: boolean; version?: string; deployedAt?: string | null }>("/api/v1/config"),
 
 	// Agent model
 	getPrefs: () => get<{ prefs: Prefs; saved: boolean }>("/api/v1/prefs"),
 	savePrefs: (prefs: Partial<Prefs>) => put<{ prefs: Prefs; saved: true }>("/api/v1/prefs", prefs),
 	getAgentModel: () => get<AgentModelView>("/api/v1/agent-model"),
-	updateAgentModel: (body: { provider?: AgentProvider; model?: string; apiKey?: string; workersAiModel?: string }) =>
+	updateAgentModel: (body: { selected?: ModelRef | null; keys?: Partial<Record<KeyedProvider, string>> }) =>
 		put<AgentModelView>("/api/v1/agent-model", body),
-	testAgentModel: (body: { model?: string; apiKey?: string }) =>
-		post<{ ok: boolean; reply?: string; error?: string }>("/api/v1/agent-model/test", body),
-	listWorkersAiModels: () => get<WorkersAiModelList>("/api/v1/agent-model/workers-ai-models"),
-	listAgentModels: () => get<{ models: { id: string; name: string }[] }>("/api/v1/agent-model/models"),
+	testAgentModel: (body: { provider: ProviderId; id: string; key?: string }) =>
+		post<{ ok: boolean; reply?: string; ms?: number; error?: string }>("/api/v1/agent-model/test", body),
+	getModelCatalog: () => get<ModelCatalog>("/api/v1/agent-model/catalog"),
 
 	// Mailboxes
 	listMailboxes: () => get<Mailbox[]>("/api/v1/mailboxes"),
@@ -346,12 +459,23 @@ const api = {
 			in_reply_to?: string;
 			thread_id?: string;
 			draft_id?: string;
+			mode?: "forward";
+			forward_attachments?: string[];
 		},
 	) => post<{ draft_id: string }>(`/api/v1/mailboxes/${mailboxId}/drafts`, draft),
 	replyToEmail: (mailboxId: string, emailId: string, email: unknown, key?: string) =>
 		post<void>(`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/reply`, email, sendKey(key)),
 	forwardEmail: (mailboxId: string, emailId: string, email: unknown, key?: string) =>
 		post<void>(`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/forward`, email, sendKey(key)),
+
+	// Unsubscribe and blocked senders (WON-217)
+	unsubscribe: (mailboxId: string, emailId: string) =>
+		post<UnsubscribeResult>(`/api/v1/mailboxes/${encodeURIComponent(mailboxId)}/emails/${encodeURIComponent(emailId)}/unsubscribe`),
+	blockSender: (mailboxId: string, emailId: string) =>
+		post<BlockedSender>(`/api/v1/mailboxes/${encodeURIComponent(mailboxId)}/emails/${encodeURIComponent(emailId)}/block`),
+	unblockSender: (mailboxId: string, address: string) =>
+		del<{ removed: true }>(`/api/v1/mailboxes/${encodeURIComponent(mailboxId)}/blocked-senders/${encodeURIComponent(address)}`),
+	getBlockedSenders: () => get<BlockedSender[]>("/api/v1/blocked-senders"),
 
 	// Scheduled send
 	scheduleSend: (mailboxId: string, request: ScheduleRequest) =>
@@ -373,6 +497,8 @@ const api = {
 	emptyTrash: (expectedCount: number) => post<unknown>("/api/v1/mail/empty-trash", { expectedCount }),
 
 	// Search window
+	contacts: (q: string, opts?: { signal?: AbortSignal }) =>
+		request<{ contacts: SuggestPerson[] }>(`/api/v1/contacts?${new URLSearchParams({ q })}`, { method: "GET", signal: opts?.signal }),
 	suggest: (params: URLSearchParams, opts?: { signal?: AbortSignal }) =>
 		request<Suggestions>(`/api/v1/search/suggest?${params}`, { method: "GET", signal: opts?.signal }),
 	getSavedSearches: (tzOffset = new Date().getTimezoneOffset()) =>
@@ -399,11 +525,41 @@ const api = {
 	importFoldersDryRun: () => post<FolderImportPlan>("/api/v1/labels/import-folders", { dryRun: true }),
 	importFolders: () => post<FolderImportResult>("/api/v1/labels/import-folders", { dryRun: false, confirm: true }),
 
-	// Mail index
-	getIndexStatus: () => get<IndexStatusResponse>("/api/v1/index/status"),
-	rebuildIndex: () => post<unknown>("/api/v1/index/rebuild"),
-	getCopyStatus: () => get<CopyStatusResponse>("/api/v1/admin/migrate-to-d1"),
-	startCopy: () => post<CopyStatusResponse>("/api/v1/admin/migrate-to-d1", { confirm: true }),
+	// Storage
+	getStorageStatus: () => get<StorageStatusResponse>("/api/v1/storage/status"),
+
+	// Console > Limits and Overview
+	getAgentLimits: () => get<AgentLimits>("/api/v1/agent-limits"),
+	putAgentLimits: (limits: Partial<AgentLimits>) => put<AgentLimits>("/api/v1/agent-limits", limits),
+	getAgentOverview: () => get<AgentOverview>("/api/v1/agents/overview"),
+
+	// Activity and auto-draft runs (Console > Activity)
+	getActivity: (filter: { mailbox?: string; actor?: string; before?: number }) =>
+		get<ActivityPage>("/api/v1/activity", {
+			params: Object.fromEntries(Object.entries(filter).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])),
+		}),
+	getMcpUsage: () => get<McpUsage>("/api/v1/mcp/usage"),
+	getMcpApps: () => get<{ apps: McpApp[] }>("/api/v1/mcp/apps"),
+	revokeMcpApp: (id: string) => del<{ ok: true }>(`/api/v1/mcp/apps/${encodeURIComponent(id)}`),
+	getAutoDraftRuns: (mailbox?: string) => get<AutoDraftRun[]>("/api/v1/auto-draft/runs", mailbox ? { params: { mailbox } } : undefined),
+
+	// Agents (Console > Agents)
+	getAgents: () => get<{ agents: Agent[]; stats: AgentStats[] }>("/api/v1/agents"),
+	createAgent: (input: AgentInput) => post<Agent>("/api/v1/agents", input),
+	updateAgent: (id: string, input: Partial<AgentInput>) => put<Agent>(`/api/v1/agents/${encodeURIComponent(id)}`, input),
+	deleteAgent: (id: string) => del<{ deleted: boolean }>(`/api/v1/agents/${encodeURIComponent(id)}`),
+	orderAgents: (ids: string[]) => put<{ ok: boolean }>("/api/v1/agents/order", { ids }),
+	getAgentRuns: (id: string, limit = 50) => get<AutoDraftRun[]>(`/api/v1/agents/${encodeURIComponent(id)}/runs?limit=${limit}`),
+	getAgentActions: (id: string, limit = 50) => get<AgentActionRow[]>(`/api/v1/agents/${encodeURIComponent(id)}/actions?limit=${limit}`),
+	undoAgentAction: (id: string) => post<AgentActionRow>(`/api/v1/agent-actions/${encodeURIComponent(id)}/undo`, {}),
+	getAgentDrafts: () => get<AgentDraft[]>("/api/v1/agents/review"),
+
+	// Redraft an agent draft with an instruction. The draft is replaced; the reply carries its new id.
+	redraft: (mailboxId: string, draftId: string, instruction: string) =>
+		post<{ draft: { id: string; subject: string; recipient: string; body: string }; notes: DraftNotes }>(
+			`/api/v1/mailboxes/${encodeURIComponent(mailboxId)}/drafts/${encodeURIComponent(draftId)}/redraft`,
+			{ instruction },
+		),
 
 };
 

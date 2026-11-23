@@ -6,16 +6,14 @@
  * One-time conversion of custom folders to labels of the same name.
  * 1. Dry run: counts per mailbox and folder.
  * 2. Back up the plan and every email id per folder to R2.
- * 3. Create the labels, then label each folder's mail (each mailbox pushes
- *    and the index acknowledges before the next step).
+ * 3. Create the labels, then label each folder's mail.
  * 4. Move labeled mail still in each folder to Archive.
  * Folders are never deleted, and every step is safe to run again.
  */
 
 import { LABEL_COLORS } from "../../shared/label-colors";
 import { labelSlug, type Label } from "./mail-bulk-sql";
-import { indexedMailboxIds } from "./mail-index-stub";
-import { mailStore } from "../store";
+import { mailboxIds, mailStore } from "../store";
 import type { Env } from "../types";
 
 export interface MailboxFolders {
@@ -86,7 +84,7 @@ export interface ImportDeps {
 export function importDeps(env: Env): ImportDeps {
 	const index = mailStore(env).all();
 	return {
-		mailboxIds: () => indexedMailboxIds(env),
+		mailboxIds: () => mailboxIds(env),
 		mailbox: (id) => mailStore(env).mailbox(id) as unknown as ImportMailbox,
 		listLabels: async () => (await index.listLabels()).map((l) => ({ id: l.id, name: l.name, color: l.color })),
 		createLabel: async (input) => index.createLabel(input),

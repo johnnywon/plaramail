@@ -1,0 +1,25 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.johnnywon/plaramail",
+  "title": "PlaraMail",
+  "description": "Self-hosted email for every address on your Cloudflare domains: read, search, label, draft and send.",
+  "version": "0.9.6",
+  "websiteUrl": "https://github.com/johnnywon/plaramail",
+  "repository": {
+    "url": "https://github.com/johnnywon/plaramail",
+    "source": "github",
+    "id": "1415033021"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://{host}/mcp",
+      "variables": {
+        "host": {
+          "description": "Hostname of your own PlaraMail deployment, such as mail.example.com",
+          "isRequired": true
+        }
+      }
+    }
+  ]
+}

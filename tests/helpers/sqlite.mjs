@@ -1,9 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./node-require.mjs";
 
 /** Bundle a TypeScript module and import it. */
 export async function loadTs(entry) {
-	const bundle = await build({ entryPoints: [entry], bundle: true, platform: "node", format: "esm", write: false });
+	const bundle = await build({ entryPoints: [entry], bundle: true, platform: "node", banner: NODE_REQUIRE, format: "esm", write: false });
 	return import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 }
 
@@ -13,7 +14,7 @@ function statementCount(sql) {
 }
 
 /**
- * node:sqlite database with an `exec` that enforces Durable Object limits:
+ * node:sqlite database with an `exec` that enforces D1-like limits:
  * at most 100 bound parameters, no SQL-level transactions, and no bound
  * parameters on multi-statement SQL.
  */
@@ -32,18 +33,5 @@ export function openDb() {
 		const stmt = db.prepare(sql);
 		return stmt.columns().length > 0 ? stmt.all(...params).map((row) => ({ ...row })) : (stmt.run(...params), []);
 	};
-	const transactionSync = (fn) => {
-		db.exec("BEGIN");
-		try {
-			const result = fn();
-			db.exec("COMMIT");
-			return result;
-		} catch (error) {
-			db.exec("ROLLBACK");
-			throw error;
-		}
-	};
-	// SqlStorage-shaped wrapper for applyMigrations.
-	const sqlStorage = { exec: (sql, ...params) => exec(sql, ...params) };
-	return { db, exec, transactionSync, sqlStorage };
+	return { db, exec };
 }

@@ -5,7 +5,7 @@ import { Miniflare } from "miniflare";
 import { statements } from "./helpers/schema.mjs";
 import { D1_SCHEMA } from "./helpers/d1-schema.mjs";
 
-// The one-minute cron sends scheduled mail on D1 (docs/d1-migration-plan.md, phase 4).
+// The one-minute cron sends scheduled mail.
 
 const A = "a@example.com";
 const SCHEMA = D1_SCHEMA;
@@ -53,10 +53,6 @@ async function schedule(subject, sendAt) {
 
 const rows = (sql) => call("rows", sql);
 
-test("the cron does nothing on the Durable Object store", async () => {
-	assert.deepEqual(await call("cronOff"), { copy: "none", skipped: true });
-});
-
 test("a due message sends once, even with two runs at the same time", async () => {
 	const due = await schedule("due", T0 + 60_000);
 	const later = await schedule("later", T0 + 3_600_000);
@@ -94,6 +90,24 @@ test("a failed send retries in 15 minutes and stops after three attempts", async
 		await call("fail", false);
 	}
 	assert.deepEqual(await call("sent"), []);
+	await call("cancelScheduled", A, id);
+});
+
+test("a send that may have gone out is not retried", async () => {
+	const id = await schedule("timeout", T0 + 60_000);
+	await call("fail", "unknown");
+	try {
+		assert.deepEqual((await call("cron", T0 + 60_000))[0].scheduled.failed, [id]);
+		const [row] = await call("listScheduled", A);
+		assert.equal(row.attempts, 3, "no attempts left");
+		assert.match(row.error, /binding timed out/);
+		assert.deepEqual((await call("cron", T0 + 3_600_000))[0].scheduled, { sent: [], failed: [] }, "no retry");
+		const [key] = await rows(`SELECT state, error FROM send_keys WHERE key = 'draft:${id}'`);
+		assert.deepEqual(key, { state: "sending", error: "binding timed out" });
+	} finally {
+		await call("fail", false);
+	}
+	assert.equal((await call("sent")).length, 1, "delivered once");
 	await call("cancelScheduled", A, id);
 });
 

@@ -18,10 +18,10 @@ function files(dir) {
 	});
 }
 
-test("only the store and the Durable Objects touch the mail bindings", () => {
+test("only the store touches the mail database", () => {
 	const offenders = files("workers")
-		.filter((path) => !path.startsWith("workers/store/") && !path.startsWith("workers/durableObject/"))
-		.filter((path) => /env\.(MAILBOX|MAIL_INDEX|DB)\b|DurableObjectStub<Mail(box|Index)DO>|`mailboxes\//.test(readFileSync(path, "utf8")));
+		.filter((path) => !path.startsWith("workers/store/"))
+		.filter((path) => /env\.DB\b|`mailboxes\//.test(readFileSync(path, "utf8")));
 	assert.deepEqual(offenders, [], "use mailStore(env) from workers/store");
 });
 

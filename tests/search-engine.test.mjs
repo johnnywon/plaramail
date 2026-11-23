@@ -2,19 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { D1_SCHEMA } from "./helpers/d1-schema.mjs";
 import { statements } from "./helpers/schema.mjs";
-import { openSql } from "./helpers/sql.mjs";
 import { loadTs, openDb } from "./helpers/sqlite.mjs";
 
 // The search engine on D1 (S4): ranking with the count-first rule, match
-// counts, Worker-built snippets, the substring fallback, "Did you mean",
-// and the has:link backfill. Mail is stored through the real D1 row writer.
+// counts, Worker-built snippets, the substring fallback, "Did you mean"
+// and has:link. Mail is stored through the real D1 row writer.
 
 const idx = await loadTs("workers/lib/mail-index-sql.ts");
 const eng = await loadTs("workers/lib/search-engine-sql.ts");
 const snip = await loadTs("workers/lib/snippets.ts");
 const sg = await loadTs("workers/lib/search-suggest-sql.ts");
 const rows = await loadTs("workers/store/d1/rows.ts");
-const backfill = await loadTs("workers/store/d1/backfill.ts");
 
 const A = "a@example.com";
 const NOW = Date.parse("2026-10-11T12:00:00Z");
@@ -50,11 +48,11 @@ const exec = (sql, ...params) => {
 	}
 	return D.exec(sql, ...params);
 };
-const filter = (q, overrides = {}) => idx.emptyFilter({ view: "anywhere", q, engine: "d1", ...overrides });
+const filter = (q, overrides = {}) => idx.emptyFilter({ view: "anywhere", q, ...overrides });
 const list = (q, overrides, options = {}) => idx.runSync(eng.d1MailQuery(filter(q, overrides), { now: NOW, ...options }), exec);
 const ids = (page) => page.conversations.map((c) => c.email_id);
 
-test("searches with words rank by relevance on D1", () => {
+test("searches with words rank by relevance", () => {
 	const page = list("quarterly report");
 	assert.equal(page.order, "relevance");
 	assert.deepEqual(ids(page), ["m2", "m1"], "the subject match beats a newer body match");
@@ -63,7 +61,6 @@ test("searches with words rank by relevance on D1", () => {
 	assert.deepEqual(ids(list("quarterly report", { dir: "asc" })), ["m2", "m1"], "oldest first is a date order");
 	assert.equal(list("quarterly report", { dir: "asc" }).order, "date");
 	assert.equal(list("is:unread").order, "date", "no words, no ranking");
-	assert.equal(idx.queryMail(exec, filter("quarterly", { engine: "index" }), { now: NOW }).order, "date", "the index doesn't rank");
 });
 
 test("a conversation shows its best match and how many messages matched", () => {
@@ -153,19 +150,8 @@ test("Did you mean", () => {
 	assert.equal(out.didYouMean.text, "invoice");
 });
 
-test("has:link is set when mail is stored, and the cron checks older mail", async () => {
+test("has:link is set when mail is stored", () => {
 	assert.deepEqual(ids(list("has:link")), ["m3"]);
-	const { sql } = openSql();
-	for (const s of statements(D1_SCHEMA)) await sql.run(s);
-	await sql.run(`INSERT INTO mailboxes (id, created_at) VALUES (?, 'x')`, A);
-	await sql.run(`INSERT INTO folders (mailbox_id, id, name) VALUES (?, 'inbox', 'inbox')`, A);
-	for (const [n, body] of [[1, "<a href='https://example.com'>x</a>"], [2, "plain"], [3, null]]) {
-		await sql.run(`INSERT INTO messages (email_id, mailbox_id, folder_id, conversation_id, date, body, body_key) VALUES (?, ?, 'inbox', ?, 'd', ?, ?)`, `e${n}`, A, `c${n}`, body, body ? null : "bodies/e3.html");
-	}
-	assert.equal(await backfill.backfillLinks(sql, 2), 2);
-	assert.equal(await backfill.backfillLinks(sql, 2), 1);
-	assert.equal(await backfill.backfillLinks(sql, 2), 0);
-	assert.deepEqual((await sql.all(`SELECT email_id, has_link FROM messages ORDER BY email_id`)).map((r) => r.has_link), [1, 0, 0]);
 });
 
 test("facets with words count the newest matches on D1", () => {
@@ -174,4 +160,44 @@ test("facets with words count the newest matches on D1", () => {
 	idx.runSync(eng.d1FacetsQuery(filter("invoice"), NOW), spy);
 	const counts = seen.filter((s) => /FROM messages m/.test(s) && /MATCH/.test(s));
 	assert.ok(counts.length > 0 && counts.every((s) => /ORDER BY rowid DESC LIMIT \?/.test(s)));
+});
+
+test("search folds accents both ways, for words and substrings (#40)", () => {
+	const d = openDb();
+	for (const s of statements(D1_SCHEMA)) d.exec(s);
+	d.exec(`INSERT INTO mailboxes (id, created_at) VALUES (?, 'x')`, A);
+	d.exec(`INSERT INTO folders (mailbox_id, id, name) VALUES (?, 'inbox', 'inbox')`, A);
+	const mail = [["a1", "Café menu"], ["a2", "Cafe hours"], ["a3", "Über rides"], ["a4", "Uber receipts"], ["a5", "ünïcødé test"], ["a6", "Résumé attached"], ["a7", "Resume draft"]];
+	for (const [id, subject] of mail) {
+		const email = { id, subject, sender: "ann@example.org", recipient: A, date: iso(1), body: "<p>x</p>", thread_id: id };
+		for (const s of rows.insertStatements(A, "inbox", email, [], id, { bodyInR2: false })) d.exec(s.sql, ...s.params);
+	}
+	const find = (q) => ids(idx.runSync(eng.d1MailQuery(filter(q), { now: NOW }), d.exec)).sort();
+	assert.deepEqual(find("cafe"), ["a1", "a2"]);
+	assert.deepEqual(find("café"), ["a1", "a2"]);
+	assert.deepEqual(find("uber"), ["a3", "a4"]);
+	assert.deepEqual(find("über"), ["a3", "a4"]);
+	assert.deepEqual(find("unicode"), ["a5"]);
+	assert.deepEqual(find("sume"), ["a6", "a7"], "inside Résumé, by substring");
+	assert.deepEqual(find("sumé"), ["a6", "a7"]);
+});
+
+test("migration 0009 refills the substring index from stored mail, folded (#40)", async () => {
+	const { readdirSync, readFileSync } = await import("node:fs");
+	const fold = await loadTs("workers/lib/search-fold.ts");
+	const files = readdirSync("migrations").filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
+	const before = files.filter((f) => f < "0009").map((f) => readFileSync(`migrations/${f}`, "utf8")).join("\n");
+	const m9 = readFileSync("migrations/0009_search_fold.sql", "utf8");
+	assert.ok(m9.includes(fold.foldLettersSql("m.subject")), "the migration folds the letters search-fold.ts folds");
+
+	const d = openDb();
+	for (const s of statements(before)) d.exec(s);
+	d.exec(`INSERT INTO mailboxes (id, created_at) VALUES (?, 'x')`, A);
+	d.exec(`INSERT INTO folders (mailbox_id, id, name) VALUES (?, 'inbox', 'inbox')`, A);
+	const email = { id: "old", subject: "Résumé for Bjørn", sender: "ann@example.org", recipient: A, date: iso(1), body: "<p>x</p>", thread_id: "old" };
+	for (const s of rows.insertStatements(A, "inbox", email, [], "old", { bodyInR2: false })) d.exec(s.sql, ...s.params);
+	for (const s of statements(m9)) d.exec(s);
+	const hit = (q) => d.exec(`SELECT rowid FROM messages_trigram WHERE messages_trigram MATCH ?`, `"${q}"`).length;
+	assert.equal(hit("sume"), 1);
+	assert.equal(hit("bjorn"), 1);
 });

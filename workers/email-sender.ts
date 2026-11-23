@@ -9,6 +9,7 @@
  *
  * See: https://developers.cloudflare.com/email-service/api/send-emails/workers-api/
  */
+import { htmlToTextAlternative } from "./lib/text-alternative";
 
 export interface SendEmailParams {
 	to: string | string[];
@@ -48,7 +49,9 @@ export async function sendEmail(
 	};
 
 	if (params.html) message.html = params.html;
-	if (params.text) message.text = params.text;
+	// HTML always goes with a text part for the mail service to send as its alternative (lib/text-alternative.ts).
+	const text = params.text || (params.html ? htmlToTextAlternative(params.html) : "");
+	if (text) message.text = text;
 	if (params.cc) message.cc = params.cc;
 	if (params.bcc) message.bcc = params.bcc;
 	if (params.replyTo) message.replyTo = params.replyTo;
@@ -58,8 +61,9 @@ export async function sendEmail(
 	}
 
 	if (params.attachments && params.attachments.length > 0) {
+		// The binding sends a string as the file's own text, so decode the base64.
 		message.attachments = params.attachments.map((att) => ({
-			content: att.content,
+			content: Uint8Array.from(atob(att.content), (c) => c.charCodeAt(0)),
 			filename: att.filename,
 			type: att.type,
 			disposition: att.disposition,
@@ -70,4 +74,23 @@ export async function sendEmail(
 	// Local (Miniflare) bindings resolve without a result.
 	const result = (await binding.send(message as any)) as { messageId?: string } | undefined;
 	return { messageId: result?.messageId ?? "" };
+}
+
+/**
+ * Codes the mail service returns when it refused the message, so nothing
+ * went out. Any other throw (an internal error, a delivery failure, a
+ * timeout with no code) may have come after the message was accepted.
+ */
+const REJECTED_CODES = new Set([
+	"E_VALIDATION_ERROR", "E_FIELD_MISSING", "E_TOO_MANY_RECIPIENTS", "E_TOO_MANY_ATTACHMENTS",
+	"E_SENDER_NOT_VERIFIED", "E_RECIPIENT_NOT_ALLOWED", "E_RECIPIENT_SUPPRESSED", "E_SENDER_DOMAIN_NOT_AVAILABLE",
+	"E_CONTENT_TOO_LARGE", "E_HEADER_NOT_ALLOWED", "E_HEADER_USE_API_FIELD", "E_HEADER_VALUE_INVALID",
+	"E_HEADER_VALUE_TOO_LONG", "E_HEADER_NAME_INVALID", "E_HEADERS_TOO_LARGE", "E_HEADERS_TOO_MANY",
+	"E_RATE_LIMIT_EXCEEDED", "E_DAILY_LIMIT_EXCEEDED",
+]);
+
+/** True when a send error proves the mail service did not accept the message. */
+export function sendWasRejected(error: unknown): boolean {
+	const code = (error as { code?: unknown } | null)?.code;
+	return typeof code === "string" && REJECTED_CODES.has(code);
 }

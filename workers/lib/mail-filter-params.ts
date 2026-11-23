@@ -15,7 +15,6 @@ import {
 	type MailFilter,
 	searchOf,
 } from "./mail-index-sql";
-import type { SearchEngine } from "../store/search";
 
 import { MAX_SEARCH_LENGTH } from "../../shared/search-query";
 
@@ -36,11 +35,8 @@ function oneOf<T extends string>(value: string | null, allowed: readonly T[], ke
 	return value as T;
 }
 
-/**
- * With `engine`, the search text is also compiled for that store, so a bad
- * operator is refused here rather than inside the store.
- */
-export function parseMailParams(params: URLSearchParams, engine?: SearchEngine): { filter: MailFilter; cursor: string | null; limit: number } {
+/** The search text is compiled too, so a bad operator is refused here rather than inside the store. */
+export function parseMailParams(params: URLSearchParams): { filter: MailFilter; cursor: string | null; limit: number } {
 	const view = params.get("view") || "inbox";
 	if (!(VIEWS as readonly string[]).includes(view) && !/^folder:[\w-]+$/.test(view)) {
 		throw new InvalidFilterError(`Invalid view: ${view}`);
@@ -85,13 +81,12 @@ export function parseMailParams(params: URLSearchParams, engine?: SearchEngine):
 		sort: oneOf(params.get("sort"), SORTS, "sort") ?? "date",
 		dir: oneOf(params.get("dir"), ["asc", "desc"] as const, "dir") ?? "desc",
 		tzOffset: Number.isFinite(tz) && Math.abs(tz) <= 14 * 60 ? Math.trunc(tz) : 0,
-		engine,
 	};
 	for (const key of Object.keys(overrides) as (keyof MailFilter)[]) {
 		if (overrides[key] === undefined) delete overrides[key];
 	}
 	const filter = emptyFilter(overrides);
-	if (engine) searchOf(filter);
+	searchOf(filter);
 	return {
 		filter,
 		cursor: params.get("cursor") || null,

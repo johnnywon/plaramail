@@ -3,8 +3,8 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 /**
- * Label palette. Label colour appears only as a filled chip or a square
- * swatch of at least 8px; each fill has a text colour that reads on it.
+ * Label palette. Label color appears only as a filled chip or a square
+ * swatch of at least 8px; each fill has a text color that reads on it.
  */
 export const LABEL_COLORS: readonly { bg: string; fg: string; name: string }[] = [
 	{ bg: "#c8372d", fg: "#ffffff", name: "Red" },
@@ -27,7 +27,7 @@ export function isLabelColor(value: string): boolean {
 	return LABEL_COLORS.some((c) => c.bg === value.toLowerCase());
 }
 
-/** Text colour for a label fill. Unknown fills get dark text. */
+/** Text color for a label fill. Unknown fills get dark text. */
 export function labelTextColor(bg: string): string {
 	return LABEL_COLORS.find((c) => c.bg === bg.toLowerCase())?.fg ?? "#1d1f21";
 }

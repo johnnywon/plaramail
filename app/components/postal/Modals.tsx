@@ -2,395 +2,115 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import {
-	ArrowCounterClockwiseIcon, AtIcon, CheckIcon, CopyIcon, DatabaseIcon, DesktopIcon, GearSixIcon, MoonIcon,
-	KeyIcon, MagnifyingGlassIcon, PlugsConnectedIcon, SignatureIcon, SignOutIcon, SlidersHorizontalIcon, SunIcon, TagIcon, WrenchIcon, XIcon,
-} from "@phosphor-icons/react";
-import { AgentIcon } from "./AgentIcon";
+import { hasText, withSignatureText } from "./signature-state";
+import { ArrowCounterClockwiseIcon, DesktopIcon, KeyboardIcon, MoonIcon, SignOutIcon, SunIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { queryKeys } from "~/queries/keys";
-import api, { type AgentProvider, type WorkersAiModelList } from "~/services/api";
-import { makerOf, type WorkersAiModel } from "shared/workers-ai-models";
+import api from "~/services/api";
+import { AgentModelSection, modelName, useAgentModelDraft, useModelCatalog } from "./ModelTab";
+import { Segmented } from "./Segmented";
 import { type AddressInfo, textToParagraphs } from "./compose";
 import { Editor } from "./Editor";
-import { htmlToPlainText } from "~/lib/utils";
-import { AddressText, type Identities, Swatch } from "./identity";
+import { getSignatureBlock, htmlToPlainText } from "~/lib/utils";
+import { AddressText, handleOf, type Identities, Swatch } from "./identity";
 import { LabelsTab } from "./LabelsTab";
-import type { SettingsTab } from "./settings-tabs";
+import type { ConsoleTab } from "./console-tabs";
+import { useDemo } from "~/lib/demo";
+import { LimitsTab, useAgentLimitsDraft } from "./LimitsTab";
+import { ActivityTab } from "./ActivityTab";
 import { StorageTab } from "./StorageTab";
+import { BlockedSenders } from "./BlockedSenders";
+import { receivedCount, ROUTING_URL } from "./routing-guide";
 import type { Prefs } from "./prefs";
+import { ShortcutMap } from "./ShortcutMap";
+import { samePrefs, TRASH_DAYS, type TrashDays } from "shared/prefs";
+import { Keys } from "./shortcuts";
+import { ShortcutsPage } from "./ShortcutsTab";
+import { Badge, Button, CopyField, Field, Fields, Item, List, Note, SaveBar, Section, Summary, SummaryRow, Table } from "./ConsoleUI";
+import { SEND_LIMITS } from "shared/send-limits";
 
-function Modal({ className = "", label, onClose, children }: { className?: string; label: string; onClose: () => void; children: React.ReactNode }) {
-	const ref = useRef<HTMLDivElement>(null);
-	useEffect(() => {
-		const previous = document.activeElement as HTMLElement | null;
-		ref.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") {
-				// Escape in a search box with text clears the box; the box handles it.
-				if (e.target instanceof HTMLInputElement && e.target.type === "search" && e.target.value) return;
-				e.preventDefault();
-				onClose();
-			} else if (e.key === "Tab" && ref.current) {
-				const items = [...ref.current.querySelectorAll<HTMLElement>("button, input, textarea, select, a[href], [tabindex='0']")].filter((el) => !el.hasAttribute("disabled"));
-				if (!items.length) return;
-				const first = items[0];
-				const last = items[items.length - 1];
-				if (e.shiftKey && document.activeElement === first) {
-					e.preventDefault();
-					last.focus();
-				} else if (!e.shiftKey && document.activeElement === last) {
-					e.preventDefault();
-					first.focus();
-				}
-			}
-		};
-		document.addEventListener("keydown", onKey, true);
-		return () => {
-			document.removeEventListener("keydown", onKey, true);
-			previous?.focus?.();
-		};
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
-	return (
-		<div className="pg-modal-scrim" onClick={onClose}>
-			<div ref={ref} className={`pg-modal ${className}`} role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
-				{children}
-			</div>
-		</div>
-	);
-}
+export { Head, Modal, Switch } from "./Dialog";
+import { Head, Modal, Switch } from "./Dialog";
 
-function Head({ icon, title, sub, onClose, danger }: { icon: React.ReactNode; title: string; sub: string; onClose: () => void; danger?: boolean }) {
-	return (
-		<div className="pg-modal-head">
-			<span className={`pg-modal-icon${danger ? " is-danger" : ""}`}>{icon}</span>
-			<div className="pg-modal-title">
-				<h2>{title}</h2>
-				<span>{sub}</span>
-			</div>
-			<button type="button" className="pg-modal-x" title="Close (Esc)" aria-label="Close" onClick={onClose}><XIcon size={16} /></button>
-		</div>
-	);
-}
+/** Whether signature HTML has any text in it. */
 
-function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
-	return (
-		<button type="button" role="switch" aria-checked={on} aria-label={label} className="pg-switch" onClick={() => onChange(!on)}>
-			<span />
-		</button>
-	);
-}
-
-function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string; icon?: React.ReactNode }[]; onChange: (v: T) => void; label: string }) {
-	return (
-		<div className="pg-segmented" role="group" aria-label={label}>
-			{options.map((o) => (
-				<button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
-					{o.icon}{o.label}
-				</button>
-			))}
-		</div>
-	);
-}
-
+/** A setting on one line: the console's inline `Field`. */
 function Setting({ title, sub, children }: { title: string; sub?: React.ReactNode; children: React.ReactNode }) {
-	return (
-		<div className="pg-setting">
-			<div className="pg-setting-text"><b>{title}</b>{sub && <span>{sub}</span>}</div>
-			{children}
-		</div>
-	);
+	return <Field inline label={title} hint={sub}>{children}</Field>;
 }
 
-function useAgentModelDraft() {
-	const queryClient = useQueryClient();
-	const { data: stored } = useQuery({ queryKey: ["agent-model"], queryFn: api.getAgentModel });
-	const [provider, setProvider] = useState<AgentProvider | null>(null);
-	const [model, setModel] = useState<string | null>(null);
-	const [key, setKey] = useState("");
-	const [removeKey, setRemoveKey] = useState(false);
-	const [workersAiModel, setWorkersAiModel] = useState<string | null>(null);
-	const current = {
-		provider: provider ?? stored?.provider ?? "workers-ai",
-		model: model ?? stored?.model ?? "",
-		workersAiModel: workersAiModel ?? stored?.workersAiModel ?? "",
-	};
-	const dirty = !!stored && (
-		current.provider !== stored.provider || current.model.trim() !== stored.model || key.trim() !== "" || removeKey
-		|| current.workersAiModel !== stored.workersAiModel
-	);
-	const save = async () => {
-		const view = await api.updateAgentModel({
-			provider: current.provider,
-			model: current.model.trim(),
-			apiKey: removeKey ? "" : key.trim() || undefined,
-			workersAiModel: current.workersAiModel,
-		});
-		queryClient.setQueryData(["agent-model"], view);
-	};
-	return { stored, ...current, key, removeKey, dirty, save, setProvider, setModel, setKey, setRemoveKey, setWorkersAiModel };
-}
-
-type AgentModelDraft = ReturnType<typeof useAgentModelDraft>;
-
-function useWorkersAiModels(enabled = true) {
-	return useQuery({ queryKey: ["agent-model", "workers-ai"], queryFn: api.listWorkersAiModels, enabled, staleTime: 3_600_000 });
-}
-
-/** The display name of a Workers AI model id, from the list when it's there. */
-function workersAiName(list: WorkersAiModelList | undefined, id: string): string {
-	return list?.models.find((m) => m.id === id)?.name ?? id.split("/").pop() ?? id;
-}
-
-function formatContext(tokens: number | null): string {
-	if (!tokens) return "–";
-	return tokens >= 1_000_000 ? `${Math.round(tokens / 1_000_000)}M` : `${Math.round(tokens / 1000)}K`;
-}
-
-function formatPrice(usd: number | undefined): string {
-	return usd === undefined ? "–" : `$${usd.toFixed(2)}`;
-}
-
-/** Cost band by output price, which dominates an agent's bill. */
-function priceTier(model: WorkersAiModel): "low" | "mid" | "high" | "none" {
-	if (!model.price) return "none";
-	return model.price.output <= 0.6 ? "low" : model.price.output <= 2 ? "mid" : "high";
-}
-
-/** Context on a log scale from 8K to 1M tokens, as a share of the bar. */
-function contextShare(tokens: number | null): number {
-	if (!tokens) return 0;
-	const lo = Math.log(8_000), hi = Math.log(1_048_576);
-	return Math.min(1, Math.max(0.04, (Math.log(tokens) - lo) / (hi - lo)));
-}
-
-function WorkersAiRow({ model, selected, recommended, onSelect }: { model: WorkersAiModel; selected: boolean; recommended: boolean; onSelect: () => void }) {
-	const maker = makerOf(model.id);
-	const tier = priceTier(model);
-	return (
-		<button type="button" role="radio" aria-checked={selected} className="pg-model-row" onClick={onSelect}>
-			<span className="pg-model-check" aria-hidden="true">{selected && <CheckIcon size={12} weight="bold" />}</span>
-			<span className="pg-model-name">
-				<span className="pg-model-title">
-					<span className="pg-maker" style={{ "--pg-h": maker.hue } as React.CSSProperties}>{maker.label}</span>
-					<b>{model.name}</b>
-					{recommended && <span className="pg-model-rec">Recommended</span>}
-				</span>
-				<code>{model.id}</code>
-			</span>
-			<span className="pg-model-ctx" data-label="Context">
-				<span className="pg-model-bar" aria-hidden="true"><i style={{ width: `${contextShare(model.context) * 100}%` }} /></span>
-				<span>{formatContext(model.context)}</span>
-			</span>
-			<span className="pg-model-price" data-tier={tier}>
-				{tier === "none" ? "No price" : <><span>{formatPrice(model.price?.input)}</span><span className="pg-model-slash">/</span><b>{formatPrice(model.price?.output)}</b></>}
-			</span>
-		</button>
-	);
-}
-
-type ModelSort = "suggested" | "price" | "context";
-
-function WorkersAiPicker({ draft }: { draft: AgentModelDraft }) {
-	const { data: list, isLoading } = useWorkersAiModels();
-	const [query, setQuery] = useState("");
-	const [sort, setSort] = useState<ModelSort>("suggested");
-	if (isLoading || !list) return <p className="pg-table-note">Loading…</p>;
-
-	const recommended = list.recommended;
-	const saved = draft.workersAiModel;
-	const selected = saved || recommended;
-	const savedMissing = !!saved && list.live && !list.models.some((m) => m.id === saved);
-	const select = (id: string) => draft.setWorkersAiModel(id === recommended ? "" : id);
-
-	const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-	const matches = list.models.filter((m) => {
-		const text = `${m.name} ${m.id} ${makerOf(m.id).label}`.toLowerCase();
-		return words.every((w) => text.includes(w));
-	});
-	const sorted = sort === "suggested" ? matches
-		: [...matches].sort(sort === "price"
-			? (a, b) => (a.price?.output ?? Infinity) - (b.price?.output ?? Infinity) || (a.price?.input ?? 0) - (b.price?.input ?? 0)
-			: (a, b) => (b.context ?? 0) - (a.context ?? 0) || (a.price?.output ?? Infinity) - (b.price?.output ?? Infinity));
-	const grouped = sort === "suggested" && words.length === 0;
-	const groups = grouped
-		? [{ title: "Suggested", rows: sorted.filter((m) => m.suggested) }, { title: "More from Cloudflare", rows: sorted.filter((m) => !m.suggested) }]
-		: [{ title: `${sorted.length} ${sorted.length === 1 ? "model" : "models"}`, rows: sorted }];
-	const row = (m: WorkersAiModel) => <WorkersAiRow key={m.id} model={m} selected={m.id === selected} recommended={m.id === recommended} onSelect={() => select(m.id)} />;
-
-	return (
-		<div className="pg-models">
-			<div className="pg-models-head">
-				<b>Agent model</b>
-				<span className="pg-models-legend">
-					$ per 1M tokens, in / out
-					<span data-tier="low">Low</span><span data-tier="mid">Mid</span><span data-tier="high">High</span>
-				</span>
-			</div>
-			{savedMissing && (
-				<p className="pg-models-warn">
-					Cloudflare no longer lists <code>{saved}</code>. The agent is using {workersAiName(list, recommended)} until you choose another model.
-				</p>
-			)}
-			<div className="pg-models-tools">
-				<label className="pg-models-search">
-					<MagnifyingGlassIcon size={14} aria-hidden="true" />
-					<input
-						type="search"
-						value={query}
-						placeholder="Search models"
-						aria-label="Search Workers AI models"
-						spellCheck={false}
-						onChange={(e) => setQuery(e.target.value)}
-						onKeyDown={(e) => { if (e.key === "Escape" && query) { e.preventDefault(); setQuery(""); } }}
-					/>
-				</label>
-				<Segmented<ModelSort>
-					label="Sort models"
-					value={sort}
-					onChange={setSort}
-					options={[{ value: "suggested", label: "Suggested" }, { value: "price", label: "Cheapest" }, { value: "context", label: "Most context" }]}
-				/>
-			</div>
-			<div className="pg-models-list" role="radiogroup" aria-label="Workers AI model">
-				{groups.map((g) => g.rows.length > 0 && (
-					<div key={g.title} className="pg-models-group">
-						<div className="pg-models-group-head">
-							<span>{g.title}</span>
-							{grouped && <span>{g.rows.length}</span>}
-						</div>
-						{g.rows.map(row)}
-					</div>
-				))}
-				{sorted.length === 0 && <p className="pg-models-empty">No model matches "{query.trim()}".</p>}
-			</div>
-		</div>
-	);
-}
-
-function AgentModelSection({ draft }: { draft: AgentModelDraft }) {
-	const openrouter = draft.provider === "openrouter";
-	const { data: models } = useQuery({ queryKey: ["agent-model", "models"], queryFn: api.listAgentModels, enabled: openrouter, staleTime: 3_600_000 });
-	const [test, setTest] = useState<{ busy: boolean; result?: string; ok?: boolean }>({ busy: false });
-	const keySaved = !!draft.stored?.keySet && !draft.removeKey;
-	const hasKey = keySaved || draft.key.trim() !== "";
-
-	const runTest = async () => {
-		setTest({ busy: true });
-		try {
-			const r = await api.testAgentModel({ model: draft.model.trim() || undefined, apiKey: draft.key.trim() || undefined });
-			setTest({ busy: false, ok: r.ok, result: r.ok ? `Replied: ${r.reply || "(empty)"}` : `OpenRouter: ${r.error}` });
-		} catch (e) {
-			setTest({ busy: false, ok: false, result: `OpenRouter: ${(e as Error).message}` });
-		}
-	};
-
-	return (
-		<>
-			<Setting
-				title="Provider"
-				sub={openrouter
-					? "Chat and auto-draft run on OpenRouter and bill your OpenRouter account. Safety checks on incoming mail stay on Workers AI."
-					: null}
-			>
-				<Segmented<AgentProvider>
-					label="Agent model provider"
-					value={draft.provider}
-					onChange={(v) => { draft.setProvider(v); setTest({ busy: false }); }}
-					options={[{ value: "workers-ai", label: "Workers AI" }, { value: "openrouter", label: "OpenRouter" }]}
-				/>
-			</Setting>
-			{!openrouter && <WorkersAiPicker draft={draft} />}
-			{openrouter && (
-				<>
-					<Setting
-						title="OpenRouter API key"
-						sub={keySaved ? `Saved key ending ${draft.stored?.keyHint || "····"}. Paste a new one to replace it.` : "Stored on your Worker. The key is never sent back to the browser."}
-					>
-						<div className="pg-setting-field">
-							<input
-								className="pg-input pg-mono"
-								type="password"
-								autoComplete="off"
-								spellCheck={false}
-								value={draft.key}
-								placeholder={keySaved ? "••••••••" : "sk-or-…"}
-								aria-label="OpenRouter API key"
-								onChange={(e) => { draft.setKey(e.target.value); draft.setRemoveKey(false); }}
-							/>
-							{keySaved && (
-								<button type="button" className="pg-btn pg-btn-sm pg-btn-quiet" onClick={() => { draft.setRemoveKey(true); draft.setKey(""); }}>Remove</button>
-							)}
-						</div>
-					</Setting>
-					<Setting title="OpenRouter model" sub="Only models that can call tools are listed. The agent needs tools to read, label and draft.">
-						<div className="pg-setting-field">
-						<input
-							className="pg-input pg-mono"
-							list="pg-openrouter-models"
-							value={draft.model}
-							placeholder="provider/model"
-							aria-label="OpenRouter model"
-							spellCheck={false}
-							onChange={(e) => draft.setModel(e.target.value)}
-						/>
-						</div>
-						<datalist id="pg-openrouter-models">
-							{models?.models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-						</datalist>
-					</Setting>
-					<div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0 10px" }}>
-						<button type="button" className="pg-btn pg-btn-sm" onClick={runTest} disabled={test.busy || !hasKey || !draft.model.trim()}>
-							{test.busy ? "Testing…" : "Test"}
-						</button>
-						{test.result && (
-							<span role="status" style={{ fontSize: 12, color: test.ok ? "var(--pg-green-text)" : "var(--pg-danger)" }}>{test.result}</span>
-						)}
-					</div>
-				</>
-			)}
-		</>
-	);
-}
-
-export function SettingsModal({ tab, onTab, prefs, setPrefs, addresses, identities, info, autoDraft, onClose, onSaved }: {
-	tab: SettingsTab;
-	onTab: (tab: SettingsTab) => void;
+/**
+ * The console pages that edit saved settings: the mail client's settings, the
+ * PlaraMail Agent, Models and Logs. Changes save on their own: switches and choices
+ * at once, typing once it pauses.
+ */
+export function ConsoleSettings({ tab, onTab, prefs, setPrefs, addresses, identities, info, autoDraft }: {
+	tab: ConsoleTab;
+	onTab: (tab: ConsoleTab) => void;
 	prefs: Prefs;
 	setPrefs: (p: Partial<Prefs>) => Promise<unknown>;
 	addresses: string[];
 	identities: Identities;
 	info: ReadonlyMap<string, AddressInfo>;
 	autoDraft: boolean;
-	onClose: () => void;
-	onSaved: (message: string) => void;
 }) {
-	const initialSigs = Object.fromEntries(addresses.map((a) => {
+	// A demo's settings are read-only apart from Labels: the server refuses every other save.
+	const readOnly = useDemo() && READ_ONLY_IN_DEMO.has(tab);
+	const loadedSigs = Object.fromEntries(addresses.map((a) => {
 		const sig = info.get(a)?.mailbox?.settings?.signature;
 		const html = sig?.html || (sig?.text ? textToParagraphs(sig.text) : "");
 		return [a, { html, enabled: !!sig?.enabled && !!html }];
 	}));
-	const [sigs, setSigs] = useState<Record<string, { html: string; enabled: boolean }>>(initialSigs);
+	const [sigs, setSigs] = useState<Record<string, { html: string; enabled: boolean }>>(loadedSigs);
+	// What the server holds. Moves forward after each save, ahead of the mailbox refetch.
+	const [initialSigs, setInitialSigs] = useState(loadedSigs);
+	// With no signatures anywhere, open the first address so there is somewhere to start.
+	const [sigOpen, setSigOpen] = useState<string | null>(() => addresses.some((a) => loadedSigs[a]?.html) ? null : addresses[0] ?? null);
+	const [sigFocus, setSigFocus] = useState(false);
+	/** Sets these addresses' signature. Writing a first signature turns it on; clearing one turns it off. */
+	const writeSigs = (to: string[], html: string) => setSigs((cur) => {
+		const next = { ...cur };
+		for (const a of to) {
+			next[a] = withSignatureText(cur[a] ?? { html: "", enabled: false }, html);
+		}
+		return next;
+	});
 	const sigChanged = (a: string) => (sigs[a]?.html ?? "") !== (initialSigs[a]?.html ?? "") || !!sigs[a]?.enabled !== !!initialSigs[a]?.enabled;
 	const [draft, setDraft] = useState<Prefs>(prefs);
-	const initialNames = Object.fromEntries(addresses.map((a) => [a, info.get(a)?.mailbox?.settings?.fromName ?? info.get(a)?.name ?? ""]));
+	const [initialNames, setInitialNames] = useState(() => Object.fromEntries(addresses.map((a) => [a, info.get(a)?.mailbox?.settings?.fromName ?? info.get(a)?.name ?? ""])));
 	const [names, setNames] = useState<Record<string, string>>(initialNames);
-	const initialPrompt = addresses.map((a) => info.get(a)?.mailbox?.settings?.agentSystemPrompt).find((p) => p?.trim()) ?? "";
-	const [prompt, setPrompt] = useState(initialPrompt);
+	// The same counts as Mail storage; an address with nothing received shows how to route mail to it (WON-228).
+	const storage = useQuery({ queryKey: ["storage-status"], queryFn: () => api.getStorageStatus(), enabled: tab === "addresses" });
+	const [initialPrompts, setInitialPrompts] = useState(() => Object.fromEntries(addresses.map((a) => [a, info.get(a)?.mailbox?.settings?.agentSystemPrompt ?? ""])));
+	const [prompts, setPrompts] = useState<Record<string, string>>(initialPrompts);
+	const promptChanged = (a: string) => (prompts[a] ?? "").trim() !== (initialPrompts[a] ?? "").trim();
+	const [promptFor, setPromptFor] = useState(addresses[0] ?? "");
+	const prompt = prompts[promptFor] ?? "";
+	const setPrompt = (value: string) => setPrompts({ ...prompts, [promptFor]: value });
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const queryClient = useQueryClient();
 	const agentModel = useAgentModelDraft();
-	const { data: workersAi } = useWorkersAiModels(tab === "agent");
+	const limits = useAgentLimitsDraft();
+	const { data: catalog } = useModelCatalog(tab === "mailroom");
 
-	const dirty = JSON.stringify(draft) !== JSON.stringify(prefs)
-		|| addresses.some((a) => (names[a] ?? "") !== (initialNames[a] ?? ""))
-		|| prompt.trim() !== initialPrompt.trim()
+	const prefsDirty = !samePrefs(draft, prefs);
+	// Typed fields wait for a pause; switches and choices save at once.
+	const typedDirty = addresses.some((a) => (names[a] ?? "") !== (initialNames[a] ?? ""))
+		|| addresses.some(promptChanged)
 		|| addresses.some(sigChanged)
-		|| agentModel.dirty;
+		|| Object.keys(agentModel.keys).length > 0
+		|| (limits.dirty && limits.valid);
+	const dirty = prefsDirty || typedDirty || agentModel.dirty;
 
 	const save = async () => {
+		// Limits are the one tab that can refuse a save; check them before anything is written.
+		const limitsError = limits.dirty ? limits.check() : null;
+		if (limitsError) {
+			setError(limitsError);
+			return;
+		}
 		setSaving(true);
 		setError(null);
 		try {
@@ -398,26 +118,27 @@ export function SettingsModal({ tab, onTab, prefs, setPrefs, addresses, identiti
 				const mailbox = info.get(a)?.mailbox;
 				if (!mailbox) return [];
 				const name = (names[a] ?? "").trim();
-				const nameChanged = name !== (initialNames[a] ?? "").trim() && name.length > 0;
-				const promptChanged = (mailbox.settings?.agentSystemPrompt ?? "").trim() !== prompt.trim();
+				const nameChanged = name !== (initialNames[a] ?? "").trim();
 				const signatureChanged = sigChanged(a);
-				if (!nameChanged && !promptChanged && !signatureChanged) return [];
+				if (!nameChanged && !promptChanged(a) && !signatureChanged) return [];
 				const sig = sigs[a];
-				const empty = !sig?.html.replace(/<[^>]+>/g, "").trim();
+				const empty = !hasText(sig?.html ?? "");
 				const settings = {
 					...mailbox.settings,
 					...(nameChanged ? { fromName: name } : {}),
-					agentSystemPrompt: prompt.trim() || undefined,
+					agentSystemPrompt: (prompts[a] ?? "").trim() || undefined,
 					...(signatureChanged ? { signature: empty ? { enabled: false, text: "" } : { enabled: sig.enabled, text: htmlToPlainText(sig.html), html: sig.html } } : {}),
 				};
 				return [api.updateMailbox(a, settings)];
 			});
-			if (JSON.stringify(draft) !== JSON.stringify(prefs)) writes.push(setPrefs(draft));
+			if (!samePrefs(draft, prefs)) writes.push(setPrefs(draft));
 			if (agentModel.dirty) writes.push(agentModel.save());
+			if (limits.dirty && limits.valid) writes.push(limits.save());
 			await Promise.all(writes);
+			setInitialNames(names);
+			setInitialPrompts(prompts);
+			setInitialSigs(sigs);
 			for (const a of addresses) queryClient.invalidateQueries({ queryKey: queryKeys.mailboxes.detail(a) });
-			onSaved("Settings saved");
-			onClose();
 		} catch (e) {
 			setError((e as Error).message || "Could not save settings.");
 		} finally {
@@ -425,29 +146,67 @@ export function SettingsModal({ tab, onTab, prefs, setPrefs, addresses, identiti
 		}
 	};
 
-	const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
-		{ id: "general", label: "General", icon: <SlidersHorizontalIcon size={16} /> },
-		{ id: "addresses", label: "Addresses", icon: <AtIcon size={16} /> },
-		{ id: "signatures", label: "Signatures", icon: <SignatureIcon size={16} /> },
-		{ id: "labels", label: "Labels", icon: <TagIcon size={16} /> },
-		{ id: "agent", label: "Agent", icon: <AgentIcon size={16} /> },
-		{ id: "model", label: "Model & key", icon: <KeyIcon size={16} /> },
-		{ id: "storage", label: "Storage", icon: <DatabaseIcon size={16} /> },
-	];
+	// A failed save waits for the next edit instead of retrying in a loop.
+	useEffect(() => setError(null), [draft, names, prompts, sigs, agentModel.selected, agentModel.keys, limits.edits]);
+	useEffect(() => {
+		if (!dirty || saving || error) return;
+		const t = setTimeout(() => void save(), typedDirty ? 700 : 0);
+		return () => clearTimeout(t);
+	}, [dirty, saving, error, prefs, draft, names, prompts, sigs, agentModel.selected, agentModel.keys, limits.edits]); // eslint-disable-line react-hooks/exhaustive-deps
 
+	const [openRow, setOpenRow] = useState<"prompt" | "limits" | null>(null);
+	const custom = addresses.filter((a) => (prompts[a] ?? "").trim());
+	const mailroom = (
+		<Section title="How it works">
+			<Summary>
+				<SummaryRow
+					label="Prompt" open={openRow === "prompt"} onEdit={() => setOpenRow(openRow === "prompt" ? null : "prompt")}
+					editor={<>
+						{addresses.length > 1 && (
+							<select className="pg-select" value={promptFor} aria-label="Address this prompt is for" onChange={(e) => setPromptFor(e.target.value)}>
+								{addresses.map((a) => <option key={a} value={a}>{a}</option>)}
+							</select>
+						)}
+						<textarea
+							className="pg-textarea pg-ui-ask-input"
+							rows={8}
+							value={prompt}
+							aria-label={`Agent prompt for ${promptFor}`}
+							onChange={(e) => setPrompt(e.target.value)}
+							placeholder="You are an email assistant that helps manage this inbox. You read emails, draft replies, and help organize conversations. Write like a real person. Short, direct, flowing prose. Plain text only. (Leave empty to use the built-in default prompt)"
+						/>
+						<div className="pg-ui-toolbar">
+							{addresses.length > 1 && addresses.some((a) => (prompts[a] ?? "").trim() !== prompt.trim()) && (
+								<Button size="sm" variant="quiet" onClick={() => setPrompts(Object.fromEntries(addresses.map((a) => [a, prompt])))}>Use for every address</Button>
+							)}
+							{prompt.trim() && <Button size="sm" variant="quiet" icon={<ArrowCounterClockwiseIcon size={12} />} onClick={() => setPrompt("")}>Reset to default</Button>}
+						</div>
+					</>}
+				>
+					{custom.length === 0 ? "Default" : custom.length === addresses.length ? "Custom" : `Custom for ${custom.length} of ${addresses.length} addresses`}
+					<span className="pg-ui-sum-sub">Draft reply, the fallback draft, and chat while a message is open</span>
+				</SummaryRow>
+				<SummaryRow label="Model" editLabel="Change" onEdit={() => onTab("models")}>
+					{agentModel.stored ? modelName(catalog, agentModel.stored.active) : "Not set"}
+				</SummaryRow>
+				<SummaryRow
+					label="Limits" open={openRow === "limits"} onEdit={() => setOpenRow(openRow === "limits" ? null : "limits")}
+					editor={<Fields><LimitsTab draft={limits} /></Fields>}
+				>
+					{limits.text("agentDay")} sends a day · {limits.text("agentRecipients")} recipients · {limits.text("autoDraftPerSender")} drafts per sender
+					<span className="pg-ui-sum-sub">Per address, inside {SEND_LIMITS.day} a day for everyone</span>
+				</SummaryRow>
+			</Summary>
+		</Section>
+	);
+
+	if (tab === "mailroom") return <>{mailroom}{error && <SaveBar error={error} saving={saving} onSave={() => void save()} />}</>;
 	return (
-		<Modal className="is-settings" label="Settings" onClose={onClose}>
-			<Head icon={<GearSixIcon size={16} />} title="Settings" sub="Saved to your deployment" onClose={onClose} />
-			<div className="pg-settings">
-				<div className="pg-tabs" role="tablist" aria-label="Settings sections">
-					{tabs.map((t) => (
-						<button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => onTab(t.id)} ref={tab === t.id ? (el) => el?.scrollIntoView({ block: "nearest", inline: "nearest" }) : undefined}>{t.icon}<span>{t.label}</span></button>
-					))}
-				</div>
-				<div className="pg-tab-body" role="tabpanel">
+		<fieldset className="pg-plain-fieldset" disabled={readOnly}>
+			<Fields>
 					{tab === "general" && (
 						<>
-							<Setting title="Theme" sub="Dark is the default. System follows your device.">
+							<Setting title="Theme">
 								<Segmented
 									label="Theme"
 									value={draft.theme}
@@ -459,13 +218,13 @@ export function SettingsModal({ tab, onTab, prefs, setPrefs, addresses, identiti
 									]}
 								/>
 							</Setting>
-							<Setting title="Show keyboard shortcuts" sub="Key hints like ⌘K and E next to buttons. Shortcuts still work when hidden.">
-								<Switch label="Show keyboard shortcuts" on={draft.keys} onChange={(keys) => setDraft({ ...draft, keys })} />
+							<Setting title="Show key hints">
+								<Switch label="Show key hints" on={draft.keys} onChange={(keys) => setDraft({ ...draft, keys })} />
 							</Setting>
-							<Setting title="Mark as read when opened" sub="Otherwise mail stays unread until you mark it read or archive it.">
+							<Setting title="Mark as read when opened">
 								<Switch label="Mark as read when opened" on={draft.markRead} onChange={(markRead) => setDraft({ ...draft, markRead })} />
 							</Setting>
-							<Setting title="Remote images" sub="Images in HTML email load from the sender’s server and can track opens.">
+							<Setting title="Remote images">
 								<Segmented
 									label="Remote images"
 									value={draft.images}
@@ -473,179 +232,177 @@ export function SettingsModal({ tab, onTab, prefs, setPrefs, addresses, identiti
 									options={[{ value: "ask", label: "Ask" }, { value: "always", label: "Always" }, { value: "never", label: "Never" }]}
 								/>
 							</Setting>
-							<Setting title="Reply from receiving address" sub="Replies go out from the address the mail was delivered to.">
+							<Setting title="Reply from receiving address">
 								<Switch label="Reply from receiving address" on={draft.replyFrom} onChange={(replyFrom) => setDraft({ ...draft, replyFrom })} />
+							</Setting>
+							<Setting title="Keep Trash and Spam">
+								<Segmented
+									label="Keep Trash and Spam"
+									value={String(draft.trashDays)}
+									onChange={(v) => setDraft({ ...draft, trashDays: Number(v) as TrashDays })}
+									options={TRASH_DAYS.map((d) => ({ value: String(d), label: d ? `${d} days` : "Forever" }))}
+								/>
 							</Setting>
 						</>
 					)}
 					{tab === "addresses" && (
 						<>
-							<div className="pg-tab-intro">Display name shown to recipients, per address. Addresses come from <span className="pg-mono">EMAIL_ADDRESSES</span> in your Worker config.</div>
-							{addresses.map((a) => {
-								const id = identities.of(a);
+							{identities.groups.map(({ identity, addresses: group }) => {
+								const list = group.filter((a) => addresses.includes(a));
+								if (!list.length) return null;
 								return (
-									<div key={a} className="pg-addr-row">
-										<Swatch identity={id} />
-										<AddressText address={a} identity={id} bold={false} />
-										<input className="pg-input" value={names[a] ?? ""} placeholder="Display name" aria-label={`Display name for ${a}`} onChange={(e) => setNames({ ...names, [a]: e.target.value })} disabled={!info.get(a)?.mailbox} />
+									<div key={identity.domain} className="pg-ui-addr-group">
+										<h3 className="pg-ui-addr-domain"><Swatch identity={identity} />{identity.domain}</h3>
+										{list.map((a) => {
+											const loaded = !!info.get(a)?.mailbox;
+											const silent = receivedCount(storage.data, a) === 0;
+											const name = (names[a] ?? "").trim();
+											const edited = name !== (initialNames[a] ?? "").trim();
+											return (
+												<Field
+													key={a}
+													label={<AddressText address={a} identity={identity} bold={false} />}
+													hint={loaded ? (edited ? <Badge tone="draft">Edited</Badge> : undefined) : "Mailbox didn’t load. Reload to retry."}
+												>
+													<div className="pg-ui-addr-row">
+														<input className="pg-input" value={names[a] ?? ""} placeholder={handleOf(a)} aria-label={`Display name for ${a}`} onChange={(e) => setNames({ ...names, [a]: e.target.value })} disabled={!loaded} />
+														<span className="pg-ui-addr-preview" aria-label={`Recipients see ${name || handleOf(a)} <${a}>`}>
+															<b>{name || handleOf(a)}</b> &lt;{a}&gt;
+														</span>
+													</div>
+													{silent && (
+														<Note tone="warn">
+															No mail yet. In <a href={ROUTING_URL} target="_blank" rel="noreferrer">Email Routing</a> for {identity.domain}, send mail to this Worker with a catch-all rule: it covers every address on the domain, and the Worker turns away any not in <span className="pg-mono">EMAIL_ADDRESSES</span>. To reply, run <span className="pg-mono">npx wrangler email sending enable {identity.domain}</span>.
+														</Note>
+													)}
+												</Field>
+											);
+										})}
 									</div>
 								);
 							})}
+							<Field label="Add an address" hint={<>Add it to <span className="pg-mono">EMAIL_ADDRESSES</span> in your Worker config and deploy. Its domain must be in <span className="pg-mono">DOMAINS</span>.</>}>
+								<CopyField label="EMAIL_ADDRESSES config line" value={`"EMAIL_ADDRESSES": ${JSON.stringify(addresses)}`} />
+							</Field>
+							<Field label="Blocked senders">
+								<BlockedSenders identities={identities} />
+							</Field>
 						</>
 					)}
 					{tab === "signatures" && (
 						<>
-							<div className="pg-tab-intro">One signature per address. Nothing is added unless you turn it on; the signature button in the composer adds or removes it on any message.</div>
-							{addresses.map((a) => {
-								const id = identities.of(a);
-								const sig = sigs[a] ?? { html: "", enabled: false };
-								const has = !!sig.html.replace(/<[^>]+>/g, "").trim();
-								return (
-									<div key={a} className="pg-sig-row">
-										<div className="pg-sig-head">
-											<Swatch identity={id} />
-											<span className="pg-flex pg-ellipsis" style={{ fontSize: 12 }}><AddressText address={a} identity={id} bold={false} /></span>
-											<span className="pg-sig-default">Add by default</span>
-											<Switch
-												label={`Add the signature for ${a} by default`}
-												on={sig.enabled && has}
-												onChange={(enabled) => setSigs({ ...sigs, [a]: { ...sig, enabled: enabled && has } })}
-											/>
-										</div>
-										<div className="pg-sig-editor">
-											<Editor
-												value={sig.html}
-												onChange={(html) => setSigs((cur) => ({ ...cur, [a]: { html, enabled: cur[a]?.enabled ?? false } }))}
-												placeholder="No signature"
-												label={`Signature for ${a}`}
-											/>
-										</div>
-									</div>
-								);
-							})}
+							<List label="Signatures">
+								{addresses.map((a) => {
+									const id = identities.of(a);
+									const sig = sigs[a] ?? { html: "", enabled: false };
+									const has = hasText(sig.html);
+									const on = sig.enabled && has;
+									const domain = a.split("@")[1] ?? "";
+									const sources = addresses.filter((b) => b !== a && hasText(sigs[b]?.html ?? ""));
+									// Only addresses without a signature, so copying never overwrites one.
+									const siblings = addresses.filter((b) => b !== a && b.split("@")[1] === domain && !hasText(sigs[b]?.html ?? ""));
+									const fromName = (names[a] ?? "").trim() || handleOf(a);
+									return (
+										<Item
+											key={a}
+											title={<span className="pg-ui-name"><Swatch identity={id} /><AddressText address={a} identity={id} bold={false} /></span>}
+											aside={<Badge tone={on ? "ok" : "neutral"} dot={on}>{on ? "Added by default" : has ? "Off" : "None"}</Badge>}
+											quote={sigOpen === a ? undefined : has ? htmlToPlainText(sig.html).replace(/\s+/g, " ").trim() : "No signature"}
+											open={sigOpen === a}
+											onClick={() => { setSigOpen(sigOpen === a ? null : a); setSigFocus(true); }}
+										>
+											<div className="pg-sig-editor">
+												<Editor
+													value={sig.html}
+													onChange={(html) => writeSigs([a], html)}
+													placeholder="Write a signature"
+													label={`Signature for ${a}`}
+													autoFocus={sigFocus}
+												/>
+											</div>
+											{(sources.length > 0 || (has && siblings.length > 0)) && (
+												<div className="pg-ui-toolbar">
+													{sources.length > 0 && (
+														<select
+															className="pg-select"
+															value=""
+															aria-label={`Copy a signature into ${a}`}
+															onChange={(e) => e.target.value && writeSigs([a], sigs[e.target.value]?.html ?? "")}
+														>
+															<option value="">{has ? "Replace with…" : "Copy from…"}</option>
+															{sources.map((b) => <option key={b} value={b}>{b}</option>)}
+														</select>
+													)}
+													{has && siblings.length > 0 && (
+														<Button size="sm" onClick={() => writeSigs(siblings, sig.html)}>
+															{siblings.length === 1 ? `Copy to ${siblings[0]}` : `Copy to ${siblings.length} more @${domain} addresses`}
+														</Button>
+													)}
+												</div>
+											)}
+											{has && (
+												<div className="pg-sig-preview" aria-label="How it looks to the recipient">
+													<span className="pg-sig-preview-from"><b>{fromName}</b> &lt;{a}&gt;</span>
+													<span className="pg-sig-preview-body">Your message</span>
+													<div className="pg-sig-preview-sig" dangerouslySetInnerHTML={{ __html: getSignatureBlock({ signature: { enabled: true, html: sig.html } }) }} />
+												</div>
+											)}
+											<span className="pg-ui-switch-line">
+												<Switch
+													label={`Add the signature for ${a} by default`}
+													on={on}
+													disabled={!has}
+													onChange={(enabled) => setSigs({ ...sigs, [a]: { ...sig, enabled } })}
+												/>
+												{has ? "Add to new messages by default" : "Write a signature to add it by default"}
+											</span>
+										</Item>
+									);
+								})}
+							</List>
 						</>
 					)}
-					{tab === "agent" && (
-						<>
-							<div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 0 8px" }}>
-								<b style={{ fontWeight: 500 }}>Agent prompt</b>
-								<span className="pg-badge">{prompt.trim() ? "Custom" : "Default"}</span>
-								<div className="pg-flex" />
-								{prompt.trim() && (
-									<button type="button" className="pg-btn pg-btn-sm pg-btn-quiet" onClick={() => setPrompt("")}>
-										<ArrowCounterClockwiseIcon size={12} />Reset to default
-									</button>
-								)}
-							</div>
-							<textarea
-								className="pg-textarea"
-								rows={9}
-								value={prompt}
-								aria-label="Agent prompt"
-								onChange={(e) => setPrompt(e.target.value)}
-								placeholder="You are an email assistant that helps manage this inbox. You read emails, draft replies, and help organize conversations. Write like a real person. Short, direct, flowing prose. Plain text only. (Leave empty to use the built-in default prompt)"
-							/>
-							<div style={{ fontSize: 12, color: "var(--pg-text-6)", padding: "6px 0 4px" }}>Sent as the system message for every address. Controls tone, style and behaviour rules.</div>
-							<Setting title="Model" sub={agentModel.stored?.provider === "openrouter"
-								? `OpenRouter, ${agentModel.stored.model}`
-								: `Workers AI, ${workersAiName(workersAi, agentModel.stored?.workersAiModel || workersAi?.recommended || agentModel.stored?.defaultModel || "")}`}>
-								<button type="button" className="pg-btn pg-btn-sm" onClick={() => onTab("model")}>Change</button>
-							</Setting>
-							<Setting title="Auto-draft new mail" sub={<>Drafts a reply to each new message. Mailing lists and automated mail are skipped. Set <span className="pg-mono">AUTO_DRAFT_ENABLED</span> in your Worker config to change.</>}>
-								<span className="pg-tag">{autoDraft ? "on" : "off"} · config</span>
-							</Setting>
-							<Setting title="Sending" sub="The agent sends a draft when you ask it to. Auto-draft only drafts.">
-								<span className="pg-tag">send_draft</span>
-							</Setting>
-							{/* TODO(roadmap): rules (Inquiry, Receipts, DMARC, Triage) and per-rule autonomy settings. */}
-						</>
-					)}
-					{tab === "model" && <AgentModelSection draft={agentModel} />}
+					{tab === "models" && <AgentModelSection draft={agentModel} />}
 					{tab === "labels" && <LabelsTab />}
+					{tab === "shortcuts" && (
+						<>
+							{/* The same switch as Preferences: key hints beside buttons and keys in tooltips. */}
+							<Setting title="Show key hints">
+								<Switch label="Show key hints" on={draft.keys} onChange={(keys) => setDraft({ ...draft, keys })} />
+							</Setting>
+							<ShortcutsPage overrides={draft.shortcuts} onChange={(shortcuts) => setDraft({ ...draft, shortcuts })} />
+						</>
+					)}
+					{tab === "logs" && (
+						<ActivityTab
+							addresses={addresses}
+							identities={identities}
+							days={draft.activityDays}
+							onDays={(activityDays) => setDraft({ ...draft, activityDays })}
+							autoDraft={autoDraft}
+						/>
+					)}
 					{tab === "storage" && <StorageTab identities={identities} />}
-				</div>
-			</div>
-			<div className="pg-modal-foot">
-				<span className="pg-note" role="status">{error ?? (dirty ? "Unsaved changes" : "")}</span>
-				<div className="pg-flex" />
-				<button type="button" className="pg-btn" onClick={onClose}>Cancel</button>
-				<button type="button" className="pg-btn pg-btn-primary" onClick={save} disabled={saving}>Save changes</button>
-			</div>
-		</Modal>
+			</Fields>
+			{error && <SaveBar error={error} saving={saving} onSave={() => void save()} />}
+		</fieldset>
 	);
 }
 
-const MCP_TOOLS = [
-	["list_mailboxes", "List all mailboxes"],
-	["list_emails", "List emails in a folder"],
-	["get_email", "Read a full email with body"],
-	["get_thread", "Load a conversation thread"],
-	["search_emails", "Search emails by query"],
-	["draft_reply", "Draft a reply to an email"],
-	["create_draft", "Create a new draft"],
-	["update_draft", "Edit a saved draft"],
-	["send_draft", "Send a saved draft"],
-	["mark_email_read", "Mark email as read/unread"],
-	["move_email", "Move email to a system folder"],
-	["list_labels", "List labels with counts"],
-	["create_label", "Create a label"],
-	["rename_label", "Rename a label"],
-	["delete_label", "Delete a label"],
-	["label_conversation", "Add or remove labels on a conversation"],
-	["search_all_mail", "Search every address at once"],
-	["label_matching", "Label every conversation a search matches"],
-	["delete_email", "Move email to Trash"],
-] as const;
+/** Pages whose changes a demo refuses. Labels save through their own route, which a demo allows. */
+const READ_ONLY_IN_DEMO = new Set<ConsoleTab>(["general", "addresses", "signatures", "shortcuts"]);
 
-export function McpModal({ onClose }: { onClose: () => void }) {
-	const url = `${window.location.origin}/mcp`;
-	const [copied, setCopied] = useState(false);
+export function ShortcutsModal({ onClose, onEdit }: { onClose: () => void; onEdit: () => void }) {
 	return (
-		<Modal className="is-mcp" label="Connect via MCP" onClose={onClose}>
-			<Head icon={<PlugsConnectedIcon size={16} />} title="Connect via MCP" sub="Model Context Protocol server" onClose={onClose} />
-			<div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 16 }}>
-				<span style={{ fontSize: 13, color: "var(--pg-text-5)", textWrap: "pretty" }}>
-					Point Claude Code, Cursor or any MCP client at this server to read, search, draft, send and organize mail across every address. Requests go through Cloudflare Access like the app.
-				</span>
-				<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-					<span className="pg-caption">SERVER URL</span>
-					<div className="pg-mcp-url">
-						<span>{url}</span>
-						<button
-							type="button"
-							data-copied={copied}
-							data-autofocus
-							onClick={async () => {
-								try {
-									await navigator.clipboard.writeText(url);
-									setCopied(true);
-									setTimeout(() => setCopied(false), 2000);
-								} catch {
-									// Clipboard blocked: the URL stays selectable.
-								}
-							}}
-						>
-							{copied ? <CheckIcon size={12} weight="bold" /> : <CopyIcon size={12} />}{copied ? "Copied" : "Copy"}
-						</button>
-					</div>
-				</div>
-				<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-					<span className="pg-caption">AVAILABLE TOOLS · {MCP_TOOLS.length}</span>
-					<div className="pg-tools-list">
-						{MCP_TOOLS.map(([name, desc]) => (
-							<div key={name}>
-								<WrenchIcon size={12} color="var(--pg-text-8)" />
-								<code>{name}</code>
-								<span>{desc}</span>
-							</div>
-						))}
-					</div>
-				</div>
+		<Modal className="is-shortcuts" label="Keyboard shortcuts" onClose={onClose}>
+			<Head icon={<KeyboardIcon size={16} />} title="Keyboard shortcuts" onClose={onClose} />
+			<div className="pg-keys-scroll">
+				<ShortcutMap onAll={onEdit} />
 			</div>
 			<div className="pg-modal-foot">
-				<span className="pg-note">send_draft sends each draft once.</span>
 				<div className="pg-flex" />
-				<button type="button" className="pg-btn pg-btn-primary" onClick={onClose}>Done</button>
+				<button type="button" className="pg-btn" onClick={onEdit}>Change keys</button>
+				<button type="button" className="pg-btn pg-btn-primary" onClick={onClose} data-autofocus>Done</button>
 			</div>
 		</Modal>
 	);
@@ -657,13 +414,13 @@ export function LogoutModal({ onClose }: { onClose: () => void }) {
 			<Head icon={<SignOutIcon size={16} />} title="Log out?" sub="Cloudflare Access session" onClose={onClose} danger />
 			<div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10, fontSize: 13, color: "var(--pg-text-5)", textWrap: "pretty" }}>
 				<span>You’ll be signed out of Cloudflare Access on this device and returned to the login page.</span>
-				<span>Mail keeps arriving and agent drafts are kept. Nothing is sent while you’re away.</span>
+				<span>Mail keeps arriving. Scheduled mail still sends.</span>
 			</div>
 			<div className="pg-modal-foot">
 				<div className="pg-flex" />
 				<button type="button" className="pg-btn" onClick={onClose} data-autofocus>Cancel</button>
 				<button type="button" className="pg-btn pg-btn-danger" onClick={() => { window.location.href = "/cdn-cgi/access/logout"; }}>
-					<SignOutIcon size={13} weight="bold" />Log out
+					<SignOutIcon size={14} weight="bold" />Log out
 				</button>
 			</div>
 		</Modal>
@@ -691,10 +448,10 @@ export function Toast({ toast, onClose }: { toast: ToastState | null; onClose: (
 			{toast.onUndo && (
 				<>
 					<span className="pg-sep" />
-					<button type="button" className="pg-undo" onClick={toast.onUndo}>Undo<span className="pg-kbd">Z</span></button>
+					<button type="button" className="pg-undo" onClick={toast.onUndo}>Undo<Keys id="undo" /></button>
 				</>
 			)}
-			<button type="button" className="pg-x" aria-label="Dismiss" onClick={onClose} style={toast.onUndo ? undefined : { marginLeft: 6 }}><XIcon size={13} /></button>
+			<button type="button" className="pg-x" aria-label="Dismiss" onClick={onClose} style={toast.onUndo ? undefined : { marginLeft: 6 }}><XIcon size={14} /></button>
 		</div>
 	);
 }

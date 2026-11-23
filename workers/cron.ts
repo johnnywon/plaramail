@@ -3,39 +3,66 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 /**
- * The one-minute cron. With a D1 database bound it advances the copy from
- * the Durable Objects, if one is running. On D1 it then sends due scheduled
- * mail; on the Durable Object store each mailbox's alarm sends its own.
- * Then it checks a batch of older mail for has:link and, when
+ * The one-minute cron. It sends due scheduled mail, then, when
  * ATTACHMENT_SEARCH is "true", converts a few attachments to searchable text.
+ * Once an hour it deletes activity and auto-draft runs past the retention,
+ * marks failed the auto-draft runs whose worker died, and, when prefs set
+ * trashDays, purges mail that has been in Trash or Spam that long. Steps
+ * that fail are recorded, and the hourly alert mails them to ALERT_TO.
  */
-import { backfillLinkColumn, extractAttachmentTextBatch, hasD1, sendDueScheduledMail, usesD1 } from "./store";
-import { advanceCopy } from "./store/copy-job";
+import { failAbandonedRuns, pruneRuns } from "./agent/runs";
+import { pruneActivity } from "./lib/activity";
+import { recordError, sendAlerts } from "./lib/alerts";
+import { DEMO } from "./lib/demo";
+import { resetDemo } from "./lib/dev-seed";
+import { readPrefs } from "./lib/prefs";
+import { extractAttachmentTextBatch, mailStore, sendDueScheduledMail, recordsSql } from "./store";
 import type { Env } from "./types";
 
+/** Delete activity log rows and auto-draft runs older than the retention in prefs; fail abandoned runs. */
+export async function pruneAgentHistory(env: Env, now = Date.now()) {
+	const { prefs } = await readPrefs(env);
+	const sql = recordsSql(env);
+	return {
+		days: prefs.activityDays,
+		activity: await pruneActivity(sql, prefs.activityDays, now),
+		runs: await pruneRuns(sql, prefs.activityDays, now),
+		abandoned: await failAbandonedRuns(sql, now),
+	};
+}
+
+/** Purge Trash and Spam past prefs.trashDays (WON-212). Off (0) does nothing. */
+export async function purgeTrashRetention(env: Env, now = Date.now()) {
+	const { prefs } = await readPrefs(env);
+	if (!prefs.trashDays) return null;
+	return { days: prefs.trashDays, ...(await mailStore(env).all().purgeRetention(prefs.trashDays, now)) };
+}
+
 export async function runCron(env: Env, now = Date.now()) {
-	let copy: Awaited<ReturnType<typeof advanceCopy>> | "failed" = "none";
-	if (hasD1(env)) {
-		// The copy's final pass runs before sending, so the scheduled sends it brings over are current.
-		copy = await advanceCopy(env).catch((e) => {
-			if (/no such table/.test((e as Error).message)) return "none" as const; // migrations not applied yet
-			console.error("copy to D1 failed:", (e as Error).message);
-			return "failed" as const;
-		});
-	}
-	if (!usesD1(env)) return { copy, skipped: true as const };
+	// A demo sends nothing. Once an hour it writes the sample inbox again over what visitors changed.
+	if (DEMO) return { demo: new Date(now).getUTCMinutes() === 0 ? await resetDemo(env, now) : null };
+	const failed = (source: string) => async (e: unknown) => {
+		console.error(`${source} failed:`, (e as Error).message);
+		await recordError(env, source, e, now);
+		return null;
+	};
+	const hourly = new Date(now).getUTCMinutes() === 0;
 	const scheduled = await sendDueScheduledMail(env, now);
-	if (scheduled.failed.length > 0) console.error(`scheduled send failed for ${scheduled.failed.length} message(s)`);
-	const links = await backfillLinkColumn(env).catch((e) => {
-		// Before migrations/0002_has_link.sql is applied the column doesn't exist; nothing to do yet.
-		if (!/no such column/.test((e as Error).message)) console.error("has:link backfill failed:", (e as Error).message);
-		return 0;
-	});
+	if (scheduled.failed.length > 0) {
+		console.error(`scheduled send failed for ${scheduled.failed.length} message(s)`);
+		await recordError(env, "scheduled-send", `${scheduled.failed.length} scheduled message(s) failed to send`, now);
+	}
 	const attachments = String(env.ATTACHMENT_SEARCH ?? "") === "true"
-		? await extractAttachmentTextBatch(env, now).catch((e) => {
-			console.error("attachment text failed:", (e as Error).message);
+		? await extractAttachmentTextBatch(env, now).catch(failed("attachment text"))
+		: null;
+	const pruned = hourly ? await pruneAgentHistory(env, now).catch(failed("activity prune")) : null;
+	const purged = hourly ? await purgeTrashRetention(env, now).catch(failed("trash purge")) : null;
+	// Last, so it reports this run's failures too.
+	const alerted = hourly
+		? await sendAlerts(env, now).catch((e) => {
+			console.error("alert mail failed:", (e as Error).message);
 			return null;
 		})
 		: null;
-	return { copy, skipped: false as const, scheduled, links, attachments };
+	return { scheduled, attachments, pruned, purged, alerted };
 }

@@ -13,15 +13,17 @@
  * text never reaches the page as markup.
  */
 
+import { foldLetters } from "./search-fold";
+
 export const SNIPPET_WORDS = 18;
 /** Text past this is not searched for a snippet. */
 const MAX_TEXT = 20_000;
 
 const TOKEN = /[\p{L}\p{N}]+/gu;
 
-/** Lower case without diacritics, as the index's `remove_diacritics 2` tokenizer folds. */
+/** Lower case without diacritics, as the index folds (`remove_diacritics 2` and search-fold.ts). */
 export function fold(text: string): string {
-	return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+	return foldLetters(text.normalize("NFD").replace(/\p{M}/gu, "")).toLowerCase();
 }
 
 export function escapeHtml(text: string): string {

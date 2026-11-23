@@ -3,241 +3,15 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 /**
- * MailIndexDO SQL: a derived read model over every mailbox. Mailbox DOs stay
- * the source of truth; everything here can be rebuilt from them.
- * Pure functions over the `Exec` adapter so node:sqlite tests run this code.
+ * The combined list over every mailbox: filters, the conversation list,
+ * facets and folder views, as SQL over `messages m`.
  */
 
 import { parseSearch, type Term } from "../../shared/search-query";
-import { compileSearch, resolveDate, type SearchEngine, viewClause as searchViewClause } from "../store/search";
-import type { IndexRow } from "./index-rows";
+import { compileSearch, resolveDate, viewClause as searchViewClause } from "../store/search";
 import type { Exec } from "./sql-exec";
 
-/** Separates mailbox id and conversation id in `thread_key`. */
-export const THREAD_KEY_SEPARATOR = "\u001f";
-const TOMBSTONE_TTL_MS = 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-export const INDEX_SCHEMA = `
-CREATE TABLE IF NOT EXISTS messages (
-	id INTEGER PRIMARY KEY,
-	mailbox_id TEXT NOT NULL,
-	email_id TEXT NOT NULL,
-	thread_key TEXT NOT NULL DEFAULT '',
-	message_id TEXT,
-	seq INTEGER NOT NULL,
-	generation INTEGER NOT NULL DEFAULT 0,
-	deleted INTEGER NOT NULL DEFAULT 0,
-	updated_at TEXT NOT NULL,
-	state TEXT NOT NULL DEFAULT '',
-	date TEXT NOT NULL DEFAULT '',
-	sender_addr TEXT NOT NULL DEFAULT '',
-	sender_name TEXT NOT NULL DEFAULT '',
-	sender_domain TEXT NOT NULL DEFAULT '',
-	recipients TEXT NOT NULL DEFAULT '',
-	subject TEXT NOT NULL DEFAULT '',
-	subject_norm TEXT NOT NULL DEFAULT '',
-	snippet TEXT NOT NULL DEFAULT '',
-	unread INTEGER NOT NULL DEFAULT 0,
-	starred INTEGER NOT NULL DEFAULT 0,
-	has_attachment INTEGER NOT NULL DEFAULT 0,
-	list_id TEXT,
-	unsubscribe TEXT,
-	UNIQUE (mailbox_id, email_id)
-);
-CREATE INDEX IF NOT EXISTS messages_state_date ON messages (state, date DESC);
-CREATE INDEX IF NOT EXISTS messages_sender_addr ON messages (sender_addr);
-CREATE INDEX IF NOT EXISTS messages_sender_domain ON messages (sender_domain);
-CREATE INDEX IF NOT EXISTS messages_mailbox ON messages (mailbox_id);
-CREATE INDEX IF NOT EXISTS messages_thread ON messages (thread_key);
-CREATE INDEX IF NOT EXISTS messages_message_id ON messages (message_id);
-CREATE INDEX IF NOT EXISTS messages_tombstones ON messages (updated_at) WHERE deleted = 1;
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-	subject, sender_name, sender_addr, recipients, body_text,
-	content='', contentless_delete=1, tokenize='unicode61 remove_diacritics 2', prefix='2 3'
-);
-CREATE TABLE IF NOT EXISTS labels (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, color TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS message_labels (message INTEGER NOT NULL, label_id TEXT NOT NULL, PRIMARY KEY (message, label_id));
-CREATE INDEX IF NOT EXISTS message_labels_label ON message_labels (label_id);
-CREATE TABLE IF NOT EXISTS label_auto (label_id TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS saved_searches (id TEXT PRIMARY KEY, name TEXT NOT NULL, filter TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS mailbox_cursor (mailbox_id TEXT PRIMARY KEY, applied_seq INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS rebuild_job (
-	id INTEGER PRIMARY KEY CHECK (id = 1),
-	generation INTEGER NOT NULL,
-	mailboxes TEXT NOT NULL,
-	position INTEGER NOT NULL,
-	after_id TEXT,
-	started_at TEXT NOT NULL,
-	finished_at TEXT,
-	error TEXT
-);
-CREATE TABLE IF NOT EXISTS index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS undo (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS bulk_job (
-	id TEXT PRIMARY KEY,
-	created_at TEXT NOT NULL,
-	action TEXT NOT NULL,
-	ops TEXT NOT NULL,
-	position INTEGER NOT NULL DEFAULT 0,
-	total INTEGER NOT NULL,
-	affected INTEGER NOT NULL DEFAULT 0,
-	failed TEXT NOT NULL DEFAULT '[]',
-	undo_id TEXT NOT NULL,
-	finished_at TEXT
-);
-`;
-
-export function createIndexSchema(exec: Exec): void {
-	exec(INDEX_SCHEMA);
-}
-
-export function getIndexMeta(exec: Exec, key: string): string | null {
-	const row = exec(`SELECT value FROM index_meta WHERE key = ?`, key)[0];
-	return row ? String(row.value) : null;
-}
-
-export function setIndexMeta(exec: Exec, key: string, value: string): void {
-	exec(`INSERT INTO index_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value);
-}
-
-export function currentGeneration(exec: Exec): number {
-	return Number(getIndexMeta(exec, "generation") ?? 0);
-}
-
-export function threadKey(mailboxId: string, conversationId: string): string {
-	return `${mailboxId}${THREAD_KEY_SEPARATOR}${conversationId}`;
-}
-
-// ── Apply ──────────────────────────────────────────────────────────
-
-function deleteFts(exec: Exec, id: number): void {
-	exec(`DELETE FROM messages_fts WHERE rowid = ?`, id);
-}
-
-/**
- * Apply rows pushed or exported by one mailbox. A row applies only when its
- * seq is newer than the stored one; tombstones keep their seq so an older
- * push that arrives late cannot resurrect a deleted email.
- */
-export function applyRows(
-	exec: Exec,
-	mailboxId: string,
-	rows: IndexRow[],
-	options: { generation?: number; now?: number } = {},
-): { applied: number; skipped: number } {
-	const generation = options.generation ?? currentGeneration(exec);
-	const now = options.now ?? Date.now();
-	const updatedAt = new Date(now).toISOString();
-	let applied = 0;
-	let skipped = 0;
-	let maxSeq = 0;
-
-	for (const row of rows) {
-		maxSeq = Math.max(maxSeq, row.seq);
-		const existing = exec(
-			`SELECT id, seq, deleted FROM messages WHERE mailbox_id = ? AND email_id = ?`,
-			mailboxId,
-			row.email_id,
-		)[0] as { id: number; seq: number; deleted: number } | undefined;
-
-		if (existing && existing.seq >= row.seq) {
-			// Unchanged since the last apply. A rebuild still claims it for its generation.
-			exec(`UPDATE messages SET generation = MAX(generation, ?) WHERE id = ?`, generation, existing.id);
-			skipped++;
-			continue;
-		}
-
-		if (row.deleted) {
-			if (existing) {
-				deleteFts(exec, existing.id);
-				exec(`DELETE FROM message_labels WHERE message = ?`, existing.id);
-				exec(
-					`UPDATE messages SET deleted = 1, seq = ?, generation = ?, updated_at = ?, thread_key = '', state = '',
-						subject = '', subject_norm = '', snippet = '', recipients = '', sender_name = '', unread = 0, starred = 0
-					WHERE id = ?`,
-					row.seq, generation, updatedAt, existing.id,
-				);
-			} else {
-				exec(
-					`INSERT INTO messages (mailbox_id, email_id, seq, generation, deleted, updated_at) VALUES (?, ?, ?, ?, 1, ?)`,
-					mailboxId, row.email_id, row.seq, generation, updatedAt,
-				);
-			}
-			applied++;
-			continue;
-		}
-
-		const id = Number(
-			exec(
-				`INSERT INTO messages (
-					mailbox_id, email_id, thread_key, message_id, seq, generation, deleted, updated_at, state, date,
-					sender_addr, sender_name, sender_domain, recipients, subject, subject_norm, snippet,
-					unread, starred, has_attachment, list_id, unsubscribe
-				) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-				ON CONFLICT (mailbox_id, email_id) DO UPDATE SET
-					thread_key = excluded.thread_key, message_id = excluded.message_id, seq = excluded.seq,
-					generation = excluded.generation, deleted = 0, updated_at = excluded.updated_at,
-					state = excluded.state, date = excluded.date, sender_addr = excluded.sender_addr,
-					sender_name = excluded.sender_name, sender_domain = excluded.sender_domain,
-					recipients = excluded.recipients, subject = excluded.subject, subject_norm = excluded.subject_norm,
-					snippet = excluded.snippet, unread = excluded.unread, starred = excluded.starred,
-					has_attachment = excluded.has_attachment, list_id = excluded.list_id, unsubscribe = excluded.unsubscribe
-				RETURNING id`,
-				mailboxId, row.email_id, threadKey(mailboxId, row.conversation_id), row.message_id, row.seq, generation,
-				updatedAt, row.state, row.date, row.sender_addr, row.sender_name, row.sender_domain, row.recipients,
-				row.subject, row.subject_norm, row.snippet, row.unread ? 1 : 0, row.starred ? 1 : 0,
-				row.has_attachment ? 1 : 0, row.list_id, row.unsubscribe,
-			)[0].id,
-		);
-		// FTS changes are always delete plus a full insert of every column.
-		if (existing) deleteFts(exec, id);
-		exec(
-			`INSERT INTO messages_fts (rowid, subject, sender_name, sender_addr, recipients, body_text) VALUES (?, ?, ?, ?, ?, ?)`,
-			id, row.subject, row.sender_name, row.sender_addr, row.recipients, row.body_text,
-		);
-		exec(`DELETE FROM message_labels WHERE message = ?`, id);
-		if (row.labels.length > 0) {
-			exec(
-				`INSERT OR IGNORE INTO message_labels (message, label_id) SELECT ?, value FROM json_each(?)`,
-				id,
-				JSON.stringify(row.labels),
-			);
-		}
-		applied++;
-	}
-
-	if (rows.length > 0) {
-		exec(
-			`INSERT INTO mailbox_cursor (mailbox_id, applied_seq) VALUES (?, ?)
-			ON CONFLICT (mailbox_id) DO UPDATE SET applied_seq = MAX(applied_seq, excluded.applied_seq)`,
-			mailboxId,
-			maxSeq,
-		);
-	}
-	exec(`DELETE FROM messages WHERE deleted = 1 AND updated_at < ?`, new Date(now - TOMBSTONE_TTL_MS).toISOString());
-	return { applied, skipped };
-}
-
-function deleteRowsWhere(exec: Exec, where: string, ...params: unknown[]): number {
-	exec(`DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE ${where})`, ...params);
-	exec(`DELETE FROM message_labels WHERE message IN (SELECT id FROM messages WHERE ${where})`, ...params);
-	const count = Number(exec(`SELECT COUNT(*) AS n FROM messages WHERE ${where}`, ...params)[0].n);
-	exec(`DELETE FROM messages WHERE ${where}`, ...params);
-	return count;
-}
-
-/** Remove a mailbox from the index entirely. */
-export function purgeMailbox(exec: Exec, mailboxId: string): number {
-	const removed = deleteRowsWhere(exec, `mailbox_id = ?`, mailboxId);
-	exec(`DELETE FROM mailbox_cursor WHERE mailbox_id = ?`, mailboxId);
-	return removed;
-}
-
-/** After a rebuild pass over a mailbox, drop live rows it did not see. */
-export function sweepMailbox(exec: Exec, mailboxId: string, generation: number): number {
-	return deleteRowsWhere(exec, `mailbox_id = ? AND deleted = 0 AND generation < ?`, mailboxId, generation);
-}
 
 // ── Filters ────────────────────────────────────────────────────────
 
@@ -263,10 +37,8 @@ export interface MailFilter {
 	dir: "asc" | "desc";
 	/** Minutes, as `Date.prototype.getTimezoneOffset()` returns; sets where "today" starts. */
 	tzOffset: number;
-	/** Which store runs the SQL. Set by the store; some search operators need D1's tables. */
-	engine?: SearchEngine;
 	/**
-	 * D1 only, set by the store: words with no match in the word index, and
+	 * Set by the store: words with no match in the word index, and
 	 * the messages that contain them as a substring (messages_trigram).
 	 */
 	substrings?: Record<string, number[]>;
@@ -348,7 +120,7 @@ export function searchOf(filter: MailFilter, now = Date.now(), cap?: number) {
 	const query = parseSearch(filter.q);
 	const subjects: Term[] = filter.subject.map((value) => ({ negate: false, any: [{ type: "op", op: "subject", value, phrase: false }], start: 0, end: 0 }));
 	const compiled = compileSearch({ terms: [...query.terms, ...subjects], errors: query.errors }, {
-		engine: filter.engine ?? "index", now, tzOffset: filter.tzOffset, cap,
+		now, tzOffset: filter.tzOffset, cap,
 		substrings: filter.substrings ? new Map(Object.entries(filter.substrings)) : undefined,
 	});
 	if (compiled.errors.length > 0) throw new InvalidFilterError(compiled.errors[0]);
@@ -402,9 +174,8 @@ export function filterWhere(filter: MailFilter, now = Date.now(), cap?: number):
 // ── Running a query ────────────────────────────────────────────────
 //
 // The list, facet and folder queries are generators that yield SQL steps and
-// receive rows back. `runSync` drives them over the Durable Object's (and
-// node:sqlite's) synchronous `Exec`; `runAsync` drives them over D1. One
-// source for both stores.
+// receive rows back. `runAsync` drives them over D1; `runSync` drives them
+// over node:sqlite's synchronous `Exec` in tests.
 
 type Row = Record<string, unknown>;
 export interface SqlStep {
@@ -438,6 +209,8 @@ export interface Conversation {
 	date: string;
 	sender_addr: string;
 	sender_name: string;
+	/** The To line, for showing who sent mail went to. */
+	recipient: string;
 	subject: string;
 	snippet: string;
 	unread: boolean;
@@ -512,14 +285,6 @@ export const BM25 = "bm25(messages_fts, 6.0, 3.0, 3.0, 2.0, 1.0, 2.0)";
 /** Scores this close count as a tie, so the newer conversation goes first. */
 const RANK_STEP = 0.5;
 
-export function queryMail(
-	exec: Exec,
-	filter: MailFilter,
-	options: { cursor?: string | null; limit?: number; now?: number } = {},
-): MailPage {
-	return runSync(mailQuery(filter, options), exec);
-}
-
 export function* mailQuery(
 	filter: MailFilter,
 	options: { cursor?: string | null; limit?: number; now?: number } = {},
@@ -530,11 +295,11 @@ export function* mailQuery(
 	const w = where(parts.list);
 	const searching = !!filter.q.trim() || filter.subject.length > 0;
 
-	// Relevance needs words and D1's weighted index. With words it is the
+	// Relevance needs words and the weighted word index. With words it is the
 	// default for newest-first lists; `sort:date` or oldest-first keep dates.
 	let order: NonNullable<MailPage["order"]> = filter.sort === "relevance" ? "date" : filter.sort;
 	let rankSkipped = false;
-	if (parts.match && filter.engine === "d1") {
+	if (parts.match) {
 		const asked = filter.sort === "relevance" || parts.sort === "relevance";
 		const byDefault = parts.sort === undefined && filter.sort === "date" && filter.dir === "desc";
 		if (asked || byDefault) {
@@ -659,6 +424,7 @@ function toConversation(row: Record<string, unknown>): Conversation {
 		date: String(row.date),
 		sender_addr: String(row.sender_addr),
 		sender_name: String(row.sender_name),
+		recipient: String(row.recipient ?? ""),
 		subject: String(row.subject),
 		snippet: String(row.snippet),
 		unread: !!row.unread,
@@ -692,20 +458,15 @@ export interface Facets {
 
 const FROM_LIMIT = 50;
 
-/** Every facet in one call. Each facet ignores its own dimension and counts distinct conversations. */
-export function queryFacets(exec: Exec, filter: MailFilter, now = Date.now()): Facets {
-	return runSync(facetsQuery(filter, now), exec);
-}
-
 /**
- * On D1, facets with search words count the newest this-many matching
- * messages: 25 to 45 ms at 100,000 matches in phase 0, against 280 ms for all.
+ * Facets with search words count the newest this-many matching messages:
+ * 25 to 45 ms at 100,000 matches on D1 in phase 0, against 280 ms for all.
  */
 export const FACET_CAP = 5_000;
 
+/** Every facet in one call. Each facet ignores its own dimension and counts distinct conversations. */
 export function* facetsQuery(filter: MailFilter, now = Date.now()): Query<Facets> {
-	const cap = filter.engine === "d1" ? FACET_CAP : undefined;
-	const forDim = (dim: Dimension) => where(clauses(filter, now, dim, cap));
+	const forDim = (dim: Dimension) => where(clauses(filter, now, dim, FACET_CAP));
 
 	const a = forDim("address");
 	const address = (yield sqlStep(
@@ -775,101 +536,10 @@ export function* facetsQuery(filter: MailFilter, now = Date.now()): Query<Facets
 	};
 }
 
-// ── Status ─────────────────────────────────────────────────────────
-
-/** Per-mailbox message counts for the parity page; same shape as `mailboxCounts`. */
-export function indexCounts(exec: Exec) {
-	const out: Record<string, { states: Record<string, number>; unread: number; starred: number; total: number; inboxConversations: number; appliedSeq: number }> = {};
-	const entry = (id: string) =>
-		(out[id] ??= { states: {}, unread: 0, starred: 0, total: 0, inboxConversations: 0, appliedSeq: 0 });
-	for (const row of exec(
-		`SELECT mailbox_id, state, COUNT(*) AS n,
-			SUM(CASE WHEN unread = 1 AND state = 'inbox' THEN 1 ELSE 0 END) AS unread,
-			SUM(starred) AS starred
-		FROM messages WHERE deleted = 0 GROUP BY mailbox_id, state`,
-	)) {
-		const e = entry(String(row.mailbox_id));
-		e.states[String(row.state)] = Number(row.n);
-		e.unread += Number(row.unread);
-		e.starred += Number(row.starred);
-		e.total += Number(row.n);
-	}
-	for (const row of exec(
-		`SELECT mailbox_id, COUNT(DISTINCT thread_key) AS n FROM messages WHERE deleted = 0 AND state = 'inbox' GROUP BY mailbox_id`,
-	)) entry(String(row.mailbox_id)).inboxConversations = Number(row.n);
-	for (const row of exec(`SELECT mailbox_id, applied_seq FROM mailbox_cursor`)) {
-		entry(String(row.mailbox_id)).appliedSeq = Number(row.applied_seq);
-	}
-	return out;
-}
-
 /** Custom folder views (`folder:<id>`) with conversation counts, for the source list. */
-export function folderViews(exec: Exec): { view: string; count: number }[] {
-	return runSync(folderViewsQuery(), exec);
-}
-
 export function* folderViewsQuery(): Query<{ view: string; count: number }[]> {
 	return (yield sqlStep(
 		`SELECT state AS view, COUNT(DISTINCT thread_key) AS count FROM messages
 		WHERE deleted = 0 AND state LIKE 'folder:%' GROUP BY state ORDER BY state`,
 	)).map((r) => ({ view: String(r.view), count: Number(r.count) }));
-}
-
-export function messageCount(exec: Exec): number {
-	return Number(exec(`SELECT COUNT(*) AS n FROM messages WHERE deleted = 0`)[0].n);
-}
-
-// ── Rebuild job ────────────────────────────────────────────────────
-
-export interface RebuildJob {
-	generation: number;
-	mailboxes: string[];
-	position: number;
-	afterId: string | null;
-	startedAt: string;
-	finishedAt: string | null;
-	error: string | null;
-}
-
-export function getRebuildJob(exec: Exec): RebuildJob | null {
-	const row = exec(`SELECT * FROM rebuild_job WHERE id = 1`)[0];
-	if (!row) return null;
-	return {
-		generation: Number(row.generation),
-		mailboxes: JSON.parse(String(row.mailboxes)),
-		position: Number(row.position),
-		afterId: (row.after_id as string | null) ?? null,
-		startedAt: String(row.started_at),
-		finishedAt: (row.finished_at as string | null) ?? null,
-		error: (row.error as string | null) ?? null,
-	};
-}
-
-/** Start a rebuild over these mailboxes with a new generation. Replaces any running job. */
-export function startRebuildJob(exec: Exec, mailboxes: string[], now = Date.now()): RebuildJob {
-	const generation = currentGeneration(exec) + 1;
-	setIndexMeta(exec, "generation", String(generation));
-	exec(
-		`INSERT INTO rebuild_job (id, generation, mailboxes, position, after_id, started_at, finished_at, error)
-		VALUES (1, ?, ?, 0, NULL, ?, NULL, NULL)
-		ON CONFLICT (id) DO UPDATE SET generation = excluded.generation, mailboxes = excluded.mailboxes,
-			position = 0, after_id = NULL, started_at = excluded.started_at, finished_at = NULL, error = NULL`,
-		generation,
-		JSON.stringify(mailboxes),
-		new Date(now).toISOString(),
-	);
-	return getRebuildJob(exec)!;
-}
-
-export function saveRebuildProgress(
-	exec: Exec,
-	progress: { position: number; afterId: string | null; finishedAt?: string | null; error?: string | null },
-): void {
-	exec(
-		`UPDATE rebuild_job SET position = ?, after_id = ?, finished_at = ?, error = ? WHERE id = 1`,
-		progress.position,
-		progress.afterId,
-		progress.finishedAt ?? null,
-		progress.error ?? null,
-	);
 }

@@ -19,20 +19,20 @@ test("every address belongs to a configured domain", () => {
 	for (const address of vars.EMAIL_ADDRESSES) assert.ok(domains.has(address.split("@")[1]), address);
 });
 
-test("MAIL_INDEX binds MailIndexDO", () => {
+test("mail has no Durable Object bindings", () => {
 	const { durable_objects } = readConfig();
-	const binding = durable_objects.bindings.find((b) => b.name === "MAIL_INDEX");
-	assert.equal(binding?.class_name, "MailIndexDO");
+	assert.deepEqual(durable_objects.bindings.map((b) => b.name).sort(), ["EMAIL_AGENT", "EMAIL_MCP"]);
 });
 
 // Deployed migrations are permanent. Only append; never edit or reorder.
-test("migrations are append-only and v4 adds MailIndexDO", () => {
+test("migrations are append-only and v5 deletes the mail classes", () => {
 	const { migrations } = readConfig();
-	assert.deepEqual(migrations.slice(0, 4), [
+	assert.deepEqual(migrations, [
 		{ tag: "v1", new_sqlite_classes: ["MailboxDO"] },
 		{ tag: "v2", new_sqlite_classes: ["EmailAgent"] },
 		{ tag: "v3", new_sqlite_classes: ["EmailMCP"] },
 		{ tag: "v4", new_sqlite_classes: ["MailIndexDO"] },
+		{ tag: "v5", deleted_classes: ["MailboxDO", "MailIndexDO"] },
 	]);
 });
 
@@ -42,4 +42,11 @@ test("the worker entry exports every bound Durable Object class", () => {
 	for (const { class_name } of durable_objects.bindings) {
 		assert.match(entry, new RegExp(`export \\{ ${class_name} \\}`), class_name);
 	}
+});
+
+test("mail is stored on D1", () => {
+	const { vars, d1_databases } = readConfig();
+	assert.equal(vars.STORAGE, undefined);
+	const db = d1_databases?.find((d) => d.binding === "DB");
+	assert.equal(db?.migrations_dir, "migrations");
 });

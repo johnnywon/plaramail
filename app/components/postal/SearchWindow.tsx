@@ -18,6 +18,7 @@ import {
 	XIcon,
 } from "@phosphor-icons/react";
 import { AgentIcon } from "./AgentIcon";
+import { useShortcuts } from "./shortcuts";
 import { OPERATOR_HELP, OPERATORS } from "../../../shared/search-query";
 import type { Conversation } from "~/services/api";
 import { AddressText, type Identities, Swatch } from "./identity";
@@ -59,6 +60,8 @@ export interface WindowSection {
 export const rowDomId = (id: string) => `pg-sw-${id.replace(/[^\w-]/g, "_")}`;
 
 export interface SearchWindowProps {
+	/** Closed, the window stays mounted for its motion, inert. */
+	open: boolean;
 	sections: WindowSection[];
 	active: string | null;
 	terms: string[];
@@ -74,6 +77,29 @@ export interface SearchWindowProps {
 
 function Marked({ text, terms }: { text: string; terms: string[] }) {
 	return <>{marks(text, terms).map((p, i) => (p.mark ? <mark key={i}>{p.text}</mark> : p.text))}</>;
+}
+
+/** A row's accessible name: its parts joined with ", ", so agents and screen readers don't read "Inkwell Print Co.1". */
+export function rowLabel(row: WindowRow): string {
+	const n = (count: number | null | undefined) => (count == null ? "" : count.toLocaleString());
+	const parts = (() => {
+		switch (row.kind) {
+			case "completion": return [row.completion.label, row.completion.detail, n(row.completion.count)];
+			case "result": {
+				const r = row.row;
+				const today = new Date(r.date).toDateString() === new Date().toDateString();
+				return [r.sender_name || r.sender_addr, today ? timeLabel(r.date) : dayLabel(r.date), r.subject || "(no subject)"];
+			}
+			case "filter": return [row.filter.desc, row.filter.token, n(row.filter.count)];
+			case "address": return [row.address, row.count ? n(row.count) : ""];
+			case "person": return [row.name, row.address, n(row.count)];
+			case "recent": return [row.text];
+			case "saved": return [row.name, row.name !== row.query ? row.query : "", n(row.count)];
+			case "date": return [row.label];
+			case "action": return [row.label, row.detail];
+		}
+	})();
+	return parts.filter((p) => p && String(p).trim()).join(", ");
 }
 
 function RowBody({ row, terms, identities }: { row: WindowRow; terms: string[]; identities: Identities }) {
@@ -231,6 +257,7 @@ function Section({ section, props }: { section: WindowSection; props: SearchWind
 					key={row.id}
 					id={rowDomId(row.id)}
 					role="option"
+					aria-label={rowLabel(row)}
 					aria-selected={props.active === row.id}
 					data-active={props.active === row.id}
 					data-kind={row.kind}
@@ -251,10 +278,11 @@ function Section({ section, props }: { section: WindowSection; props: SearchWind
 
 /** The window under the search box. Sections follow what is typed; SearchBar decides which. */
 export function SearchWindow(props: SearchWindowProps) {
+	const keys = useShortcuts();
 	const main = props.sections.filter((s) => !s.side);
 	const side = props.sections.filter((s) => s.side);
 	return (
-		<div className="pg-popover pg-sw" id="pg-sw" role="listbox" aria-label="Search suggestions">
+		<div className="pg-popover pg-sw" id="pg-sw" role="listbox" aria-label="Search suggestions" data-open={props.open} inert={!props.open}>
 			{props.help ? (
 				<div className="pg-sw-body pg-sw-help" role="group" aria-label="Search operators">
 					<span className="pg-caption">Operators</span>
@@ -277,12 +305,12 @@ export function SearchWindow(props: SearchWindowProps) {
 				</div>
 			)}
 			<div className="pg-sw-foot">
-				<span className="pg-keyhint pg-ellipsis">↑↓ move · tab complete · ↵ open · ⌘↵ search · esc close</span>
+				<span className="pg-keyhint pg-ellipsis">↑↓ move · {keys.text("searchComplete")} complete · {keys.text("searchOpen")} open · {keys.text("searchRun")} search · {keys.text("searchClose")} close</span>
 				<span className="pg-flex" />
 				{props.save === "saved" && <span className="pg-sw-saved">Saved</span>}
 				{typeof props.save === "function" && (
 					<button type="button" className="pg-sw-help-btn" onMouseDown={(e) => { e.preventDefault(); (props.save as () => void)(); }}>
-						Save search <span className="pg-keyhint">⌘S</span>
+						Save search <span className="pg-keyhint">{keys.text("searchSave")}</span>
 					</button>
 				)}
 				<button type="button" className="pg-sw-help-btn" aria-pressed={props.help} onMouseDown={(e) => { e.preventDefault(); props.onHelp(!props.help); }}>

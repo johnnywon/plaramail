@@ -26,7 +26,7 @@ for (const m of messages) {
 	for (const s of rows.insertStatements(A, "inbox", email, [], m.id, { bodyInR2: false })) db.exec(s.sql, ...s.params);
 }
 
-const first = (q) => idx.runSync(eng.d1MailQuery(idx.emptyFilter({ view: "anywhere", q, engine: "d1" }), { now: NOW, limit: 5 }), db.exec).conversations[0]?.email_id;
+const first = (q) => idx.runSync(eng.d1MailQuery(idx.emptyFilter({ view: "anywhere", q }), { now: NOW, limit: 5 }), db.exec).conversations[0]?.email_id;
 
 test("the fixture has 200 messages and 30 queries", () => {
 	assert.equal(messages.length, 200);

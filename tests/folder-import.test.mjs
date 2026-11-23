@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { loadTs, openDb } from "./helpers/sqlite.mjs";
+import { openD1 } from "./helpers/d1.mjs";
+import { loadTs } from "./helpers/sqlite.mjs";
 
-const { applyMigrations, mailboxMigrations } = await loadTs("workers/durableObject/migrations.ts");
-const bulk = await loadTs("workers/lib/mailbox-bulk.ts");
-const meta = await loadTs("workers/lib/index-rows.ts");
 const fi = await loadTs("workers/lib/folder-import.ts");
+const { D1Mailbox } = await loadTs("workers/store/d1/mailbox.ts");
+
+const A = "a@example.com";
 
 test("the dry run merges folders by name, reuses existing labels and totals counts", () => {
 	const plan = fi.planFolderImport([
@@ -28,89 +29,83 @@ test("the dry run merges folders by name, reuses existing labels and totals coun
 	assert.equal(plan.mailboxes[0].folders.find((f) => f.folderId === "tax").labelId, "taxes");
 });
 
-/** A mailbox on node:sqlite exposing the MailboxDO import methods. */
-function fakeMailbox() {
-	const handle = openDb();
-	applyMigrations(handle.sqlStorage, mailboxMigrations, handle);
-	const { exec } = handle;
-	exec(`INSERT INTO folders (id, name) VALUES ('receipts', 'Receipts')`);
+/** One mailbox on D1 with a custom Receipts folder, and the import's real dependencies. */
+async function fixture() {
+	const d1 = await openD1();
+	await d1.addMailboxes(A);
+	d1.exec(`INSERT INTO folders (mailbox_id, id, name) VALUES (?, 'receipts', 'Receipts')`, A);
+	const backups = [];
+	const env = {
+		EMAIL_ADDRESSES: [A],
+		DB: d1.DB,
+		BUCKET: { put: async (key, body) => void backups.push({ key, body: JSON.parse(body) }) },
+	};
 	let n = 0;
-	const add = (folder_id) => {
+	const mailbox = new D1Mailbox(d1.sql, env.BUCKET, A);
+	const add = async (folder) => {
 		const id = `e${++n}`;
-		exec(`INSERT INTO emails (id, folder_id, subject, sender, recipient, date, body, thread_id) VALUES (?, ?, 's', 'x@y.z', 'a@example.com', '2026-10-01', '', ?)`, id, folder_id, id);
+		await mailbox.createEmail(folder, { id, subject: "s", sender: "x@example.net", recipient: A, date: "2026-10-01T00:00:00Z", body: "", thread_id: id }, []);
 		return id;
 	};
-	return {
-		exec, add,
-		stub: {
-			folderImportCounts: async () => ({ folders: bulk.customFolderCounts(exec), imported: bulk.foldersImported(exec) }),
-			folderEmailIds: async (folderId) => bulk.folderEmailIdsSql(exec, folderId),
-			importFolder: async (folderId, labelId) => ({
-				labeled: bulk.importFolderLabelSql(exec, folderId, labelId).length,
-				archived: bulk.importFolderArchiveSql(exec, folderId, labelId).length,
-			}),
-			markFoldersImported: async () => meta.setMeta(exec, "folders_imported", "1"),
-		},
-	};
-}
-
-function deps(box) {
-	const labels = [];
-	const backups = [];
 	let t = Date.parse("2026-10-09T12:00:00Z");
-	return {
-		labels, backups,
-		mailboxIds: async () => ["a@example.com"],
-		mailbox: () => box.stub,
-		listLabels: async () => labels.map((l) => ({ id: l.id, name: l.name, color: l.color })),
-		createLabel: async (input) => (labels.push(input), { label: input }),
-		putBackup: async (key, body) => void backups.push({ key, body: JSON.parse(body) }),
-		now: () => (t += 1000),
-	};
+	const deps = { ...fi.importDeps(env), now: () => (t += 1000) };
+	const folderOf = (id) => d1.exec(`SELECT folder_id FROM messages WHERE email_id = ?`, id)[0].folder_id;
+	const labels = () => d1.exec(`SELECT id, name, color FROM labels ORDER BY position`);
+	const imported = () => !!d1.exec(`SELECT folders_imported FROM mailboxes WHERE id = ?`, A)[0].folders_imported;
+	return { d1, deps, backups, add, folderOf, labels, imported };
 }
 
 test("a run backs up, labels, archives and marks the mailbox; a rerun changes nothing", async () => {
-	const box = fakeMailbox();
-	const a = box.add("receipts");
-	const b = box.add("receipts");
-	const inbox = box.add("inbox");
-	const d = deps(box);
+	const fx = await fixture();
+	const a = await fx.add("receipts");
+	const b = await fx.add("receipts");
+	const inbox = await fx.add("inbox");
 
-	const dry = await fi.dryRunFolderImport(d);
+	const dry = await fi.dryRunFolderImport(fx.deps);
 	assert.deepEqual(dry.totals, { mailboxes: 1, folders: 1, messages: 2 });
-	assert.equal(d.backups.length, 0);
+	assert.equal(fx.backups.length, 0);
 
-	const first = await fi.runFolderImport(d);
+	const first = await fi.runFolderImport(fx.deps);
 	assert.match(first.backup, /^backups\/folder-import-2026-10-09T12-00-0\d-000Z\.json$/);
-	assert.deepEqual(d.backups[0].body.emails, { "a@example.com": { receipts: [a, b] } });
-	assert.deepEqual(d.labels.map((l) => [l.id, l.name, l.color]), [["receipts", "Receipts", "#c8372d"]]);
+	assert.deepEqual(fx.backups[0].body.emails, { [A]: { receipts: [a, b] } });
+	assert.deepEqual(fx.labels().map((l) => [l.id, l.name, l.color]), [["receipts", "Receipts", "#c8372d"]]);
 	assert.deepEqual(first.results.map((r) => [r.labeled, r.archived]), [[2, 2]]);
-	assert.equal(box.exec(`SELECT folder_id FROM emails WHERE id = ?`, inbox)[0].folder_id, "inbox");
-	assert.equal(bulk.foldersImported(box.exec), true);
+	assert.equal(fx.folderOf(a), "archive");
+	assert.equal(fx.folderOf(inbox), "inbox");
+	assert.equal(fx.imported(), true);
 
-	const second = await fi.runFolderImport(d);
+	const second = await fi.runFolderImport(fx.deps);
 	assert.deepEqual(second.results.map((r) => [r.labeled, r.archived]), [[0, 0]]);
-	assert.equal(d.labels.length, 1);
-	assert.equal(box.exec(`SELECT COUNT(*) AS n FROM folders WHERE id = 'receipts'`)[0].n, 1);
+	assert.equal(fx.labels().length, 1);
+	assert.equal(fx.d1.exec(`SELECT COUNT(*) AS n FROM folders WHERE id = 'receipts'`)[0].n, 1, "the folder itself stays");
 });
 
 test("mail moved out of the folder before the run is left alone", async () => {
-	const box = fakeMailbox();
-	const kept = box.add("receipts");
-	const moved = box.add("receipts");
-	box.exec(`UPDATE emails SET folder_id = 'inbox' WHERE id = ?`, moved);
-	const result = await fi.runFolderImport(deps(box));
+	const fx = await fixture();
+	const kept = await fx.add("receipts");
+	const moved = await fx.add("receipts");
+	fx.d1.exec(`UPDATE messages SET folder_id = 'inbox' WHERE email_id = ?`, moved);
+	const result = await fi.runFolderImport(fx.deps);
 	assert.deepEqual(result.results.map((r) => [r.labeled, r.archived]), [[1, 1]]);
-	assert.equal(box.exec(`SELECT folder_id FROM emails WHERE id = ?`, kept)[0].folder_id, "archive");
-	assert.equal(box.exec(`SELECT folder_id FROM emails WHERE id = ?`, moved)[0].folder_id, "inbox");
-	assert.equal(Number(box.exec(`SELECT COUNT(*) AS n FROM email_labels WHERE email_id = ?`, moved)[0].n), 0);
+	assert.equal(fx.folderOf(kept), "archive");
+	assert.equal(fx.folderOf(moved), "inbox");
+	assert.equal(fx.d1.exec(`SELECT COUNT(*) AS n FROM message_labels JOIN messages m ON m.id = message WHERE m.email_id = ?`, moved)[0].n, 0);
 });
 
 test("new labels skip colours that existing labels use", async () => {
-	const box = fakeMailbox();
-	box.add("receipts");
-	const d = deps(box);
-	d.labels.push({ id: "follow-up", name: "Follow up", color: "#c8372d" });
-	await fi.runFolderImport(d);
-	assert.equal(d.labels.find((l) => l.id === "receipts").color, "#d9822b");
+	const fx = await fixture();
+	await fx.add("receipts");
+	fx.d1.exec(`INSERT INTO labels (id, name, color) VALUES ('follow-up', 'Follow up', '#c8372d')`);
+	await fi.runFolderImport(fx.deps);
+	assert.equal(fx.labels().find((l) => l.id === "receipts").color, "#d9822b");
+});
+
+test("after the import, moves into custom folders are refused", async () => {
+	const fx = await fixture();
+	const id = await fx.add("inbox");
+	await fi.runFolderImport(fx.deps);
+	const mailbox = new D1Mailbox(fx.d1.sql, {}, A);
+	assert.equal(await mailbox.moveEmail(id, "receipts"), false);
+	assert.equal(fx.folderOf(id), "inbox");
+	assert.equal(await mailbox.moveEmail(id, "archive"), true);
 });

@@ -1,47 +1,43 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { openD1 } from "./helpers/d1.mjs";
 import { loadTs } from "./helpers/sqlite.mjs";
 
 const { app } = await loadTs("workers/index.ts");
 
+const { D1Mailbox } = await loadTs("workers/store/d1/mailbox.ts");
+const A = "a@example.com";
+
 const calls = [];
-function environment() {
-	return {
-		EMAIL_ADDRESSES: ["a@example.com"],
-		BUCKET: {
-			head: async () => ({}),
-			delete: async (keys) => calls.push(["r2.delete", keys]),
-			list: async () => ({ objects: [{ key: "mailboxes/a@example.com.json" }] }),
-		},
-		MAILBOX: {
-			idFromName: (name) => name,
-			get: () => ({
-				trashOrDelete: async (id) => (calls.push(["trashOrDelete", id]), id === "missing" ? null
-					: id === "in-trash" ? { action: "deleted", attachments: [{ id: "att", filename: "f.pdf" }] }
-					: { action: "trashed", attachments: [] }),
-				deleteFolder: async (id) => ({ full: "not_empty", empty: "deleted" })[id] ?? "not_found",
-			}),
-		},
-		MAIL_INDEX: {
-			idFromName: (name) => name,
-			get: () => ({
-				startRebuild: async () => ({ generation: 1 }),
-				queryMail: async (filter, options) => ({ filter, options, conversations: [] }),
-			}),
-		},
+async function environment() {
+	const d1 = await openD1();
+	await d1.addMailboxes(A);
+	const bucket = {
+		head: async () => ({}),
+		get: async () => null,
+		delete: async (keys) => calls.push(["r2.delete", keys]),
 	};
+	const mailbox = new D1Mailbox(d1.sql, bucket, A);
+	const store = (folder, id, attachments = []) => mailbox.createEmail(folder, {
+		id, subject: "Hello", sender: "ann@example.net", recipient: A, date: new Date().toISOString(), body: "<p>hi</p>",
+		thread_id: id, message_id: `${id}@example.net`, raw_headers: "[]",
+	}, attachments);
+	await store("inbox", "e1");
+	await store("trash", "in-trash", [{ id: "att", email_id: "in-trash", filename: "f.pdf", mimetype: "application/pdf", size: 1, content_id: null, disposition: "attachment" }]);
+	return { EMAIL_ADDRESSES: [A], BUCKET: bucket, DB: d1.DB };
 }
 
 const json = { "content-type": "application/json" };
 
+// The route answers 400 for an empty body, so 400 means the write got past the check.
 async function post(headers) {
-	return app.request("http://localhost/api/v1/index/rebuild", { method: "POST", headers, body: "{}" }, environment());
+	return app.request("http://localhost/api/v1/mail/bulk/undo", { method: "POST", headers, body: "{}" }, await environment());
 }
 
 test("writes from the app itself pass", async () => {
-	assert.equal((await post({ ...json, "sec-fetch-site": "same-origin" })).status, 202);
-	assert.equal((await post({ ...json, "sec-fetch-site": "none" })).status, 202);
-	assert.equal((await post({ ...json, origin: "http://localhost", "sec-fetch-site": "cross-site" })).status, 202);
+	assert.equal((await post({ ...json, "sec-fetch-site": "same-origin" })).status, 400);
+	assert.equal((await post({ ...json, "sec-fetch-site": "none" })).status, 400);
+	assert.equal((await post({ ...json, origin: "http://localhost", "sec-fetch-site": "cross-site" })).status, 400);
 });
 
 test("cross-site and header-less writes are refused", async () => {
@@ -57,30 +53,33 @@ test("writes without a JSON content type are refused", async () => {
 });
 
 test("reads are not checked", async () => {
-	const response = await app.request("http://localhost/api/v1/mail?view=all", { headers: { "sec-fetch-site": "cross-site" } }, environment());
+	const response = await app.request("http://localhost/api/v1/mail?view=all", { headers: { "sec-fetch-site": "cross-site" } }, await environment());
 	assert.equal(response.status, 200);
 });
 
 const same = { ...json, "sec-fetch-site": "same-origin" };
 
 test("Delete moves to Trash, and deletes attachments only on a permanent delete", async () => {
+	const env = await environment();
 	calls.length = 0;
-	let response = await app.request("http://localhost/api/v1/mailboxes/a@example.com/emails/e1", { method: "DELETE", headers: same }, environment());
+	let response = await app.request("http://localhost/api/v1/mailboxes/a@example.com/emails/e1", { method: "DELETE", headers: same }, env);
 	assert.deepEqual(await response.json(), { status: "trashed" });
-	response = await app.request("http://localhost/api/v1/mailboxes/a@example.com/emails/in-trash", { method: "DELETE", headers: same }, environment());
+	assert.deepEqual(calls, [], "a move to Trash keeps the files");
+	response = await app.request("http://localhost/api/v1/mailboxes/a@example.com/emails/in-trash", { method: "DELETE", headers: same }, env);
 	assert.deepEqual(await response.json(), { status: "deleted" });
-	assert.deepEqual(calls, [["trashOrDelete", "e1"], ["trashOrDelete", "in-trash"], ["r2.delete", ["attachments/in-trash/att/f.pdf"]]]);
-	response = await app.request("http://localhost/api/v1/mailboxes/a@example.com/emails/missing", { method: "DELETE", headers: same }, environment());
+	assert.deepEqual(calls, [["r2.delete", ["attachments/in-trash/att/f.pdf"]]]);
+	response = await app.request("http://localhost/api/v1/mailboxes/a@example.com/emails/missing", { method: "DELETE", headers: same }, env);
 	assert.equal(response.status, 404);
 });
 
-test("mail params are validated before reaching the index", async () => {
-	const get = (query) => app.request(`http://localhost/api/v1/mail?${query}`, {}, environment());
+test("mail params are validated before reaching the store", async () => {
+	const env = await environment();
+	const get = (query) => app.request(`http://localhost/api/v1/mail?${query}`, {}, env);
 	assert.equal((await get("view=bogus")).status, 400);
 	assert.equal((await get("cursor=@@@")).status, 400);
-	const body = await (await get("view=all&address=billing&limit=10")).json();
-	assert.deepEqual(body.filter.address, ["billing"]);
-	assert.deepEqual(body.options, { cursor: null, limit: 10 });
+	assert.equal((await get("q=has:nonsense")).status, 400);
+	const body = await (await get("view=all&address=a@example.com&limit=10")).json();
+	assert.deepEqual(body.conversations.map((c) => c.email_id), ["e1"]);
 });
 
 test("agent connections from another origin are refused", async () => {

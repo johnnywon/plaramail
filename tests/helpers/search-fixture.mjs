@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { statements } from "./schema.mjs";
 import { D1_SCHEMA } from "./d1-schema.mjs";
-import { loadTs, openDb } from "./sqlite.mjs";
+import { openDb } from "./sqlite.mjs";
 
-// Seeded mail on both schemas, the combined index (MailIndexDO) and D1, for
-// the search tests.
+// Seeded mail on the D1 schema, for the search tests.
 
-const idx = await loadTs("workers/lib/mail-index-sql.ts");
 const SCHEMA = D1_SCHEMA;
 export const NOW = Date.parse("2026-10-11T12:00:00Z");
 export const A = "a@example.com";
@@ -23,7 +21,6 @@ export const MESSAGES = [
 	{ id: 6, mailbox: B, folder: "trash", conv: "t5", hours: 3, from: "spam@example.net", name: "", to: B, subject: "Old offer", body: "limited offer transfer", read: 1, size: 1000 },
 	{ id: 7, mailbox: A, folder: "draft", conv: "t2", hours: 0.2, from: A, name: "", to: "news@example.net", subject: "Re: Weekly digest", body: "unsubscribe me", read: 1, size: 1000, scheduled: true },
 ];
-const state = (folder) => (["inbox", "sent", "draft", "archive", "spam", "trash"].includes(folder) ? folder : `folder:${folder}`);
 
 export function d1Db() {
 	const db = openDb();
@@ -55,22 +52,7 @@ export function d1Db() {
 	return db;
 }
 
-export function indexDb() {
-	const db = openDb();
-	idx.createIndexSchema(db.exec);
-	db.exec(`INSERT INTO labels (id, name, color) VALUES ('receipts', 'Receipts', '#000')`);
-	for (const mailbox of [A, B]) {
-		idx.applyRows(db.exec, mailbox, MESSAGES.filter((m) => m.mailbox === mailbox).map((m) => ({
-			email_id: `e${m.id}`, seq: m.id, deleted: false, conversation_id: m.conv, message_id: `${m.id}@example.net`, state: state(m.folder),
-			date: iso(m.hours), sender_addr: m.from, sender_name: m.name, sender_domain: m.from.split("@")[1], recipients: [m.to, m.cc].filter(Boolean).join(", "),
-			subject: m.subject, subject_norm: m.subject.toLowerCase(), snippet: "", unread: !m.read, starred: !!m.starred, has_attachment: !!m.attachment,
-			list_id: m.list ?? null, unsubscribe: m.unsubscribe ?? null, body_text: m.body, labels: m.label ? [m.label] : [],
-		})), { now: NOW });
-	}
-	return db;
-}
-
-export const DBS = { d1: d1Db(), index: indexDb() };
+export const DB = d1Db();
 
 /** Run SQL, refusing any statement with more than one MATCH. */
 export function guarded(exec) {

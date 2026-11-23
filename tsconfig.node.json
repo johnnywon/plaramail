@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["vite.config.ts"],
+  "include": ["vite.config.ts", "scripts/check-env.mjs"],
   "compilerOptions": {
     "composite": true,
     "strict": true,

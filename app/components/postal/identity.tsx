@@ -6,7 +6,7 @@ import { useId } from "react";
 
 /**
  * Domain identity: every domain gets a hue and a shape, derived from its
- * position in DOMAINS. The shape keeps domains apart for colour-blind readers.
+ * position in DOMAINS. The shape keeps domains apart for color-blind readers.
  * Shapes are never round; round is reserved for the agent.
  */
 
@@ -56,7 +56,7 @@ export function shortDomain(domain: string): string {
 	return parts.length > 1 ? parts.slice(0, -1).join(".") : domain;
 }
 
-/** Inline style that colours a swatch or domain text with the domain's hue. */
+/** Inline style that colors a swatch or domain text with the domain's hue. */
 export function hueVars(hue: number): React.CSSProperties {
 	return { "--pg-h": String(hue) } as React.CSSProperties;
 }
@@ -151,14 +151,6 @@ export function labelLook(id: string): React.CSSProperties & { "data-pattern": s
 	h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
 	h = (h ^ (h >>> 16)) >>> 0;
 	return { "--pg-lh": String(h % 360), "data-pattern": LABEL_PATTERNS[(h >>> 9) % LABEL_PATTERNS.length] } as never;
-}
-
-export function LabelChip({ label, style }: { label: { id: string; name: string }; style?: React.CSSProperties }) {
-	return (
-		<span className="pg-label-chip" style={style}>
-			<LabelTag id={label.id} size={10} />{label.name}
-		</span>
-	);
 }
 
 const TAG_PATH = "M243.31,136,144,36.69A15.86,15.86,0,0,0,132.69,32H40a8,8,0,0,0-8,8v92.69A15.86,15.86,0,0,0,36.69,144L136,243.31a16,16,0,0,0,22.63,0l84.68-84.68a16,16,0,0,0,0-22.63ZM84,96A12,12,0,1,1,96,84,12,12,0,0,1,84,96Z";

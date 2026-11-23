@@ -14,6 +14,8 @@ export type MailboxContext = {
 	Bindings: Env;
 	Variables: {
 		mailbox: MailboxStore;
+		/** Who is signed in through Access, set in workers/app.ts. "local" on the dev server. */
+		viewer: string;
 	};
 };
 

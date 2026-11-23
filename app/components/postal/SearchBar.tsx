@@ -7,6 +7,7 @@ import { AgentIcon } from "./AgentIcon";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Conversation, SavedSearch, Suggestions } from "~/services/api";
 import type { Identities } from "./identity";
+import { Keys } from "./shortcuts";
 import {
 	addRecent,
 	appendTerm,
@@ -20,7 +21,7 @@ import {
 	saveRecent,
 	windowKey,
 } from "./search-window";
-import { type FilterSuggestion, rowDomId, SearchWindow, type WindowRow, type WindowSection } from "./SearchWindow";
+import { type FilterSuggestion, rowDomId, SearchWindow, type SearchWindowProps, type WindowRow, type WindowSection } from "./SearchWindow";
 
 export type { FilterSuggestion } from "./SearchWindow";
 
@@ -270,14 +271,14 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function S
 							if (!interpreting) void interpret(request);
 						},
 					},
-					{
-						id: "ask", kind: "action", icon: "ask", label: "Ask the agent about it",
+					...[{
+						id: "ask", kind: "action" as const, icon: "ask" as const, label: "Ask the agent about it",
 						choose: () => {
 							remember(text);
 							leave();
 							props.onAsk(request);
 						},
-					},
+					}],
 				],
 			});
 		}
@@ -331,6 +332,22 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function S
 				return;
 		}
 	};
+	// The window stays mounted so it can close with motion. Closing, it keeps what it last showed
+	// rather than emptying while it rolls up.
+	const liveWindow: Omit<SearchWindowProps, "open"> = {
+		sections,
+		active,
+		terms: props.terms,
+		identities: props.identities,
+		stale: props.resultsFor.trim() !== text.trim(),
+		help,
+		onHelp: setHelp,
+		onHover: setActive,
+		save: hasQ ? (isSaved ? "saved" : save) : null,
+	};
+	const lastWindow = useRef(liveWindow);
+	if (show) lastWindow.current = liveWindow;
+	const windowProps = show ? liveWindow : lastWindow.current;
 	const syncCursor = (e: React.SyntheticEvent<HTMLInputElement>) => setCursor(e.currentTarget.selectionStart ?? e.currentTarget.value.length);
 	const error = props.error ?? (suggestCurrent ? suggest.errors[0] : undefined);
 	const announced = hasQ && props.resultCount !== null && props.resultsFor.trim() === text.trim();
@@ -370,7 +387,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function S
 					}}
 					onSelect={syncCursor}
 					onKeyDown={onKeyDown}
-					placeholder="Search mail — try  from:stripe  is:unread  has:attachment"
+					placeholder="Search mail"
 					spellCheck={false}
 					autoComplete="off"
 					aria-label="Search mail"
@@ -392,7 +409,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function S
 						</button>
 					</>
 				)}
-				<span className="pg-kbd pg-desktop-only">/</span>
+				<Keys id="search" className="pg-kbd pg-desktop-only" />
 				<button type="button" className="pg-icon-btn pg-mobile-only" onClick={props.onAgent} aria-label="Open agent">
 					<AgentIcon size={16} weight="fill" />
 				</button>
@@ -400,19 +417,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function S
 			<span className="pg-sr-only" aria-live="polite">
 				{announced ? `${props.resultCount} result${props.resultCount === 1 ? "" : "s"}` : ""}
 			</span>
-			{show && (
-				<SearchWindow
-					sections={sections}
-					active={active}
-					terms={props.terms}
-					identities={props.identities}
-					stale={props.resultsFor.trim() !== text.trim()}
-					help={help}
-					onHelp={setHelp}
-					onHover={setActive}
-					save={hasQ ? (isSaved ? "saved" : save) : null}
-				/>
-			)}
+			<SearchWindow open={show} {...windowProps} />
 		</div>
 	);
 });

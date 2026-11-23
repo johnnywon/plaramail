@@ -3,13 +3,25 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 /**
- * One address's mail on D1, with the same methods and return shapes as
- * MailboxDO. Every query is scoped to the mailbox.
+ * One address's mail on D1. Every query is scoped to the mailbox.
  */
+import type { DraftNotes } from "../../../shared/draft-notes";
 import { Folders } from "../../../shared/folders";
+import { deleteAttachmentFiles } from "../../lib/attachments";
 import type { ScheduleMode, ScheduledPayload, ScheduledRow } from "../../lib/scheduled-send";
 import type { SendEmailRequest } from "../../lib/send";
-import { SEND_KEY_TTL_MS, type SendKeyClaim } from "../../lib/send-keys";
+import { budgetError, type SendActor } from "../../lib/send-budget";
+import { DEFAULT_AGENT_LIMITS, SEND_LIMITS } from "../../../shared/send-limits";
+import { SEND_KEY_PENDING_STALE_MS, SEND_KEY_TTL_MS, type SendKeyClaim } from "../../lib/send-keys";
+import {
+	MAX_REFERENCED_IDS,
+	SUBJECT_JOIN_WINDOW_MS,
+	type SubjectRow,
+	hasReplyPrefix,
+	normalizeThreadSubject,
+	pickReferencedThread,
+	pickSubjectThread,
+} from "../../lib/threading";
 import type { Sql } from "../sql";
 import {
 	type AttachmentInput,
@@ -36,7 +48,6 @@ const SORT_COLUMNS: Record<string, string> = {
 	id: "m.email_id", subject: "m.subject", sender: "m.sender_addr", recipient: "m.recipient",
 	date: "m.date", read: "m.read", starred: "m.starred",
 };
-const SUBJECT_PREFIX = /^(?:(?:re|fwd?|fw|aw|wg|r[eé]f|sv)\s*:\s*)+/i;
 
 
 export class D1Mailbox {
@@ -96,7 +107,88 @@ export class D1Mailbox {
 		const row = await this.sql.first(`SELECT ${EMAIL_COLUMNS} FROM messages m WHERE m.mailbox_id = ? AND m.email_id = ?`, this.#id, id);
 		if (!row) return null;
 		const attachments = (await this.#attachments([id])).get(id) ?? [];
-		return { ...toEmailRow(row, await this.#body(row)), attachments };
+		const email = { ...toEmailRow(row, await this.#body(row)), attachments };
+		if (email.folder_id !== Folders.DRAFT) return email;
+		const notes = await this.getDraftNotes(id);
+		return this.#withForward(notes ? { ...email, draft_notes: notes } : email);
+	}
+
+	// ── Forward drafts ─────────────────────────────────────────────
+
+	/** The original's attachments a saved forward carries, or null when the draft is not a forward. */
+	async getDraftForward(emailId: string): Promise<string[] | null> {
+		const row = await this.sql.first(
+			`SELECT f.attachment_ids FROM draft_forwards f JOIN messages m ON m.email_id = f.email_id WHERE m.mailbox_id = ? AND f.email_id = ?`,
+			this.#id, emailId,
+		);
+		if (!row) return null;
+		try {
+			const ids = JSON.parse(String(row.attachment_ids ?? "[]"));
+			return Array.isArray(ids) ? ids.filter((v): v is string => typeof v === "string") : [];
+		} catch {
+			return [];
+		}
+	}
+
+	/** Mark a draft as a forward of its in_reply_to, carrying these attachments of the original. */
+	async setDraftForward(emailId: string, attachmentIds: string[]): Promise<void> {
+		await this.sql.run(
+			`INSERT OR REPLACE INTO draft_forwards (email_id, attachment_ids) SELECT email_id, ? FROM messages WHERE mailbox_id = ? AND email_id = ?`,
+			JSON.stringify(attachmentIds), this.#id, emailId,
+		);
+	}
+
+	/** A forward draft with `forward`: the original's attachments it carries, in the saved order. */
+	async #withForward<T extends { id: string; in_reply_to: string | null }>(draft: T): Promise<T | (T & { forward: { attachments: AttachmentRow[] } })> {
+		const ids = await this.getDraftForward(draft.id);
+		if (!ids) return draft;
+		const original = draft.in_reply_to ? (await this.#attachments([draft.in_reply_to])).get(draft.in_reply_to) ?? [] : [];
+		const attachments = ids.flatMap((id) => original.filter((a) => a.id === id));
+		return { ...draft, forward: { attachments } };
+	}
+
+	// ── Draft notes ────────────────────────────────────────────────
+
+	/** How an agent made this draft. Null for drafts a person wrote. */
+	async getDraftNotes(emailId: string): Promise<DraftNotes | null> {
+		return (await this.#draftNotes([emailId])).get(emailId) ?? null;
+	}
+
+	async #draftNotes(emailIds: string[]): Promise<Map<string, DraftNotes>> {
+		const notes = new Map<string, DraftNotes>();
+		if (emailIds.length === 0) return notes;
+		const rows = await this.sql.all(
+			`SELECT n.email_id, n.origin, n.agent, n.instructions, n.model FROM draft_notes n JOIN messages m ON m.email_id = n.email_id
+			WHERE m.mailbox_id = ? AND n.email_id IN (SELECT value FROM json_each(?))`,
+			this.#id, JSON.stringify(emailIds),
+		);
+		for (const row of rows) {
+			let instructions: string[] = [];
+			try {
+				const parsed = JSON.parse(String(row.instructions ?? "[]"));
+				if (Array.isArray(parsed)) instructions = parsed.filter((v): v is string => typeof v === "string");
+			} catch { /* keep none */ }
+			notes.set(String(row.email_id), {
+				origin: String(row.origin) as DraftNotes["origin"], agent: row.agent == null ? null : String(row.agent), instructions,
+				model: row.model == null ? null : String(row.model),
+			});
+		}
+		return notes;
+	}
+
+	async setDraftNotes(emailId: string, notes: DraftNotes): Promise<void> {
+		await this.sql.run(
+			`INSERT OR REPLACE INTO draft_notes (email_id, origin, agent, instructions, created_at, model)
+			SELECT email_id, ?, ?, ?, ?, ? FROM messages WHERE mailbox_id = ? AND email_id = ?`,
+			notes.origin, notes.agent ?? null, JSON.stringify(notes.instructions), new Date().toISOString(), notes.model ?? null, this.#id, emailId,
+		);
+	}
+
+	async hasInboundMessageId(messageId: string): Promise<boolean> {
+		return !!(await this.sql.first(
+			`SELECT 1 FROM messages WHERE mailbox_id = ? AND message_id = ? AND folder_id NOT IN (?, ?) LIMIT 1`,
+			this.#id, messageId, Folders.SENT, Folders.DRAFT,
+		));
 	}
 
 	async getThreadEmails(threadId: string) {
@@ -105,10 +197,13 @@ export class D1Mailbox {
 			this.#id, threadId,
 		);
 		const attachments = await this.#attachments(rows.map((r) => String(r.id)));
-		return Promise.all(rows.map(async (row) => ({
-			...toEmailRow(row, await this.#body(row)),
-			attachments: attachments.get(String(row.id)) ?? [],
-		})));
+		const notes = await this.#draftNotes(rows.filter((r) => r.folder_id === Folders.DRAFT).map((r) => String(r.id)));
+		return Promise.all(rows.map(async (row) => {
+			const email = { ...toEmailRow(row, await this.#body(row)), attachments: attachments.get(String(row.id)) ?? [] };
+			const note = notes.get(String(row.id));
+			const draft = note ? { ...email, draft_notes: note } : email;
+			return draft.folder_id === Folders.DRAFT ? this.#withForward(draft) : draft;
+		}));
 	}
 
 	async createEmail(folder: string, email: EmailInput, attachments: AttachmentInput[]) {
@@ -124,7 +219,16 @@ export class D1Mailbox {
 		const conversationId = conversationFor(email, folderId, subjectNorm, (same?.id as string | null | undefined) ?? null);
 		const bodyInR2 = new TextEncoder().encode(email.body ?? "").length > BODY_INLINE_MAX;
 		if (bodyInR2) await this.bucket.put(bodyKey(email.id), email.body, { httpMetadata: { contentType: "text/html" } });
-		await this.sql.batch(insertStatements(this.#id, folderId, email, attachments, conversationId, { bodyInR2 }));
+		try {
+			await this.sql.batch(insertStatements(this.#id, folderId, email, attachments, conversationId, { bodyInR2 }));
+		} catch (e) {
+			// No row points at the body, so remove it. A message already stored under this id keeps its key.
+			if (bodyInR2) {
+				const owner = await this.sql.first(`SELECT 1 FROM messages WHERE email_id = ?`, email.id).catch(() => true);
+				if (!owner) await this.bucket.delete(bodyKey(email.id)).catch(() => {});
+			}
+			throw e;
+		}
 	}
 
 	async updateEmail(id: string, { read, starred }: { read?: boolean; starred?: boolean }) {
@@ -183,6 +287,18 @@ export class D1Mailbox {
 		return true;
 	}
 
+	/**
+	 * Put a Sent copy whose delivery was rejected back in Drafts. A reply draft
+	 * names its original by email id in in_reply_to, as saved drafts do, so it
+	 * opens and sends as a reply.
+	 */
+	async returnToDrafts(id: string, inReplyTo: string | null) {
+		await this.sql.run(
+			`UPDATE messages SET folder_id = ?, in_reply_to = ? WHERE mailbox_id = ? AND email_id = ?`,
+			Folders.DRAFT, inReplyTo, this.#id, id,
+		);
+	}
+
 	async getAttachment(id: string): Promise<AttachmentRow | null> {
 		const row = await this.sql.first(
 			`SELECT a.id, a.email_id, a.filename, a.mimetype, a.size, a.content_id, a.disposition FROM attachments a
@@ -192,23 +308,63 @@ export class D1Mailbox {
 		return row ? toAttachmentRow(row) : null;
 	}
 
-	async findThreadBySubject(subject: string, senderAddress?: string): Promise<string | null> {
-		const normalized = subject.replace(SUBJECT_PREFIX, "").trim().toLowerCase();
-		if (!normalized) return null;
+	/** The thread of the nearest message in this mailbox whose Message-ID is one of `ids` (workers/lib/threading.ts). */
+	async findThreadByMessageIds(ids: string[]): Promise<string | null> {
+		const wanted = ids.slice(0, MAX_REFERENCED_IDS);
+		if (wanted.length === 0) return null;
 		const rows = await this.sql.all(
-			`SELECT thread_id, subject, GROUP_CONCAT(DISTINCT LOWER(sender_addr)) AS senders, GROUP_CONCAT(DISTINCT LOWER(recipient)) AS recipients
-			FROM messages
-			WHERE mailbox_id = ? AND thread_id IS NOT NULL AND thread_id != email_id AND date >= ?
-			GROUP BY thread_id ORDER BY MAX(date) DESC LIMIT 50`,
-			this.#id, new Date(Date.now() - 7 * 86_400_000).toISOString(),
+			`SELECT message_id, thread_id FROM messages
+			WHERE mailbox_id = ? AND thread_id IS NOT NULL AND message_id IN (${wanted.map(() => "?").join(", ")})`,
+			this.#id, ...wanted,
 		);
-		const sender = senderAddress?.toLowerCase().trim();
-		for (const row of rows) {
-			if (String(row.subject ?? "").replace(SUBJECT_PREFIX, "").trim().toLowerCase() !== normalized) continue;
-			if (sender && !`${row.senders ?? ""},${row.recipients ?? ""}`.includes(sender)) continue;
-			return String(row.thread_id);
-		}
-		return null;
+		return pickReferencedThread(wanted, rows);
+	}
+
+	/** A recent thread a header-less reply belongs to (workers/lib/threading.ts). */
+	async findThreadBySubject(subject: string, senderAddress?: string): Promise<string | null> {
+		if (!hasReplyPrefix(subject) || !normalizeThreadSubject(subject) || !senderAddress) return null;
+		const rows = await this.sql.all(
+			`SELECT thread_id, subject, LOWER(sender_addr) AS sender, LOWER(recipient) AS recipient, folder_id, date
+			FROM messages
+			WHERE mailbox_id = ? AND thread_id IS NOT NULL AND folder_id != 'draft' AND date >= ?
+			ORDER BY date DESC LIMIT 500`,
+			this.#id, new Date(Date.now() - SUBJECT_JOIN_WINDOW_MS).toISOString(),
+		);
+		return pickSubjectThread(rows as unknown as SubjectRow[], subject, senderAddress);
+	}
+
+	// ── Blocked senders ────────────────────────────────────────────
+
+	/** Whether new mail from `address` goes straight to Trash. */
+	async isBlockedSender(address: string): Promise<boolean> {
+		const addr = address.trim().toLowerCase();
+		if (!addr) return false;
+		return !!(await this.sql.first(`SELECT 1 AS ok FROM blocked_senders WHERE mailbox_id = ? AND address = ?`, this.#id, addr));
+	}
+
+	/** Block a sender. Blocking one already blocked keeps the first date. */
+	async blockSender(address: string): Promise<{ address: string; createdAt: string }> {
+		const addr = address.trim().toLowerCase();
+		await this.sql.batch([
+			...ensureMailboxStatements(this.#id),
+			{ sql: `INSERT OR IGNORE INTO blocked_senders (mailbox_id, address, created_at) VALUES (?, ?, ?)`, params: [this.#id, addr, new Date().toISOString()] },
+		]);
+		const row = await this.sql.first(`SELECT created_at FROM blocked_senders WHERE mailbox_id = ? AND address = ?`, this.#id, addr);
+		return { address: addr, createdAt: String(row?.created_at ?? "") };
+	}
+
+	/** False when the sender was not blocked. */
+	async unblockSender(address: string): Promise<boolean> {
+		const rows = await this.sql.all(
+			`DELETE FROM blocked_senders WHERE mailbox_id = ? AND address = ? RETURNING address`,
+			this.#id, address.trim().toLowerCase(),
+		);
+		return rows.length > 0;
+	}
+
+	async listBlockedSenders(): Promise<{ address: string; createdAt: string }[]> {
+		return (await this.sql.all(`SELECT address, created_at FROM blocked_senders WHERE mailbox_id = ? ORDER BY address`, this.#id))
+			.map((r) => ({ address: String(r.address), createdAt: String(r.created_at) }));
 	}
 
 	// ── Folder import ──────────────────────────────────────────────
@@ -259,44 +415,108 @@ export class D1Mailbox {
 
 	// ── Sending ────────────────────────────────────────────────────
 
-	/** 20 sends an hour and 100 a day per address. Null when under the limit. */
-	async checkSendRateLimit(): Promise<string | null> {
+	/**
+	 * Count one send against the address's limits, or refuse it. The insert
+	 * is conditional on the counts, so the check and the count are atomic.
+	 */
+	async takeSendBudget(actor: SendActor, recipients: number, agentDay: number = DEFAULT_AGENT_LIMITS.agentDay): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
 		const now = Date.now();
-		const row = await this.sql.first(
-			`SELECT COALESCE(SUM(date >= ?), 0) AS hour, COUNT(*) AS day FROM messages WHERE mailbox_id = ? AND folder_id = ? AND date >= ?`,
-			new Date(now - 3_600_000).toISOString(), this.#id, Folders.SENT, new Date(now - 86_400_000).toISOString(),
-		);
-		if (Number(row?.hour ?? 0) >= 20) return "Rate limit exceeded: max 20 emails per hour per mailbox";
-		if (Number(row?.day ?? 0) >= 100) return "Rate limit exceeded: max 100 emails per day per mailbox";
-		return null;
-	}
-
-	async claimSendKey(key: string): Promise<SendKeyClaim> {
-		const now = Date.now();
-		const [, inserted] = await this.sql.batch([
-			{ sql: `DELETE FROM send_keys WHERE created_at < ?`, params: [new Date(now - SEND_KEY_TTL_MS).toISOString()] },
+		const hour = new Date(now - 3_600_000).toISOString();
+		const day = new Date(now - 86_400_000).toISOString();
+		const [, taken] = await this.sql.batch([
+			{ sql: `DELETE FROM send_budget WHERE mailbox_id = ? AND at < ?`, params: [this.#id, day] },
 			{
-				sql: `INSERT INTO send_keys (mailbox_id, key, state, created_at) VALUES (?, ?, 'pending', ?) ON CONFLICT DO NOTHING RETURNING state`,
-				params: [this.#id, key, new Date(now).toISOString()],
+				sql: `INSERT INTO send_budget (mailbox_id, actor, recipients, at)
+					SELECT ?1, ?2, ?3, ?4
+					WHERE (SELECT COUNT(*) FROM send_budget WHERE mailbox_id = ?1 AND at >= ?5) < ?6
+					AND (SELECT COUNT(*) FROM send_budget WHERE mailbox_id = ?1) < ?7
+					AND (?2 = 'person' OR (SELECT COUNT(*) FROM send_budget WHERE mailbox_id = ?1 AND actor != 'person') < ?8)
+					RETURNING id`,
+				params: [this.#id, actor, recipients, new Date(now).toISOString(), hour, SEND_LIMITS.hour, SEND_LIMITS.day, agentDay],
 			},
 		]);
-		if (inserted.length > 0) return { state: "new" };
-		const row = await this.sql.first(`SELECT state, email_id FROM send_keys WHERE mailbox_id = ? AND key = ?`, this.#id, key);
-		return row?.state === "sent" ? { state: "sent", id: String(row.email_id) } : { state: "pending" };
+		if (taken.length > 0) return { ok: true, id: Number(taken[0].id) };
+		const counts = await this.sql.first(
+			`SELECT COALESCE(SUM(at >= ?), 0) AS hour, COUNT(*) AS day, COALESCE(SUM(actor != 'person'), 0) AS agentDay FROM send_budget WHERE mailbox_id = ?`,
+			hour, this.#id,
+		);
+		return { ok: false, error: budgetError(actor, { hour: Number(counts?.hour ?? 0), day: Number(counts?.day ?? 0), agentDay: Number(counts?.agentDay ?? 0) }, agentDay) };
+	}
+
+	/** Give back a send that was never delivered. */
+	async refundSendBudget(id: number): Promise<void> {
+		await this.sql.run(`DELETE FROM send_budget WHERE mailbox_id = ? AND id = ?`, this.#id, id);
+	}
+
+	/**
+	 * Claim a send attempt (send-keys.ts). New keys, keys whose last attempt
+	 * failed, and pending attempts older than SEND_KEY_PENDING_STALE_MS (the
+	 * caller died before delivery started) are claimed as pending; anything
+	 * else reports its state. A reclaimed key starts a new SEND_KEY_TTL_MS.
+	 */
+	async claimSendKey(key: string, contentHash: string | null = null): Promise<SendKeyClaim> {
+		const now = new Date().toISOString();
+		const [, claimed] = await this.sql.batch([
+			{ sql: `DELETE FROM send_keys WHERE created_at < ?`, params: [new Date(Date.now() - SEND_KEY_TTL_MS).toISOString()] },
+			{
+				sql: `INSERT INTO send_keys (mailbox_id, key, state, content_hash, created_at, updated_at) VALUES (?1, ?2, 'pending', ?3, ?4, ?4)
+					ON CONFLICT (mailbox_id, key) DO UPDATE SET state = 'pending', content_hash = ?3, provider_id = NULL, error = NULL, created_at = ?4, updated_at = ?4
+					WHERE send_keys.state = 'failed'
+						OR (send_keys.state = 'pending' AND COALESCE(send_keys.updated_at, send_keys.created_at) < ?5)
+					RETURNING state`,
+				params: [this.#id, key, contentHash, now, new Date(Date.now() - SEND_KEY_PENDING_STALE_MS).toISOString()],
+			},
+		]);
+		if (claimed.length > 0) return { state: "new" };
+		const row = await this.sql.first(`SELECT state, email_id, content_hash, provider_id FROM send_keys WHERE mailbox_id = ? AND key = ?`, this.#id, key);
+		if (!row) return this.claimSendKey(key, contentHash);
+		if (contentHash && row.content_hash && row.content_hash !== contentHash) return { state: "conflict" };
+		if (row.state === "sent") return { state: "sent", id: String(row.email_id) };
+		return { state: row.state === "sending" ? "sending" : "pending", providerId: row.provider_id == null ? null : String(row.provider_id) };
+	}
+
+	/** A key whose send went out: the Sent copy's id and the content it sent. Null for any other state. */
+	async sentSendKey(key: string): Promise<{ id: string; contentHash: string | null } | null> {
+		const row = await this.sql.first(`SELECT email_id, content_hash FROM send_keys WHERE mailbox_id = ? AND key = ? AND state = 'sent'`, this.#id, key);
+		return row ? { id: String(row.email_id), contentHash: row.content_hash == null ? null : String(row.content_hash) } : null;
+	}
+
+	/** pending -> sending. False when another caller already started this attempt. */
+	async startSendKey(key: string): Promise<boolean> {
+		const rows = await this.sql.all(
+			`UPDATE send_keys SET state = 'sending', updated_at = ? WHERE mailbox_id = ? AND key = ? AND state = 'pending' RETURNING key`,
+			new Date().toISOString(), this.#id, key,
+		);
+		return rows.length > 0;
+	}
+
+	/** The mail service's message ID, saved before the Sent copy. */
+	async recordSendProvider(key: string, providerId: string | null, error: string | null = null): Promise<void> {
+		await this.sql.run(
+			`UPDATE send_keys SET provider_id = COALESCE(?, provider_id), error = ?, updated_at = ? WHERE mailbox_id = ? AND key = ?`,
+			providerId, error, new Date().toISOString(), this.#id, key,
+		);
 	}
 
 	async finishSendKey(key: string, emailId: string): Promise<void> {
-		await this.sql.run(`UPDATE send_keys SET state = 'sent', email_id = ? WHERE mailbox_id = ? AND key = ?`, emailId, this.#id, key);
+		await this.sql.run(
+			`UPDATE send_keys SET state = 'sent', email_id = ?, updated_at = ? WHERE mailbox_id = ? AND key = ?`,
+			emailId, new Date().toISOString(), this.#id, key,
+		);
 	}
 
-	async releaseSendKey(key: string): Promise<void> {
-		await this.sql.run(`DELETE FROM send_keys WHERE mailbox_id = ? AND key = ? AND state = 'pending'`, this.#id, key);
+	/** The attempt failed before delivery; the key can be used again. */
+	async failSendKey(key: string, error: string): Promise<void> {
+		await this.sql.run(
+			`UPDATE send_keys SET state = 'failed', error = ?, updated_at = ? WHERE mailbox_id = ? AND key = ? AND state IN ('pending', 'sending')`,
+			error.slice(0, 1000), new Date().toISOString(), this.#id, key,
+		);
 	}
 
 	// ── Scheduled send ─────────────────────────────────────────────
 	//
 	// The message waits as a draft; scheduled_sends holds the request. The cron
-	// sends due rows (docs/d1-migration-plan.md, phase 4). Deleting the draft
+	// sends due rows (store/d1/scheduled.ts). Deleting the draft
 	// drops its schedule by foreign key.
 
 	async scheduleSend(input: {
@@ -325,6 +545,8 @@ export class D1Mailbox {
 			in_reply_to: originalId || null, email_references: null,
 			thread_id: threadId || originalId || id,
 		}, []);
+		// The draft opens as a forward if the schedule is cancelled or edited.
+		if (mode === "forward" && originalId) await this.setDraftForward(id, email.forward_attachments ?? []);
 		const payload: ScheduledPayload = { mode, original_id: originalId, email };
 		await this.sql.run(
 			`INSERT OR REPLACE INTO scheduled_sends (email_id, mailbox_id, send_at, payload, attempts, error) VALUES (?, ?, ?, ?, 0, NULL)`,
@@ -332,7 +554,10 @@ export class D1Mailbox {
 		);
 		if (input.draftId && input.draftId !== id) {
 			const old = await this.getEmail(input.draftId);
-			if (old?.folder_id === Folders.DRAFT) await this.deleteEmail(input.draftId);
+			if (old?.folder_id === Folders.DRAFT) {
+				const attachments = await this.deleteEmail(input.draftId);
+				if (attachments) await deleteAttachmentFiles(this.bucket, input.draftId, attachments);
+			}
 		}
 		return { id, sendAt };
 	}

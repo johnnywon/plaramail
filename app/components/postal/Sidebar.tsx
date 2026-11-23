@@ -3,29 +3,21 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
-	BookmarkSimpleIcon, CaretDoubleLeftIcon, CaretDoubleRightIcon, CaretDownIcon, CaretRightIcon, GearSixIcon,
-	PencilSimpleIcon, PlugsConnectedIcon, PlusIcon, SignOutIcon,
+	BookmarkSimpleIcon, CaretDoubleLeftIcon, KeyboardIcon, CaretDoubleRightIcon, CaretRightIcon,
+	PencilSimpleIcon, PlusIcon, SignOutIcon, TerminalWindowIcon,
 } from "@phosphor-icons/react";
 import { AgentIcon } from "./AgentIcon";
+import { Reveal } from "./Reveal";
 import {
-	AllAddressesIcon, ArchiveIcon, ByAddressIcon, DraftsIcon, InboxIcon, LabelsIcon, SentIcon, SpamIcon, StarredIcon, TrashIcon, UnreadIcon,
+	ADDRESS_FOLDERS, ByAddressIcon, FoldMark, InboxIcon, LabelsIcon, SECONDARY_VIEWS, UnreadIcon,
 } from "./NavIcons";
-import { type FormEvent, useState } from "react";
-import type { MailFilter } from "~/lib/mail-filter";
+import { useShortcuts } from "./shortcuts";
+import { type AnchorHTMLAttributes, type FormEvent, type ReactNode, useState } from "react";
+import { type MailFilter, toSearch } from "~/lib/mail-filter";
 import type { Label, SavedSearch } from "~/services/api";
 import { AddressText, type Identities, LabelTag, Swatch } from "./identity";
 import { HOME, labelOf, scopeOf, scoped } from "./model";
 
-export const SECONDARY_VIEWS = [
-	{ view: "starred", label: "Starred", Icon: StarredIcon },
-	{ view: "drafts", label: "Drafts", Icon: DraftsIcon },
-	{ view: "sent", label: "Sent", Icon: SentIcon },
-	{ view: "archive", label: "Archive", Icon: ArchiveIcon },
-	{ view: "spam", label: "Spam", Icon: SpamIcon },
-	{ view: "trash", label: "Trash", Icon: TrashIcon },
-] as const;
-
-const ADDRESS_FOLDERS = [{ view: "inbox", label: "Inbox", Icon: InboxIcon }, ...SECONDARY_VIEWS] as const;
 
 export interface SidebarProps {
 	identities: Identities;
@@ -44,18 +36,49 @@ export interface SidebarProps {
 	labelsOpen: boolean;
 	setLayout: (patch: { mailboxesOpen?: boolean; labelsOpen?: boolean }) => void;
 	onCollapse: () => void;
-	onMcp: () => void;
-	onSettings: () => void;
+	/** Opens the console: agents, then settings. */
+	onConsole: () => void;
 	/** Opens Settings on its Labels tab. */
 	onManageLabels: () => void;
-	onLogout: () => void;
+	/** Absent on a demo build, which has no sign-in. */
+	onLogout?: () => void;
+	onShortcuts: () => void;
 	overlay?: boolean;
 	drawer?: "open" | "closed";
+	/** Closed: still mounted for its motion, out of reach of focus and assistive tech. */
+	inert?: boolean;
 }
 
 function count(n: number | undefined) {
 	return n ? n.toLocaleString() : "";
 }
+
+/** A view is a link to its URL, so agents and new tabs can follow it. A plain click stays in the app. */
+function NavLink({ onGo, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; onGo: () => void }) {
+	return (
+		<a
+			{...rest}
+			onClick={(e) => {
+				if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+				e.preventDefault();
+				onGo();
+			}}
+		/>
+	);
+}
+
+/** An address's name for agents and screen readers: the whole address, which the sidebar shortens, and its unread count. */
+function unreadName(address: string, unread: number | undefined) {
+	return unread ? `${address}, ${unread.toLocaleString()} unread` : address;
+}
+
+/** Link props for a view: its URL, and the in-app move to it. */
+function viewLink(go: (filter: MailFilter) => void, next: MailFilter) {
+	return { href: toSearch(next), onGo: () => go(next) };
+}
+
+/** The caret beside a group: one glyph that turns a quarter as the group opens. */
+const GroupCaret = () => <CaretRightIcon className="pg-caret" size={10} weight="bold" color="var(--pg-text-8)" />;
 
 export function Sidebar(props: SidebarProps) {
 	const { identities, filter, go, unreadByAddress, labels } = props;
@@ -74,30 +97,31 @@ export function Sidebar(props: SidebarProps) {
 		setNewLabel(null);
 	};
 
+	const { tip } = useShortcuts();
 	return (
-		<nav className="pg-nav" aria-label="Mail" data-overlay={props.overlay || undefined} data-drawer={props.drawer}>
-			<button type="button" className="pg-rail-head" onClick={props.onCollapse} title="Collapse sidebar">
-				<AllAddressesIcon size={14} />
-				<span className="pg-flex" style={{ lineHeight: 1, textAlign: "left" }}>ALL ADDRESSES</span>
+		<nav className="pg-nav" aria-label="Mail" data-overlay={props.overlay || undefined} data-drawer={props.drawer} inert={props.inert}>
+			<button type="button" className="pg-rail-head" onClick={props.onCollapse} title={tip("sidebar", "Collapse sidebar")}>
+				<FoldMark size={14} />
+				<span className="pg-flex" style={{ lineHeight: 1, textAlign: "left", textTransform: "uppercase" }}>All Inboxes</span>
 				<CaretDoubleLeftIcon size={14} weight="bold" />
 			</button>
 			<div className="pg-nav-scroll">
-				<button type="button" className="pg-nav-item" aria-current={globalView === "inbox" || undefined} onClick={() => go({ ...HOME, chips: [] })}>
+				<NavLink className="pg-nav-item" aria-current={globalView === "inbox" || undefined} {...viewLink(go, { ...HOME, chips: [] })}>
 					<InboxIcon size={16} />
 					<span className="pg-flex">Inbox</span>
-				</button>
-				<button type="button" className="pg-nav-item" aria-current={globalView === "unread" || undefined} onClick={() => go({ ...HOME, view: "unread", chips: [] })}>
+				</NavLink>
+				<NavLink className="pg-nav-item" aria-current={globalView === "unread" || undefined} {...viewLink(go, { ...HOME, view: "unread", chips: [] })}>
 					<UnreadIcon size={16} />
 					<span className="pg-flex">Unread</span>
 					<span className="pg-count" style={{ color: "var(--pg-text-6)" }}>{count(props.allUnread)}</span>
-				</button>
+				</NavLink>
 				{/* TODO(roadmap): "Needs you" and "Agent handled" views, with their counts, return when the agent can hand work back. */}
 				<div className="pg-nav-secondary">
 					{SECONDARY_VIEWS.map(({ view, label, Icon }) => (
-						<button key={view} type="button" className="pg-nav-small" aria-current={globalView === view || undefined} onClick={() => go(scoped(view, null, filter))}>
+						<NavLink key={view} className="pg-nav-small" aria-current={globalView === view || undefined} {...viewLink(go, scoped(view, null, filter))}>
 							<Icon size={14} />
 							<span className="pg-ellipsis pg-flex">{label}</span>
-						</button>
+						</NavLink>
 					))}
 				</div>
 
@@ -108,87 +132,80 @@ export function Sidebar(props: SidebarProps) {
 					<span style={{ display: "flex", gap: 3 }}>
 						{identities.groups.map((g) => <Swatch key={g.identity.domain} identity={g.identity} />)}
 					</span>
-					{props.mailboxesOpen ? <CaretDownIcon size={10} weight="bold" color="var(--pg-text-8)" /> : <CaretRightIcon size={10} weight="bold" color="var(--pg-text-8)" />}
+					<GroupCaret />
 				</button>
-				{props.mailboxesOpen && identities.groups.map(({ identity, addresses }) => (
+				<Reveal open={!!props.mailboxesOpen} kind="group">
+				{identities.groups.map(({ identity, addresses }) => (
 					<div key={identity.domain} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-						<button
-							type="button"
+						<NavLink
 							className="pg-nav-domain"
 							aria-current={scope === identity.domain || undefined}
-							onClick={() => go(scoped("inbox", scope === identity.domain ? null : identity.domain, filter))}
+							aria-label={unreadName(identity.domain, domainUnread(identity.domain))}
+							{...viewLink(go, scoped("inbox", scope === identity.domain ? null : identity.domain, filter))}
 						>
 							<Swatch identity={identity} size={10} />
 							<span className="pg-name">{identity.domain}</span>
 							<span className="pg-count">{count(domainUnread(identity.domain))}</span>
-						</button>
+						</NavLink>
 						{addresses.map((address) => {
 							const open = scope === address;
 							return (
 								<div key={address} style={{ display: "contents" }}>
-									<button
-										type="button"
+									<NavLink
 										className="pg-nav-address"
 										data-open={open}
 										aria-expanded={open}
-										onClick={() => go(scoped("inbox", open ? null : address, filter))}
+										aria-label={unreadName(address, unreadByAddress.get(address))}
+										{...viewLink(go, scoped("inbox", open ? null : address, filter))}
 									>
 										<span className="pg-flex pg-ellipsis">
 											<AddressText address={address} identity={identity} short bold={false} />
 										</span>
 										{/* TODO(roadmap): per-address agent autonomy pill (off / draft / rules / auto) returns with rules. */}
 										<span className="pg-n">{count(unreadByAddress.get(address))}</span>
-									</button>
-									{open && (
+									</NavLink>
+									<Reveal open={open} kind="folders">
 										<div className="pg-nav-folders">
 											{ADDRESS_FOLDERS.map(({ view, label, Icon }) => (
-												<button
+												<NavLink
 													key={view}
-													type="button"
 													className="pg-nav-folder"
 													aria-current={filter.view === view || undefined}
-													onClick={() => go(scoped(view, address, filter))}
+													{...viewLink(go, scoped(view, address, filter))}
 												>
 													<Icon size={14} />
 													<span className="pg-flex">{label}</span>
-												</button>
+												</NavLink>
 											))}
 										</div>
-									)}
+									</Reveal>
 								</div>
 							);
 						})}
 					</div>
 				))}
+				</Reveal>
 
 				<div className="pg-nav-divider" />
 				<button type="button" className="pg-nav-item" aria-expanded={props.labelsOpen} onClick={() => props.setLayout({ labelsOpen: !props.labelsOpen })}>
 					<LabelsIcon size={16} />
 					<span className="pg-flex">Labels</span>
-					{props.labelsOpen ? <CaretDownIcon size={10} weight="bold" color="var(--pg-text-8)" /> : <CaretRightIcon size={10} weight="bold" color="var(--pg-text-8)" />}
+					<GroupCaret />
 				</button>
-				{props.labelsOpen && (
-					<>
+				<Reveal open={!!props.labelsOpen} kind="group">
 						{labels.map((label) => {
 							const on = labelView === label.id;
 							return (
-								<div
-									key={label.id}
-									role="button"
-									tabIndex={0}
-									className="pg-nav-label"
-									aria-current={on || undefined}
-									title={label.auto ? `${label.name} · applied by the agent` : label.name}
-									onClick={() => go(on ? { ...HOME, chips: [] } : { view: "all", chips: [{ kind: "label", value: label.id }], sort: filter.sort, dir: filter.dir })}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault();
-											(e.currentTarget as HTMLElement).click();
-										}
-									}}
-								>
-									<LabelTag id={label.id} size={13} />
-									<span className="pg-flex pg-ellipsis">{label.name}</span>
+								// The link covers the row; the agent button sits above it, beside the link rather than inside it.
+								<div key={label.id} className="pg-nav-label" title={label.auto ? `${label.name} · applied by the agent` : label.name}>
+									<NavLink
+										className="pg-nav-label-link"
+										aria-current={on || undefined}
+										{...viewLink(go, on ? { ...HOME, chips: [] } : { view: "all", chips: [{ kind: "label", value: label.id }], sort: filter.sort, dir: filter.dir })}
+									>
+										<LabelTag id={label.id} size={13} />
+										<span className="pg-flex pg-ellipsis">{label.name}</span>
+									</NavLink>
 									{label.auto && (
 										<button
 											type="button"
@@ -213,7 +230,7 @@ export function Sidebar(props: SidebarProps) {
 									<PlusIcon size={12} />
 									<span>New label</span>
 								</button>
-								<button type="button" className="pg-nav-new" onClick={props.onManageLabels} title="Rename, recolour or delete labels">
+								<button type="button" className="pg-nav-new" onClick={props.onManageLabels} title="Rename, recolor or delete labels">
 									<PencilSimpleIcon size={12} />
 									<span>Manage labels</span>
 								</button>
@@ -233,8 +250,7 @@ export function Sidebar(props: SidebarProps) {
 								/>
 							</form>
 						)}
-					</>
-				)}
+				</Reveal>
 				{props.saved.length > 0 && (
 					<>
 						<div className="pg-nav-divider" />
@@ -242,18 +258,18 @@ export function Sidebar(props: SidebarProps) {
 						{props.saved.map((s) => {
 							const on = props.search.replace(/\s+/g, " ").trim() === s.query;
 							return (
-								<button
+								<NavLink
 									key={s.id}
-									type="button"
 									className="pg-nav-label"
 									aria-current={on || undefined}
 									title={s.name === s.query ? s.query : `${s.name} · ${s.query}`}
-									onClick={() => props.onSavedSearch(s)}
+									href={toSearch(filter, null, s.query)}
+									onGo={() => props.onSavedSearch(s)}
 								>
-									<BookmarkSimpleIcon size={13} color="var(--pg-text-6)" style={{ flex: "none" }} />
+									<BookmarkSimpleIcon size={14} color="var(--pg-text-6)" style={{ flex: "none" }} />
 									<span className="pg-flex pg-ellipsis">{s.name}</span>
 									<span className="pg-count" style={{ fontWeight: 400, minWidth: 16, textAlign: "right" }}>{count(s.count ?? undefined)}</span>
-								</button>
+								</NavLink>
 							);
 						})}
 					</>
@@ -261,27 +277,27 @@ export function Sidebar(props: SidebarProps) {
 				<div style={{ flex: 1, minHeight: 12 }} />
 			</div>
 			<div className="pg-nav-foot">
-				<img className="deck-brand-logo pg-watermark" src="/brand/watermark.svg" alt="" aria-hidden="true" />
-				<button type="button" className="pg-foot-btn" onClick={props.onMcp} title="MCP server · connect outside agents">
-					<PlugsConnectedIcon size={14} />
-					<span>MCP</span>
-				</button>
-				<button type="button" className="pg-foot-btn" onClick={props.onSettings} title="Settings">
-					<GearSixIcon size={14} />
-					<span>Settings</span>
+				<button type="button" className="pg-foot-btn" onClick={props.onConsole} title="Console">
+					<TerminalWindowIcon size={14} />
+					<span>Console</span>
 				</button>
 				<div className="pg-flex" />
-				<button type="button" className="pg-foot-btn is-square" onClick={props.onLogout} title="Log out" aria-label="Log out">
-					<SignOutIcon size={14} />
+				<button type="button" className="pg-foot-btn is-square" onClick={props.onShortcuts} title={tip("help", "Keyboard shortcuts")} aria-label="Keyboard shortcuts">
+					<KeyboardIcon size={14} />
 				</button>
+				{props.onLogout && (
+					<button type="button" className="pg-foot-btn is-square" onClick={props.onLogout} title="Log out" aria-label="Log out">
+						<SignOutIcon size={14} />
+					</button>
+				)}
 			</div>
 		</nav>
 	);
 }
 
 export function NavRail({
-	identities, filter, go, allUnread, unreadByAddress, onExpand, onLabels, onMcp, onSettings, onLogout,
-}: Pick<SidebarProps, "identities" | "filter" | "go" | "allUnread" | "unreadByAddress" | "onMcp" | "onSettings" | "onLogout"> & {
+	identities, filter, go, allUnread, unreadByAddress, onExpand, onLabels, onConsole, onLogout, onShortcuts, inert,
+}: Pick<SidebarProps, "identities" | "filter" | "go" | "allUnread" | "unreadByAddress" | "onConsole" | "onLogout" | "onShortcuts" | "inert"> & {
 	onExpand: () => void;
 	onLabels: () => void;
 }) {
@@ -289,46 +305,45 @@ export function NavRail({
 	const globalView = !scope && !labelOf(filter) ? filter.view : null;
 	const domainUnread = (domain: string) =>
 		[...unreadByAddress.entries()].reduce((sum, [address, n]) => (address.endsWith(`@${domain}`) ? sum + n : sum), 0);
+	const { tip } = useShortcuts();
 	return (
-		<nav className="pg-navrail" aria-label="Mail">
-			<button type="button" className="pg-rail-head" onClick={onExpand} title="Expand sidebar" aria-label="Expand sidebar">
-				<AllAddressesIcon size={14} />
+		<nav className="pg-navrail" aria-label="Mail" inert={inert}>
+			<button type="button" className="pg-rail-head" onClick={onExpand} title={tip("sidebar", "Expand sidebar")} aria-label="Expand sidebar">
+				<FoldMark size={14} />
 				<CaretDoubleRightIcon size={10} weight="bold" />
 			</button>
 			<div className="pg-navrail-scroll">
-				<button
-					type="button"
+				<NavLink
 					className="pg-rail-tile"
 					aria-current={globalView === "inbox" || undefined}
 					title={`Inbox, all addresses · ${allUnread ?? 0} unread`}
 					aria-label={`Inbox, all addresses, ${allUnread ?? 0} unread`}
-					onClick={() => go({ ...HOME, chips: [] })}
+					{...viewLink(go, { ...HOME, chips: [] })}
 				>
 					<InboxIcon size={16} />
 					<span className="pg-n">{allUnread ?? ""}</span>
-				</button>
+				</NavLink>
 				{/* TODO(roadmap): "Needs you" and "Agent handled" rail tiles. */}
 				{SECONDARY_VIEWS.slice(0, 4).map(({ view, label, Icon }) => (
-					<button key={view} type="button" className="pg-rail-icon" title={label} aria-label={label} aria-current={globalView === view || undefined} onClick={() => go(scoped(view, null, filter))}>
+					<NavLink key={view} className="pg-rail-icon" title={label} aria-label={label} aria-current={globalView === view || undefined} {...viewLink(go, scoped(view, null, filter))}>
 						<Icon size={16} />
-					</button>
+					</NavLink>
 				))}
 				<div className="pg-rail-sep" />
 				{identities.groups.map(({ identity }) => {
 					const n = domainUnread(identity.domain);
 					return (
-						<button
+						<NavLink
 							key={identity.domain}
-							type="button"
 							className="pg-rail-tile pg-rail-domain"
 							aria-current={scope === identity.domain || undefined}
 							title={`${identity.domain} · ${n} unread`}
 							aria-label={`${identity.domain}, ${n} unread`}
-							onClick={() => go(scoped("inbox", identity.domain, filter))}
+							{...viewLink(go, scoped("inbox", identity.domain, filter))}
 						>
 							<Swatch identity={identity} size={13} />
 							<span className="pg-n">{n || ""}</span>
-						</button>
+						</NavLink>
 					);
 				})}
 				<div className="pg-rail-sep" />
@@ -338,9 +353,9 @@ export function NavRail({
 				<div style={{ flex: 1 }} />
 			</div>
 			<div className="pg-rail-foot">
-				<button type="button" onClick={onMcp} title="MCP" aria-label="MCP"><PlugsConnectedIcon size={16} /></button>
-				<button type="button" onClick={onSettings} title="Settings" aria-label="Settings"><GearSixIcon size={16} /></button>
-				<button type="button" onClick={onLogout} title="Log out" aria-label="Log out"><SignOutIcon size={16} /></button>
+				<button type="button" onClick={onConsole} title="Console" aria-label="Console"><TerminalWindowIcon size={16} /></button>
+				<button type="button" onClick={onShortcuts} title={tip("help", "Keyboard shortcuts")} aria-label="Keyboard shortcuts"><KeyboardIcon size={16} /></button>
+				{onLogout && <button type="button" onClick={onLogout} title="Log out" aria-label="Log out"><SignOutIcon size={16} /></button>}
 			</div>
 		</nav>
 	);

@@ -1,131 +1,36 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { loadTs, openDb } from "./helpers/sqlite.mjs";
+import { addMessages, d1Db, row } from "./helpers/d1-mail.mjs";
+import { loadTs } from "./helpers/sqlite.mjs";
+
+// The combined list, facets, bulk planning and labels (mail-index-sql.ts,
+// mail-bulk-sql.ts) on the D1 schema, run synchronously over node:sqlite.
 
 const idx = await loadTs("workers/lib/mail-index-sql.ts");
 const { emptyFilter: filter } = idx;
 
 const NOW = Date.parse("2026-10-09T15:00:00Z");
 
-function index() {
-	const handle = openDb();
-	idx.createIndexSchema(handle.exec);
-	return handle;
-}
-
-function row(email_id, fields = {}) {
-	return {
-		email_id, seq: 1, deleted: false, conversation_id: email_id, message_id: `${email_id}@mail`, state: "inbox",
-		date: "2026-10-09T10:00:00.000Z", sender_addr: "ann@example.org", sender_name: "Ann", sender_domain: "example.org",
-		recipients: "me@example.com", subject: "Hello", subject_norm: "hello", snippet: "", unread: true, starred: false,
-		has_attachment: false, list_id: null, unsubscribe: null, body_text: "", labels: [], ...fields,
-	};
-}
-
-function apply(exec, mailbox, rows, options = {}) {
-	return idx.applyRows(exec, mailbox, rows, { now: NOW, ...options });
-}
+const apply = addMessages;
 
 function keys(result) {
 	return result.conversations.map((c) => `${c.mailbox_id}/${c.email_id}`);
 }
 
-const q = (exec, f, options = {}) => idx.queryMail(exec, filter(f), { now: NOW, ...options });
+const q = (exec, f, options = {}) => idx.runSync(idx.mailQuery(filter(f), { now: NOW, ...options }), exec);
+const queryFacets = (exec, f) => idx.runSync(idx.facetsQuery(f, NOW), exec);
 
-test("the test adapter enforces Durable Object SQL limits", () => {
-	const { exec } = index();
-	assert.throws(() => exec(`SELECT ${Array(101).fill("?").join(",")}`, ...Array(101).fill(1)), /too many/);
-	assert.throws(() => exec("BEGIN"), /transactions/);
-	assert.throws(() => exec("SELECT 1; SELECT ?", 1), /multi-statement/);
-});
-
-test("schema creation is idempotent", () => {
-	const { exec } = index();
-	idx.createIndexSchema(exec);
-	assert.equal(idx.messageCount(exec), 0);
-});
-
-test("a row applies only when its seq is newer", () => {
-	const { exec } = index();
-	apply(exec, "a@example.com", [row("e1", { seq: 2, subject: "New" })]);
-	assert.deepEqual(apply(exec, "a@example.com", [row("e1", { seq: 1, subject: "Old" })]), { applied: 0, skipped: 1 });
-	assert.equal(q(exec, {}).conversations[0].subject, "New");
-	apply(exec, "a@example.com", [row("e1", { seq: 3, subject: "Newer" })]);
-	assert.equal(q(exec, {}).conversations[0].subject, "Newer");
-});
-
-test("a tombstone blocks an older upsert that arrives later", () => {
-	const { exec } = index();
-	apply(exec, "a@example.com", [row("e1", { seq: 5, deleted: true })]);
-	apply(exec, "a@example.com", [row("e1", { seq: 4 })]);
-	assert.equal(q(exec, {}).conversations.length, 0);
-	apply(exec, "a@example.com", [row("e2", { seq: 1 })]);
-	apply(exec, "a@example.com", [row("e2", { seq: 2, deleted: true })]);
-	assert.equal(idx.messageCount(exec), 0);
-});
-
-test("tombstones are purged after a day", () => {
-	const { exec } = index();
-	apply(exec, "a@example.com", [row("e1", { deleted: true })]);
-	apply(exec, "a@example.com", [row("e2")], { now: NOW + 25 * 3600 * 1000 });
-	assert.equal(Number(exec(`SELECT COUNT(*) AS n FROM messages WHERE deleted = 1`)[0].n), 0);
-});
-
-test("full-text search follows replaces and deletes", () => {
-	const { exec } = index();
-	apply(exec, "a@example.com", [row("e1", { body_text: "quarterly invoice attached" })]);
+test("search follows deletes", () => {
+	const { exec } = d1Db();
+	apply(exec, "a@example.com", [row("e1", { body_text: "quarterly invoice attached" }), row("e2", { body_text: "lunch plans" })]);
 	assert.equal(q(exec, { q: "invoice" }).conversations.length, 1);
-	apply(exec, "a@example.com", [row("e1", { seq: 2, body_text: "lunch plans" })]);
-	assert.equal(q(exec, { q: "invoice" }).conversations.length, 0);
+	exec(`DELETE FROM messages WHERE email_id = 'e1'`);
+	assert.equal(q(exec, { q: "invoice", view: "anywhere" }).conversations.length, 0);
 	assert.equal(q(exec, { q: "lunch" }).conversations.length, 1);
-	apply(exec, "a@example.com", [row("e1", { seq: 3, deleted: true })]);
-	assert.equal(q(exec, { q: "lunch", view: "all" }).conversations.length, 0);
-});
-
-test("labels replace on each apply, and the cursor tracks the highest seq", () => {
-	const { exec } = index();
-	exec(`INSERT INTO labels (id, name, color) VALUES ('l1', 'Tax', 'red'), ('l2', 'Work', 'blue')`);
-	apply(exec, "a@example.com", [row("e1", { seq: 3, labels: ["l1", "l2"] })]);
-	assert.deepEqual(q(exec, {}).conversations[0].labels, ["l1", "l2"]);
-	apply(exec, "a@example.com", [row("e1", { seq: 4, labels: ["l2"] })]);
-	assert.deepEqual(q(exec, {}).conversations[0].labels, ["l2"]);
-	assert.equal(idx.indexCounts(exec)["a@example.com"].appliedSeq, 4);
-});
-
-test("purgeMailbox removes rows, search entries and labels for one mailbox", () => {
-	const { exec } = index();
-	apply(exec, "a@example.com", [row("e1", { body_text: "alpha", labels: ["l1"] })]);
-	apply(exec, "b@example.com", [row("e1", { body_text: "alpha" })]);
-	assert.equal(idx.purgeMailbox(exec, "a@example.com"), 1);
-	assert.deepEqual(keys(q(exec, { q: "alpha" })), ["b@example.com/e1"]);
-	assert.equal(Number(exec(`SELECT COUNT(*) AS n FROM message_labels`)[0].n), 0);
-	assert.equal(idx.indexCounts(exec)["a@example.com"], undefined);
-});
-
-test("a rebuild sweep drops rows the new generation did not see, and keeps unchanged ones", () => {
-	const { exec } = index();
-	apply(exec, "a@example.com", [row("keep", { seq: 1 }), row("gone", { seq: 1 })]);
-	const job = idx.startRebuildJob(exec, ["a@example.com"], NOW);
-	assert.equal(job.generation, 1);
-	apply(exec, "a@example.com", [row("keep", { seq: 1 })], { generation: job.generation });
-	assert.equal(idx.sweepMailbox(exec, "a@example.com", job.generation), 1);
-	assert.deepEqual(keys(q(exec, {})), ["a@example.com/keep"]);
-	assert.equal(idx.currentGeneration(exec), 1);
-});
-
-test("rebuild job state round-trips", () => {
-	const { exec } = index();
-	idx.startRebuildJob(exec, ["a", "b"], NOW);
-	idx.saveRebuildProgress(exec, { position: 1, afterId: "e9" });
-	assert.deepEqual(idx.getRebuildJob(exec), {
-		generation: 1, mailboxes: ["a", "b"], position: 1, afterId: "e9",
-		startedAt: new Date(NOW).toISOString(), finishedAt: null, error: null,
-	});
-	assert.equal(idx.startRebuildJob(exec, ["a"], NOW).generation, 2);
 });
 
 function viewFixture() {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "a@example.com", [
 		row("in-unread"),
 		row("in-read", { unread: false }),
@@ -139,7 +44,7 @@ function viewFixture() {
 	return exec;
 }
 
-test("views map to index states", () => {
+test("views map to states", () => {
 	const exec = viewFixture();
 	const ids = (view) => q(exec, { view }).conversations.map((c) => c.email_id).sort();
 	assert.deepEqual(ids("inbox"), ["in-read", "in-unread"]);
@@ -156,7 +61,7 @@ test("views map to index states", () => {
 });
 
 test("address matches full address, domain or local part, OR across values", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "billing@example.org", [row("g1")]);
 	apply(exec, "billing@example.net", [row("a1")]);
 	apply(exec, "hello@example.com", [row("w1")]);
@@ -169,7 +74,7 @@ test("address matches full address, domain or local part, OR across values", () 
 });
 
 test("from matches sender address or domain, OR across values", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "a@example.com", [
 		row("s1", { sender_addr: "ann@store.example.com", sender_domain: "store.example.com" }),
 		row("s2", { sender_addr: "bob@code.example.com", sender_domain: "code.example.com" }),
@@ -180,7 +85,7 @@ test("from matches sender address or domain, OR across values", () => {
 });
 
 test("status, has, label and subject combine with AND", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	exec(`INSERT INTO labels (id, name, color) VALUES ('l1', 'Tax', 'red'), ('l2', 'Work', 'blue')`);
 	apply(exec, "a@example.com", [
 		row("both", { labels: ["l1", "l2"], starred: true, has_attachment: true, subject: "Invoice October" }),
@@ -199,7 +104,7 @@ test("status, has, label and subject combine with AND", () => {
 });
 
 test("search handles operators and punctuation without errors", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "a@example.com", [
 		row("e1", { sender_addr: "ann@example.org", body_text: "near the OR and AND gate" }),
 		row("e2", { subject: "Quarterly report", body_text: "x", sender_addr: "zed@q.example.net", sender_name: "Zed", recipients: "me@example.net" }),
@@ -213,7 +118,7 @@ test("search handles operators and punctuation without errors", () => {
 });
 
 test("date tokens are relative to now and the viewer's time zone", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "a@example.com", [
 		row("today", { date: "2026-10-09T08:00:00.000Z" }),
 		row("late-yesterday-utc", { date: "2026-10-09T02:00:00.000Z" }),
@@ -233,7 +138,7 @@ test("date tokens are relative to now and the viewer's time zone", () => {
 });
 
 test("a conversation shows its latest matching message with whole-thread counts", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "a@example.com", [
 		row("m1", { conversation_id: "t", date: "2026-10-01T00:00:00.000Z", sender_addr: "ann@x.example.org", unread: true }),
 		row("m2", { conversation_id: "t", date: "2026-10-02T00:00:00.000Z", sender_addr: "bob@x.example.org", state: "archive", unread: false }),
@@ -251,7 +156,7 @@ test("a conversation shows its latest matching message with whole-thread counts"
 });
 
 test("also_in lists other mailboxes holding the same message", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "a@example.com", [row("x1", { message_id: "shared@mail" })]);
 	apply(exec, "b@example.org", [row("x2", { message_id: "shared@mail" })]);
 	apply(exec, "c@example.org", [row("x3", { message_id: "other@mail" })]);
@@ -260,7 +165,7 @@ test("also_in lists other mailboxes holding the same message", () => {
 });
 
 test("cursor pages cover every conversation once for every sort and direction", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	const rows = Array.from({ length: 23 }, (_, i) => row(`e${String(i).padStart(2, "0")}`, {
 		date: `2026-10-0${1 + (i % 3)}T00:00:00.000Z`,
 		sender_name: ["", "Zed", "amy", "Émile"][i % 4],
@@ -289,7 +194,7 @@ test("cursor pages cover every conversation once for every sort and direction", 
 });
 
 test("totals count conversations and conversations with unread mail", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "a@example.com", [
 		row("m1", { conversation_id: "t" }),
 		row("m2", { conversation_id: "t" }),
@@ -301,7 +206,7 @@ test("totals count conversations and conversations with unread mail", () => {
 });
 
 test("facets ignore their own dimension and count distinct conversations", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	exec(`INSERT INTO labels (id, name, color, position) VALUES ('l1', 'Tax', 'red', 0), ('l2', 'Unused', 'gray', 1)`);
 	apply(exec, "a@example.com", [
 		row("m1", { conversation_id: "t", sender_addr: "ann@store.example.com", sender_domain: "store.example.com", sender_name: "Ann", labels: ["l1"] }),
@@ -309,7 +214,7 @@ test("facets ignore their own dimension and count distinct conversations", () =>
 		row("m3", { sender_addr: "bob@code.example.com", sender_domain: "code.example.com", sender_name: "", has_attachment: true, date: "2026-08-01T00:00:00.000Z" }),
 	]);
 	apply(exec, "b@example.org", [row("m4", { sender_addr: "ann@store.example.com", sender_domain: "store.example.com", starred: true })]);
-	const facets = idx.queryFacets(exec, filter({ address: ["a@example.com"], from: ["store.example.com"] }), NOW);
+	const facets = queryFacets(exec, filter({ address: ["a@example.com"], from: ["store.example.com"] }));
 	assert.deepEqual(facets.address, [{ value: "a@example.com", count: 1 }, { value: "b@example.org", count: 1 }]);
 	assert.deepEqual(facets.from.domains, [{ value: "code.example.com", count: 1 }, { value: "store.example.com", count: 1 }]);
 	assert.deepEqual(facets.from.addresses, [{ value: "ann@store.example.com", name: "Ann", count: 1 }, { value: "bob@code.example.com", name: "", count: 1 }]);
@@ -317,23 +222,22 @@ test("facets ignore their own dimension and count distinct conversations", () =>
 	assert.deepEqual(facets.label, [{ value: "l1", name: "Tax", count: 1 }, { value: "l2", name: "Unused", count: 0 }]);
 	assert.deepEqual(facets.status, { unread: 1, read: 1, starred: 0, attachment: 0, unsubscribe: 0 });
 	assert.deepEqual(facets.date, { today: 1, yesterday: 0, "7d": 1, "30d": 1, older: 0 });
-	const statusOmitted = idx.queryFacets(exec, filter({ is: ["starred"] }), NOW);
+	const statusOmitted = queryFacets(exec, filter({ is: ["starred"] }));
 	assert.equal(statusOmitted.status.unread, 3);
 	assert.deepEqual(statusOmitted.address, [{ value: "b@example.org", count: 1 }]);
 });
 
 test("benchmark: 5,000 conversations, inbox page and facets under 100 ms each", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	const senders = Array.from({ length: 300 }, (_, i) => `s${i}@d${i % 40}.com`);
 	const boxes = Array.from({ length: 19 }, (_, i) => `box${i}@example.com`);
-	let seq = 0;
 	for (let b = 0; b < boxes.length; b++) {
 		const rows = [];
 		for (let i = b; i < 5000; i += boxes.length) {
 			for (let k = 0; k < 2; k++) {
 				const sender = senders[(i * 7 + k) % senders.length];
 				rows.push(row(`c${i}-${k}`, {
-					seq: ++seq, conversation_id: `c${i}`, state: k === 0 ? "inbox" : (i % 3 ? "archive" : "sent"),
+					conversation_id: `c${i}`, state: k === 0 ? "inbox" : (i % 3 ? "archive" : "sent"),
 					date: new Date(NOW - (i * 2 + k) * 3_600_000).toISOString(), sender_addr: sender,
 					sender_domain: sender.split("@")[1], unread: i % 4 === 0, starred: i % 17 === 0,
 					has_attachment: i % 9 === 0, subject: `Subject ${i % 500}`, subject_norm: `subject ${i % 500}`,
@@ -343,14 +247,17 @@ test("benchmark: 5,000 conversations, inbox page and facets under 100 ms each", 
 		}
 		for (let i = 0; i < rows.length; i += 99) apply(exec, boxes[b], rows.slice(i, i + 99));
 	}
-	assert.equal(idx.messageCount(exec), 10_000);
+	assert.equal(exec(`SELECT COUNT(*) AS n FROM messages`)[0].n, 10_000);
 	const time = (fn) => { fn(); const start = performance.now(); fn(); return performance.now() - start; };
 	const pageMs = time(() => q(exec, { view: "inbox" }, { limit: 50 }));
-	const facetMs = time(() => idx.queryFacets(exec, filter({ view: "inbox" }), NOW));
+	const facetMs = time(() => queryFacets(exec, filter({ view: "inbox" })));
 	const searchMs = time(() => q(exec, { view: "all", q: "topic7" }, { limit: 50 }));
 	console.log(`inbox page ${pageMs.toFixed(1)} ms, facets ${facetMs.toFixed(1)} ms, search ${searchMs.toFixed(1)} ms`);
-	assert.ok(pageMs < 100, `inbox page ${pageMs} ms`);
-	assert.ok(facetMs < 100, `facets ${facetMs} ms`);
+	// Time budgets hold only in CI. A busy laptop fails them with nothing wrong (WON-388); CI runs on every PR.
+	if (process.env.CI) {
+		assert.ok(pageMs < 100, `inbox page ${pageMs} ms`);
+		assert.ok(facetMs < 100, `facets ${facetMs} ms`);
+	}
 });
 
 const { parseMailParams } = await loadTs("workers/lib/mail-filter-params.ts");
@@ -375,15 +282,17 @@ test("parseMailParams rejects bad values", () => {
 });
 
 test("folderViews lists custom folders with conversation counts", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "a@example.com", [row("f1", { state: "folder:receipts" }), row("f2", { state: "folder:receipts" }), row("i1")]);
-	assert.deepEqual(idx.folderViews(exec), [{ view: "folder:receipts", count: 2 }]);
+	assert.deepEqual(idx.runSync(idx.folderViewsQuery(), exec), [{ view: "folder:receipts", count: 2 }]);
 });
 
 // ── Phase 3: bulk planning, undo, labels ───────────────────────────
 
 const bulk = await loadTs("workers/lib/mail-bulk-sql.ts");
 const T = "\u001f";
+/** A mail-bulk-sql query by name (`planBulk` runs `planBulkQuery`), over `exec`. */
+const run = (exec, name, ...args) => idx.runSync(bulk[`${name}Query`](...args), exec);
 
 function seedThread(exec) {
 	apply(exec, "a@example.com", [
@@ -409,63 +318,63 @@ test("sourceState maps views to the state a move takes messages from", () => {
 });
 
 test("thread moves change only messages in the source state", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	const k = seedThread(exec);
 	for (const view of ["inbox", "unread", "starred", "all"]) {
-		assert.deepEqual(ids(bulk.planBulk(exec, [k.t], view, { type: "archive" })), ["in1", "in2"], view);
+		assert.deepEqual(ids(run(exec, "planBulk", [k.t], view, { type: "archive" })), ["in1", "in2"], view);
 	}
-	assert.deepEqual(ids(bulk.planBulk(exec, [k.t], "sent", { type: "archive" })), ["sent1"]);
-	assert.deepEqual(ids(bulk.planBulk(exec, [k.f], "folder:receipts", { type: "archive" })), ["f1"]);
-	assert.deepEqual(bulk.planBulk(exec, [k.t], "archive", { type: "archive" }).ops, []);
-	const plan = bulk.planBulk(exec, [k.f], "folder:receipts", { type: "archive" });
+	assert.deepEqual(ids(run(exec, "planBulk", [k.t], "sent", { type: "archive" })), ["sent1"]);
+	assert.deepEqual(ids(run(exec, "planBulk", [k.f], "folder:receipts", { type: "archive" })), ["f1"]);
+	assert.deepEqual(run(exec, "planBulk", [k.t], "archive", { type: "archive" }).ops, []);
+	const plan = run(exec, "planBulk", [k.f], "folder:receipts", { type: "archive" });
 	assert.deepEqual(plan.ops, [{ mailboxId: "a@example.com", kind: "move", emailIds: ["f1"], to: "archive", from: "receipts" }]);
 });
 
 test("flag actions plan only rows that change; star picks the latest non-draft message", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	const k = seedThread(exec);
-	assert.deepEqual(ids(bulk.planBulk(exec, [k.t], "inbox", { type: "read" })), ["in1"]);
-	assert.deepEqual(ids(bulk.planBulk(exec, [k.t], "inbox", { type: "star" })), ["sent1"]);
-	assert.deepEqual(ids(bulk.planBulk(exec, [k.t], "inbox", { type: "unstar" })), ["in2"]);
+	assert.deepEqual(ids(run(exec, "planBulk", [k.t], "inbox", { type: "read" })), ["in1"]);
+	assert.deepEqual(ids(run(exec, "planBulk", [k.t], "inbox", { type: "star" })), ["sent1"]);
+	assert.deepEqual(ids(run(exec, "planBulk", [k.t], "inbox", { type: "unstar" })), ["in2"]);
 });
 
 test("label_add skips messages that have the label; label_remove takes only those that do", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	exec(`INSERT INTO labels (id, name, color) VALUES ('tax', 'Tax', '#c8372d')`);
 	apply(exec, "a@example.com", [
 		row("x1", { conversation_id: "t", labels: ["tax"] }),
 		row("x2", { conversation_id: "t", date: "2026-10-09T11:00:00.000Z" }),
 	]);
 	const key = `a@example.com${T}t`;
-	const add = bulk.planBulk(exec, [key], "inbox", { type: "label_add", labelId: "tax" });
+	const add = run(exec, "planBulk", [key], "inbox", { type: "label_add", labelId: "tax" });
 	assert.deepEqual(ids(add), ["x2"]);
 	assert.deepEqual(add.entries[0].label, { id: "tax", had: false });
-	assert.deepEqual(ids(bulk.planBulk(exec, [key], "inbox", { type: "label_remove", labelId: "tax" })), ["x1"]);
+	assert.deepEqual(ids(run(exec, "planBulk", [key], "inbox", { type: "label_remove", labelId: "tax" })), ["x1"]);
 });
 
 test("ops are grouped per mailbox and chunked to 100 ids", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	const rows = Array.from({ length: 150 }, (_, i) => row(`m${String(i).padStart(3, "0")}`, { conversation_id: `c${i}` }));
 	for (let i = 0; i < rows.length; i += 50) apply(exec, "a@example.com", rows.slice(i, i + 50));
 	apply(exec, "b@example.com", [row("b1", { conversation_id: "cb" })]);
 	const keys = [...rows.map((_, i) => `a@example.com${T}c${i}`), `b@example.com${T}cb`];
-	const plan = bulk.planBulk(exec, keys, "inbox", { type: "archive" });
+	const plan = run(exec, "planBulk", keys, "inbox", { type: "archive" });
 	assert.deepEqual(plan.ops.map((op) => [op.mailboxId, op.emailIds.length]), [["a@example.com", 100], ["a@example.com", 50], ["b@example.com", 1]]);
 	assert.equal(bulk.opSize(plan.ops), 151);
 });
 
 test("undo reverses exactly what was planned", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	const k = seedThread(exec);
-	const archive = bulk.planBulk(exec, [k.t, k.f], "all", { type: "archive" });
+	const archive = run(exec, "planBulk", [k.t, k.f], "all", { type: "archive" });
 	assert.deepEqual(bulk.planUndo({ action: { type: "archive" }, entries: archive.entries }), [
 		{ mailboxId: "a@example.com", kind: "move", emailIds: ["in1", "in2"], to: "inbox", from: "archive" },
 	]);
-	const folder = bulk.planBulk(exec, [k.f], "folder:receipts", { type: "trash" });
+	const folder = run(exec, "planBulk", [k.f], "folder:receipts", { type: "trash" });
 	assert.deepEqual(bulk.planUndo({ action: { type: "trash" }, entries: folder.entries }), [
 		{ mailboxId: "a@example.com", kind: "move", emailIds: ["f1"], to: "receipts", from: "trash" },
 	]);
-	const read = bulk.planBulk(exec, [k.t], "inbox", { type: "read" });
+	const read = run(exec, "planBulk", [k.t], "inbox", { type: "read" });
 	assert.deepEqual(bulk.planUndo({ action: { type: "read" }, entries: read.entries }), [
 		{ mailboxId: "a@example.com", kind: "flags", emailIds: ["in1"], patch: { read: false } },
 	]);
@@ -474,71 +383,67 @@ test("undo reverses exactly what was planned", () => {
 });
 
 test("undo records are taken once and expire after an hour", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	const payload = { action: { type: "archive" }, entries: [] };
-	bulk.saveUndo(exec, "u1", payload, NOW);
-	assert.deepEqual(bulk.takeUndo(exec, "u1", NOW + 1000), payload);
-	assert.equal(bulk.takeUndo(exec, "u1", NOW + 1000), null);
-	bulk.saveUndo(exec, "u2", payload, NOW);
-	assert.equal(bulk.takeUndo(exec, "u2", NOW + 61 * 60 * 1000), null);
+	run(exec, "saveUndo", "u1", payload, NOW);
+	assert.deepEqual(run(exec, "takeUndo", "u1", NOW + 1000), payload);
+	assert.equal(run(exec, "takeUndo", "u1", NOW + 1000), null);
+	run(exec, "saveUndo", "u2", payload, NOW);
+	assert.equal(run(exec, "takeUndo", "u2", NOW + 61 * 60 * 1000), null);
 });
 
 test("a filter target counts conversations up to asOf and refuses a changed count", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "a@example.com", [
 		row("old", { date: "2026-10-09T10:00:00.000Z" }),
 		row("new", { date: "2026-10-09T14:00:00.000Z" }),
 	]);
-	const keys = bulk.resolveFilterTarget(exec, filter({}), "2026-10-09T12:00:00.000Z", 1, NOW);
+	const keys = run(exec, "resolveFilterTarget", filter({}), "2026-10-09T12:00:00.000Z", 1, NOW);
 	assert.deepEqual(keys, [`a@example.com${T}old`]);
-	assert.throws(() => bulk.resolveFilterTarget(exec, filter({}), "2026-10-09T15:00:00.000Z", 1, NOW), (e) => e.name === "BulkConflictError" && e.count === 2);
+	assert.throws(() => run(exec, "resolveFilterTarget", filter({}), "2026-10-09T15:00:00.000Z", 1, NOW), (e) => e.name === "BulkConflictError" && e.count === 2);
 });
 
-test("label definitions: slug ids, unique names, rename keeps the id, counts, restore and delete", () => {
-	const { exec } = index();
-	const a = bulk.createLabel(exec, { name: "Receipts", color: "#c8372d" });
+test("label definitions: slug ids, unique names, rename keeps the id, counts and delete", () => {
+	const { exec } = d1Db();
+	const a = run(exec, "createLabel", { name: "Receipts", color: "#c8372d" });
 	assert.equal(a.id, "receipts");
-	assert.throws(() => bulk.createLabel(exec, { name: "receipts" }), /exists/);
-	assert.throws(() => bulk.createLabel(exec, { name: "Bad", color: "#123456" }), /palette/);
+	assert.throws(() => run(exec, "createLabel", { name: "receipts" }), /exists/);
+	assert.throws(() => run(exec, "createLabel", { name: "Bad", color: "#123456" }), /palette/);
 	exec(`UPDATE labels SET name = 'Old receipts' WHERE id = 'receipts'`);
-	assert.equal(bulk.createLabel(exec, { name: "Receipts!" }).id, "receipts-2");
-	assert.equal(bulk.updateLabel(exec, "receipts", { name: "Paid" }).id, "receipts");
-	assert.equal(bulk.createLabel(exec, { name: "Folder", id: "my-folder" }).id, "my-folder");
+	assert.equal(run(exec, "createLabel", { name: "Receipts!" }).id, "receipts-2");
+	assert.equal(run(exec, "updateLabel", "receipts", { name: "Paid" }).id, "receipts");
+	assert.equal(run(exec, "createLabel", { name: "Folder", id: "my-folder" }).id, "my-folder");
 
 	apply(exec, "a@example.com", [
 		row("l1", { conversation_id: "t", labels: ["receipts"] }),
 		row("l2", { conversation_id: "t", labels: ["receipts"] }),
 		row("l3", { conversation_id: "u", labels: ["receipts"], state: "trash" }),
 	]);
-	assert.equal(bulk.listLabels(exec).find((l) => l.id === "receipts").count, 1);
-	assert.deepEqual(bulk.labelThreadKeys(exec, "receipts").sort(), [`a@example.com${T}t`, `a@example.com${T}u`]);
+	assert.equal(run(exec, "listLabels").find((l) => l.id === "receipts").count, 1);
+	assert.deepEqual(run(exec, "labelThreadKeys", "receipts").sort(), [`a@example.com${T}t`, `a@example.com${T}u`]);
 
-	const backup = bulk.allLabels(exec);
-	assert.equal(bulk.deleteLabelRows(exec, "receipts"), true);
+	assert.equal(run(exec, "threadKeyOf", "A@example.com", "l1"), `a@example.com${T}t`);
+	assert.equal(run(exec, "deleteLabelRows", "receipts"), true);
 	assert.equal(Number(exec(`SELECT COUNT(*) AS n FROM message_labels WHERE label_id = 'receipts'`)[0].n), 0);
-	assert.equal(bulk.restoreLabels(exec, backup), 1);
-	assert.equal(bulk.restoreLabels(exec, backup), 0);
-	assert.equal(bulk.restoreLabels(exec, null), 0);
-	assert.equal(bulk.threadKeyOf(exec, "A@example.com", "l1"), `a@example.com${T}t`);
 });
 
 test("bulk jobs record progress and finish", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	const ops = [1, 2, 3].map((i) => ({ mailboxId: "a@example.com", kind: "flags", emailIds: [`e${i}`], patch: { read: true } }));
-	bulk.createBulkJob(exec, "j1", { type: "read" }, ops, "u1", NOW);
-	const first = bulk.nextBulkOps(exec, 2);
+	run(exec, "createBulkJob", "j1", { type: "read" }, ops, "u1", NOW);
+	const first = run(exec, "nextBulkOps", 2);
 	assert.equal(first.ops.length, 2);
-	bulk.saveBulkProgress(exec, "j1", { ops: 2, affected: 2, failed: [] }, NOW);
-	bulk.saveBulkProgress(exec, "j1", { ops: 1, affected: 0, failed: [{ mailboxId: "a@example.com", error: "x" }] }, NOW);
-	const job = bulk.getBulkJob(exec, "j1");
+	run(exec, "saveBulkProgress", "j1", { ops: 2, affected: 2, failed: [] }, NOW);
+	run(exec, "saveBulkProgress", "j1", { ops: 1, affected: 0, failed: [{ mailboxId: "a@example.com", error: "x" }] }, NOW);
+	const job = run(exec, "getBulkJob", "j1");
 	assert.equal(job.done, 3);
 	assert.equal(job.affected, 2);
 	assert.ok(job.finishedAt);
-	assert.equal(bulk.nextBulkOps(exec, 2), null);
+	assert.equal(run(exec, "nextBulkOps", 2), null);
 });
 
 test("Empty Trash counts trash messages and plans purge ops per mailbox", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	apply(exec, "a@example.com", [
 		row("t1", { conversation_id: "c1", state: "trash" }),
 		row("t2", { conversation_id: "c1", state: "trash", date: "2026-10-09T11:00:00.000Z" }),
@@ -546,19 +451,41 @@ test("Empty Trash counts trash messages and plans purge ops per mailbox", () => 
 		row("d1", { conversation_id: "c2", state: "draft" }),
 	]);
 	apply(exec, "b@example.com", [row("t3", { conversation_id: "c3", state: "trash" })]);
-	assert.deepEqual(bulk.trashCount(exec), { messages: 3, conversations: 2 });
-	assert.deepEqual(bulk.planEmptyTrash(exec, 3), [
+	assert.deepEqual(run(exec, "trashCount"), { messages: 3, conversations: 2 });
+	assert.deepEqual(run(exec, "planEmptyTrash", 3), [
 		{ mailboxId: "a@example.com", kind: "purge", emailIds: ["t1", "t2"] },
 		{ mailboxId: "b@example.com", kind: "purge", emailIds: ["t3"] },
 	]);
-	assert.throws(() => bulk.planEmptyTrash(exec, 2), (e) => e instanceof bulk.BulkConflictError && e.count === 3);
-	apply(exec, "a@example.com", [{ ...row("t1"), seq: 2, deleted: true }]);
-	assert.deepEqual(bulk.trashCount(exec), { messages: 2, conversations: 2 });
+	assert.throws(() => run(exec, "planEmptyTrash", 2), (e) => e instanceof bulk.BulkConflictError && e.count === 3);
+	exec(`DELETE FROM messages WHERE email_id = 't1'`);
+	assert.deepEqual(run(exec, "trashCount"), { messages: 2, conversations: 2 });
 });
 
 test("Empty Trash ops are chunked to 100 ids", () => {
-	const { exec } = index();
+	const { exec } = d1Db();
 	const rows = Array.from({ length: 130 }, (_, i) => row(`t${String(i).padStart(3, "0")}`, { conversation_id: `c${i}`, state: "trash" }));
 	for (let i = 0; i < rows.length; i += 50) apply(exec, "a@example.com", rows.slice(i, i + 50));
-	assert.deepEqual(bulk.planEmptyTrash(exec, 130).map((op) => op.emailIds.length), [100, 30]);
+	assert.deepEqual(run(exec, "planEmptyTrash", 130).map((op) => op.emailIds.length), [100, 30]);
+});
+
+test("rows carry the recipient, so Sent can say who mail went to (#34)", () => {
+	const { exec } = d1Db();
+	apply(exec, "a@example.com", [row("s1", { state: "sent", sender_addr: "a@example.com", sender_name: "a", recipients: "bob@example.org, cy@example.net" })]);
+	const [sent] = q(exec, { view: "sent" }).conversations;
+	assert.equal(sent.recipient, "bob@example.org, cy@example.net");
+});
+
+test("a move from a search with an in: scope takes messages from what the search shows", () => {
+	const { exec } = d1Db();
+	const k = seedThread(exec);
+	const scoped = (view, text) => bulk.bulkScope(filter({ view, q: text }), NOW);
+	// The Inbox view with in:receipts lists the receipts thread; Trash moves it.
+	assert.deepEqual(ids(run(exec, "planBulk", [k.f], "inbox", { type: "trash" }, scoped("inbox", "in:receipts"))), ["f1"]);
+	const plan = run(exec, "planBulk", [k.f], "inbox", { type: "archive" }, scoped("inbox", "in:receipts"));
+	assert.deepEqual(plan.ops, [{ mailboxId: "a@example.com", kind: "move", emailIds: ["f1"], to: "archive", from: "receipts" }]);
+	// in:anywhere moves what isn't already there, leaving Sent and Drafts as All mail does.
+	assert.deepEqual(ids(run(exec, "planBulk", [k.t], "inbox", { type: "trash" }, scoped("inbox", "in:anywhere"))), ["in1", "in2"]);
+	// Without in:, the view decides as before.
+	assert.equal(scoped("inbox", "invoice"), null);
+	assert.deepEqual(run(exec, "planBulk", [k.f], "inbox", { type: "trash" }, null).ops, []);
 });

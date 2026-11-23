@@ -3,8 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 /**
- * Which attachments get their text searched (docs/d1-migration-plan.md,
- * Attachment text): PDFs, Word, Excel and OpenDocument files go through
+ * Which attachments get their text searched: PDFs, Word, Excel and OpenDocument files go through
  * Workers AI `toMarkdown`; text files are decoded in the Worker. Inline
  * parts and files over 10 MB are left out. A file counts by its type or,
  * when the sender gave a generic type, by its extension.

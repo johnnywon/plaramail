@@ -1,0 +1,432 @@
+[
+ {
+  "file": "vendor/ubereats-wordmark.svg",
+  "brand": "Uber Eats",
+  "variant": "horizontal wordmark",
+  "source": "https://www.ubereats.com/_static/97c43f8974e6c876.svg",
+  "usage": "Uber Eats website asset; trademark of Uber Technologies",
+  "bytes": 2186,
+  "sha256": "3c46dc7aa053649a41afcf2741d30d371cb42345fb6f7c74adae07e1d47af28d",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/vercel-logotype.svg",
+  "brand": "Vercel",
+  "variant": "logotype, light background",
+  "source": "https://k2mkucxia43oc7fa.public.blob.vercel-storage.com/front/press/vercel-assets.zip (Vercel/logotype/light)",
+  "usage": "Vercel brand kit (vercel.com/geist/brands); trademark of Vercel",
+  "bytes": 3649,
+  "sha256": "786da5791c12ea611eeab60f200d31b67422a73720abaa55338723e9086a0faf",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/vercel-icon.svg",
+  "brand": "Vercel",
+  "variant": "triangle icon, light background",
+  "source": "https://k2mkucxia43oc7fa.public.blob.vercel-storage.com/front/press/vercel-assets.zip (Vercel/icon/light)",
+  "usage": "Vercel brand kit; trademark of Vercel",
+  "bytes": 173,
+  "sha256": "178d63338a92fe0082c9a55623a62367c284aa3376112154abc37d7246a9e13d",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/stripe-wordmark.svg",
+  "brand": "Stripe",
+  "variant": "wordmark, blurple",
+  "source": "https://assets.stripeassets.com/fzn2n1nzq965/7q0dJGs6fRS1LRmMpChoAF/87def4edfbb7fd5aef4ab9baf904b2db/Stripe_logo_kit.zip",
+  "usage": "Stripe logo kit (stripe.com/newsroom/brand-assets); trademark of Stripe",
+  "bytes": 2139,
+  "sha256": "4448c4b4f954285d2b2aeb6d92391c85fdc290e008c2679d2c006d6d72ae1ae9",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/github-lockup.svg",
+  "brand": "GitHub",
+  "variant": "lockup, black",
+  "source": "https://brand.github.com/GitHub_Logos.zip",
+  "usage": "GitHub logo toolkit (brand.github.com); trademark of GitHub",
+  "bytes": 3946,
+  "sha256": "802172fd58f2956be454f45e07c351d5c3d6830554632796b8f16fcecc7d273b",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/github-mark.svg",
+  "brand": "GitHub",
+  "variant": "Invertocat mark, black",
+  "source": "https://brand.github.com/GitHub_Logos.zip",
+  "usage": "GitHub logo toolkit; trademark of GitHub",
+  "bytes": 1559,
+  "sha256": "693d7abe6f899646cc2e96856723b45e95f71885a54910b2749f6decdf7e1ee1",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/cloudflare-logo.png",
+  "brand": "Cloudflare",
+  "variant": "logo PNG 512x173",
+  "source": "https://cf-assets.www.cloudflare.com/dzlvafdwdttg/2Twekn3xyYyd94qDYAl0ed/9ab649caa40958f195166e0d9f5d9a04/Logos.zip",
+  "usage": "Cloudflare press kit (cloudflare.com/press/press-kit); trademark of Cloudflare",
+  "bytes": 11443,
+  "sha256": "400b70b8bb7db80da137ef8e8fcb835a692410a3083598964da08ed1756df145",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/supabase-wordmark.svg",
+  "brand": "Supabase",
+  "variant": "wordmark, light background",
+  "source": "https://supabase.com/brand-assets.zip",
+  "usage": "Supabase brand assets (supabase.com/brand-assets); trademark of Supabase",
+  "bytes": 5822,
+  "sha256": "48fec684d8f9f7b0f93fa94fb4fbaa195d3cb299263c3c0fdaea11b43745ceb3",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/supabase-icon.svg",
+  "brand": "Supabase",
+  "variant": "lightning mark",
+  "source": "https://supabase.com/brand-assets.zip",
+  "usage": "Supabase brand assets; trademark of Supabase",
+  "bytes": 1107,
+  "sha256": "eb9ffcd100ad26228a578100ba7cbfc5b383e4995338d122abdc6a3b4d210ed3",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/resend-wordmark.svg",
+  "brand": "Resend",
+  "variant": "wordmark, black",
+  "source": "https://cdn.resend.com/brand/resend-wordmark-black.svg",
+  "usage": "Resend brand resources (resend.com/brand); trademark of Resend",
+  "bytes": 2842,
+  "sha256": "8a65fb8f40a9b7fe0f289b00f5c45128895c9b3edd1ac45b44fe5e260477e587",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/resend-icon.svg",
+  "brand": "Resend",
+  "variant": "icon, black",
+  "source": "https://cdn.resend.com/brand/resend-brand-assets.zip",
+  "usage": "Resend brand resources; trademark of Resend",
+  "bytes": 504,
+  "sha256": "7251dba7137e25a4117154bfdaef8333128a9dcc67446912ddcf6d6048573b12",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/cursor-lockup.svg",
+  "brand": "Cursor",
+  "variant": "horizontal lockup 2D, light background",
+  "source": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/brand/cursor-brand-assets.zip",
+  "usage": "Cursor brand resources (cursor.com/brand); trademark of Anysphere",
+  "bytes": 2523,
+  "sha256": "f7a384d3d6e1875196aa770d2c8df58ceb79b1219e97b86e522dee83d3d9c6ac",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/cursor-cube.svg",
+  "brand": "Cursor",
+  "variant": "cube 2D, light background",
+  "source": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/brand/cursor-brand-assets.zip",
+  "usage": "Cursor brand resources; trademark of Anysphere",
+  "bytes": 793,
+  "sha256": "c483c02f78eb2619778fdd959e72a9adfac4844854472cd2653d4cbfd60e4d71",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/linear-mark.svg",
+  "brand": "Linear",
+  "variant": "mark, dark",
+  "source": "https://static.linear.app/design-assets/Linear-Brand-Assets.zip?v=3",
+  "usage": "Linear brand resources (linear.app/brand); trademark of Linear",
+  "bytes": 1060,
+  "sha256": "e683e95a5eb9b360ae06360c0350fd1b5fcf3d2222ef9de8e71fa0bc413dccc3",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/linear-wordmark.svg",
+  "brand": "Linear",
+  "variant": "wordmark, dark",
+  "source": "https://static.linear.app/design-assets/Linear-Brand-Assets.zip?v=3",
+  "usage": "Linear brand resources; trademark of Linear",
+  "bytes": 4623,
+  "sha256": "6b8c0756d1dc581364c4a91782fc512727e4c47c7bacdfb7f4fbbab1d99c5066",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/openai-wordmark.svg",
+  "brand": "OpenAI",
+  "variant": "2017 wordmark",
+  "source": "https://commons.wikimedia.org/wiki/File:OpenAI_Logo.svg",
+  "usage": "Wikimedia Commons, public domain (text logo); trademark of OpenAI",
+  "bytes": 2946,
+  "sha256": "5a28b637ffcde9e25fcac5790b7ac24fbaa3fd591f955062ec2c6021618e400a",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/chatgpt-mark.svg",
+  "brand": "ChatGPT",
+  "variant": "mark",
+  "source": "https://commons.wikimedia.org/wiki/File:ChatGPT_logo.svg",
+  "usage": "Wikimedia Commons, public domain; trademark of OpenAI",
+  "bytes": 972,
+  "sha256": "5a8dad2864cc1c8109ebae74bea447df2f30b978bdad56749247c406e1cb2227",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/claude-logo.svg",
+  "brand": "Claude",
+  "variant": "logo",
+  "source": "https://commons.wikimedia.org/wiki/File:Claude_AI_logo.svg",
+  "usage": "Wikimedia Commons, public domain; trademark of Anthropic",
+  "bytes": 6003,
+  "sha256": "8d4e347d58a52ba1a21f29fb19c94a955b4bf3b8e956ce4eea5794fdbaa72b80",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/anthropic-wordmark.svg",
+  "brand": "Anthropic",
+  "variant": "wordmark",
+  "source": "https://commons.wikimedia.org/wiki/File:Anthropic_logo.svg",
+  "usage": "Wikimedia Commons, public domain; trademark of Anthropic",
+  "bytes": 1969,
+  "sha256": "c89653a9edd5cb712368cde82196cd50914fb9e28a77cb5723a7f71a60ac5fc0",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/xai-logo.svg",
+  "brand": "xAI",
+  "variant": "xAI-era logo",
+  "source": "https://commons.wikimedia.org/wiki/File:XAI_Logo.svg",
+  "usage": "Wikimedia Commons, CC BY-SA 4.0; trademark of xAI",
+  "bytes": 701,
+  "sha256": "e7c9123a2d85378ab80b0efe91965c8d88a5839b0f50473db8468f625b53d7d1",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/figma-mark.svg",
+  "brand": "Figma",
+  "variant": "multicolor mark",
+  "source": "https://commons.wikimedia.org/wiki/File:Figma-logo.svg",
+  "usage": "Wikimedia Commons, public domain; trademark of Figma",
+  "bytes": 786,
+  "sha256": "9513b11ee2e238a1059af63d32cc4f795265578257225eadadb8d95a6614a787",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/affine-logo.svg",
+  "brand": "AFFiNE",
+  "variant": "logo",
+  "source": "https://github.com/toeverything/AFFiNE/blob/canary/packages/frontend/admin/src/modules/auth/logo.svg",
+  "usage": "AFFiNE repository (MIT-licensed code); trademark of Toeverything",
+  "bytes": 4205,
+  "sha256": "f9323a4c082f4153860574c6f639e2889dd45677812b3cd7211dcfc53f1eddf3",
+  "changes": "none"
+ },
+ {
+  "file": "original/alex-rivera.svg",
+  "brand": "alex-rivera",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 311,
+  "sha256": "b180be57b5eba749b5939f8b5f6e7bc145512f960ea03d026c6f4d375d9d8f5f",
+  "changes": "none"
+ },
+ {
+  "file": "original/atlas.svg",
+  "brand": "atlas",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 371,
+  "sha256": "61abbfc39adc7fdf9dc526bcb51abace63c75e5a99010a2346d2811a7d70e9fd",
+  "changes": "none"
+ },
+ {
+  "file": "original/buildnotes.svg",
+  "brand": "buildnotes",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 331,
+  "sha256": "f8a7733094b267f356c5038a8c31d0625e38f84ab769e3c8feac29227c1450ed",
+  "changes": "none"
+ },
+ {
+  "file": "original/cedar.svg",
+  "brand": "cedar",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 272,
+  "sha256": "3e2908cfab8bfb1774395d0cc2bca884e54eb0dc2263e1923eab32bd68ff1372",
+  "changes": "none"
+ },
+ {
+  "file": "original/fieldstone.svg",
+  "brand": "fieldstone",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 372,
+  "sha256": "5141d694811ac832119b6a53d22b45c9d2408f777a764ce8c5e22d4aa81d2970",
+  "changes": "none"
+ },
+ {
+  "file": "original/harbor.svg",
+  "brand": "harbor",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 293,
+  "sha256": "5fa71b3d85e64e7cab83bfff07058d848db0540e7d99d9528daaa7c76640c2f0",
+  "changes": "none"
+ },
+ {
+  "file": "original/keyforge.svg",
+  "brand": "keyforge",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 397,
+  "sha256": "f93d05ed197263559d5613d1fac6ad18bfa286a7794990401016389520af3377",
+  "changes": "none"
+ },
+ {
+  "file": "original/late-commits.svg",
+  "brand": "late-commits",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 403,
+  "sha256": "a55d0b9af65220532d8400bb61bf6ba1cb0ec0d69e636c0582723ed0ff91e595",
+  "changes": "none"
+ },
+ {
+  "file": "original/launchboard.svg",
+  "brand": "launchboard",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 376,
+  "sha256": "a263cae0bd93d59d75ddacd8f936284cf51cdbe7e5623afe598bd7e9553b1025",
+  "changes": "none"
+ },
+ {
+  "file": "original/morganledger.svg",
+  "brand": "morganledger",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 286,
+  "sha256": "8eee5f750ad529a8c4851f8464219fb53b7f3762bf7ffadd8d3ea56c0d796d01",
+  "changes": "none"
+ },
+ {
+  "file": "original/northline.svg",
+  "brand": "northline",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 264,
+  "sha256": "76890c9704ef44f6cc2f76bf1116303694676a1cde05d893a28fc201668d2af9",
+  "changes": "none"
+ },
+ {
+  "file": "original/partwell.svg",
+  "brand": "partwell",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 309,
+  "sha256": "8781ea47df9f8256258a4ac847cb6126f30bdf2c0dbde312879f3e7a2e48599a",
+  "changes": "none"
+ },
+ {
+  "file": "original/priya-shah.svg",
+  "brand": "priya-shah",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 387,
+  "sha256": "89a773ee778975dd9c6556808442fa6396d1c7ae147ff53ac2e3d995bf23c780",
+  "changes": "none"
+ },
+ {
+  "file": "original/procura.svg",
+  "brand": "procura",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 272,
+  "sha256": "d5bf16d8da5b94dbe8ec0f0e835a04f239c77f192c48952ba58ca313d5854ee3",
+  "changes": "none"
+ },
+ {
+  "file": "original/rae-collins.svg",
+  "brand": "rae-collins",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 386,
+  "sha256": "9bcd31c0d2cca7cf29f60e2b1aa71de5cec3798fd4ad246997ef682c5bf7f1f3",
+  "changes": "none"
+ },
+ {
+  "file": "original/riverbend-code-club.svg",
+  "brand": "riverbend-code-club",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 388,
+  "sha256": "ad6dd1ebd66608fcf13aaf07c3697c438ca29598f82cb4d203d21891c9cc5298",
+  "changes": "none"
+ },
+ {
+  "file": "original/sunday-crew.svg",
+  "brand": "sunday-crew",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 358,
+  "sha256": "5f15a75de5e4c71d53f7a5f29c5ceb2c2151583da05a1b022be3d6600175be6e",
+  "changes": "none"
+ },
+ {
+  "file": "original/sunday-deploy-league.svg",
+  "brand": "sunday-deploy-league",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 495,
+  "sha256": "a631eb681a40ee2238e38de80f402143f3e06bc7b037bd0caa12171e3ec716ed",
+  "changes": "none"
+ },
+ {
+  "file": "original/westhaven.svg",
+  "brand": "westhaven",
+  "variant": "40x40 mark",
+  "source": "drawn for this profile",
+  "usage": "original mark for an invented identity",
+  "bytes": 293,
+  "sha256": "20b7716addf0873ee6db230f9de1795f0f142a72821884f52af7bfc92a5a0892",
+  "changes": "none"
+ },
+ {
+  "file": "original/rae-docs-illustration.svg",
+  "brand": "rae-collins",
+  "variant": "536x300 Figma file thumbnail of Rae's docs illustrations",
+  "source": "drawn for this profile",
+  "usage": "original artwork for an invented identity",
+  "bytes": 1639,
+  "sha256": "7de210146524988b96ab074596e15cee424c66eb447c70f7c12698f0560c8209",
+  "changes": "none"
+ },
+ {
+  "file": "vendor/affine-mark.svg",
+  "brand": "AFFiNE",
+  "variant": "mark only",
+  "source": "https://github.com/toeverything/AFFiNE/blob/canary/packages/frontend/admin/src/modules/auth/logo.svg",
+  "usage": "AFFiNE repository (MIT-licensed code); trademark of Toeverything",
+  "bytes": 4137,
+  "sha256": "1f5918fb559a53a8585133d0d19021c0ddac83c95483628554ccdc2617eaee82",
+  "changes": "viewBox cropped to the mark, which leaves out the lettering beneath it; paths unchanged"
+ }
+]

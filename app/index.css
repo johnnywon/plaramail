@@ -64,13 +64,6 @@ button:disabled {
   opacity: 0.4;
 }
 
-.deck-brand-logo {
-  display: block;
-  width: 100%;
-  max-width: 194px;
-  height: auto;
-}
-
 .reader-content {
   overflow-y: auto;
   flex: 1;
@@ -112,9 +105,6 @@ button:disabled {
    One list for every address. State is shown with fill, weight, a full
    1px ring or a glyph; never an edge bar. */
 
-/* The supplied logo is artwork: the global radius rule must not clip it. */
-.deck-brand-logo { border-radius: 0 !important; }
-
 /* Filter popovers */
 .mail-popover {
   position: absolute;
@@ -136,7 +126,7 @@ button:disabled {
 .mail-label-swatch { flex: none; display: inline-block; width: 10px; height: 10px; overflow: visible; }
 
 /* ── Postal tokens ──────────────────────────────────────────────────
-   MAIL_UI=postal. Dark first, with a real light palette. Components in
+   Dark first, with a real light palette. Components in
    app/components/postal/postal.css read only these variables. */
 .postal {
   color-scheme: dark;
@@ -180,6 +170,10 @@ button:disabled {
   --pg-mail: oklch(0.76 0.16 58);
   --pg-green: oklch(0.82 0.17 152);
   --pg-green-text: oklch(0.84 0.16 152);
+  /* Signal, the Fold mark's last flap: only on Send in the phone composer's dock. Ink sits on it and on solid green. */
+  --pg-signal: #e46f2c;
+  --pg-signal-deep: #cf5f20;
+  --pg-ink: #121316;
   --pg-yellow: oklch(0.87 0.15 95);
   --pg-yellow-text: oklch(0.9 0.14 95);
   --pg-danger: oklch(0.64 0.19 15);
@@ -196,8 +190,30 @@ button:disabled {
   --pg-scroll: oklch(0.4 0.035 250);
   --pg-scroll-hover: oklch(0.58 0.08 250);
   --pg-shadow-pop: 0 16px 32px rgba(0, 0, 0, .45);
+  --pg-shadow-lift: -12px 0 22px -6px rgba(0, 0, 0, .6), 12px 0 22px -6px rgba(0, 0, 0, .6);
+  /* Recessed controls: flat, set into the rail. A well a shade darker, a shadow along the inside top edge, a lit edge below. */
+  --pg-recess-face: #0e0f11;
+  --pg-recess: inset 0 1px 1.5px rgba(0, 0, 0, .6), 0 1px 0 rgba(255, 255, 255, .05);
+  --pg-recess-pressed: inset 0 1px 3px rgba(0, 0, 0, .75), 0 1px 0 rgba(255, 255, 255, .05);
   --pg-shadow-modal: 0 24px 64px rgba(0, 0, 0, .55);
   --pg-scrim: rgba(6, 7, 8, .64);
+  /* Console: a darker black of the mail's own neutrals. Purple marks its highlights; orange stays mail. */
+  --pg-con-base: #0c0d0f;
+  --pg-con-rail: #08090a;
+  --pg-con-raised: #131417;
+  --pg-con-input: #0f1012;
+  --pg-con-hover: #16171a;
+  --pg-con-hover-raised: #1b1c20;
+  --pg-con-segment: #1f2024;
+  --pg-con-line: #1c1d21;
+  /* The colophon's groove: a dark cut over a faint light edge, pressed into the rail. */
+  --pg-con-groove: #000; --pg-con-groove-edge: rgba(255, 255, 255, .06);
+  --pg-con-line-2: #212226;
+  --pg-con-line-3: #2a2c31;
+  --pg-con-line-soft: #16171a;
+  --pg-con-active: oklch(0.72 0.15 298 / .16);
+  --pg-con-accent: oklch(0.72 0.15 298);
+  --pg-con-accent-text: oklch(0.8 0.12 298);
 }
 .postal[data-theme="light"] {
   color-scheme: light;
@@ -246,6 +262,28 @@ button:disabled {
   --pg-scroll: oklch(0.78 0.03 250);
   --pg-scroll-hover: oklch(0.65 0.07 250);
   --pg-shadow-pop: 0 16px 32px rgba(20, 22, 26, .14);
+  --pg-shadow-lift: -12px 0 22px -6px rgba(20, 22, 26, .16), 12px 0 22px -6px rgba(20, 22, 26, .16);
+  --pg-recess-face: #e8e7e2;
+  --pg-recess: inset 0 1px 1.5px rgba(20, 20, 19, .14), 0 1px 0 rgba(255, 255, 255, .9);
+  --pg-recess-pressed: inset 0 1px 3px rgba(20, 20, 19, .22), 0 1px 0 rgba(255, 255, 255, .9);
   --pg-shadow-modal: 0 24px 64px rgba(20, 22, 26, .2);
   --pg-scrim: rgba(20, 22, 26, .32);
+  --pg-con-base: #fbfbfa;
+  --pg-con-rail: #f1f1ef;
+  --pg-con-raised: #ffffff;
+  --pg-con-input: #ffffff;
+  --pg-con-hover: #ebebe8;
+  --pg-con-hover-raised: #f3f3f1;
+  --pg-con-segment: #e6e6e2;
+  --pg-con-line: #e2e2de;
+  --pg-con-groove: #c9c7c0; --pg-con-groove-edge: rgba(255, 255, 255, .8);
+  --pg-con-line-2: #d8d8d3;
+  --pg-con-line-3: #cdcdc7;
+  --pg-con-line-soft: #ebebe8;
+  --pg-con-active: oklch(0.52 0.18 298 / .12);
+  --pg-con-accent: oklch(0.52 0.18 298);
+  --pg-con-accent-text: oklch(0.47 0.17 298);
 }
+
+/* A fieldset that only groups controls so a read-only Console tab can disable them at once. */
+.pg-plain-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }

@@ -5,7 +5,7 @@
 /**
  * The async SQL interface the D1 store is written against. `d1Sql` wraps a
  * D1 binding; tests use the node:sqlite version in tests/helpers/sql.mjs,
- * which enforces the same limits (docs/d1-phase0.md).
+ * which enforces the same limits.
  */
 
 export type Row = Record<string, unknown>;

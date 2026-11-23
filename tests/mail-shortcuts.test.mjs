@@ -2,12 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-// Keys a message frame passes up to the mail view while focus is inside the message.
-const FRAME_KEYS = ["j", "k", "/", "?", "Escape", "x", "l", "e", "#", "s", "u", "r", "a", "f", "c", "z"];
-
-test("a message frame forwards every shortcut key", () => {
+test("a message frame passes up every key with its modifiers", () => {
 	const source = readFileSync("app/components/EmailIframe.tsx", "utf8");
-	const list = source.match(/if \((\[[^\]]*\])\.indexOf\(e\.key\) < 0\) return;/);
-	assert.ok(list, "key list in the frame script");
-	assert.deepEqual(JSON.parse(list[1]).sort(), [...FRAME_KEYS].sort());
+	const post = source.match(/parent\.postMessage\(\{ __emailIframeKey: true,([^}]*)\}/);
+	assert.ok(post, "key message in the frame script");
+	for (const field of ["key", "shiftKey", "metaKey", "ctrlKey", "altKey"]) assert.match(post[1], new RegExp(`\\b${field}: e\\.${field}\\b`), field);
+	assert.doesNotMatch(source, /indexOf\(e\.key\)/, "no fixed key list in the frame");
 });

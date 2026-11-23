@@ -10,9 +10,5 @@ import {
 
 export default [
 	index("routes/home.tsx"),
-	route("mailbox/:mailboxId/*", "routes/mailbox-redirect.tsx"),
-	route("mailbox/:mailboxId", "routes/mailbox-redirect.tsx", { id: "mailbox-redirect-root" }),
-	route("settings", "routes/settings-redirect.tsx"),
-	route("settings/index", "routes/settings-redirect.tsx", { id: "settings-index-redirect" }),
 	route("*", "routes/not-found.tsx"),
 ] satisfies RouteConfig;

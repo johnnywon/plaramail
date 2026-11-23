@@ -5,8 +5,8 @@
 /**
  * Shared tool business logic for the Agent and MCP server.
  *
- * Each function takes an `env: Env` (or a DO stub) and tool-specific params,
- * performs the business logic (DO calls, data fetching, formatting), and
+ * Each function takes an `env: Env` (or a mailbox store) and tool-specific params,
+ * performs the business logic (store calls, data fetching, formatting), and
  * returns a plain object. The Agent and MCP server wrap these results in
  * their own response formats.
  *
@@ -14,10 +14,9 @@
  * are reused directly — this module covers the remaining shared operations.
  */
 
-import { isSystemFolder } from "./mailbox-bulk";
-import { mailStore, searchEngine } from "../store";
-import type { SearchEngine } from "../store/search";
+import { mailStore } from "../store";
 import { DATE_TOKENS, emptyFilter, InvalidFilterError, type MailFilter, searchOf, VIEWS } from "./mail-index-sql";
+import { MOVE_FOLDERS } from "./mail-bulk-sql";
 import type { EmailFull } from "./schemas";
 import { snippetText } from "./snippets";
 import {
@@ -28,8 +27,15 @@ import {
 } from "./email-helpers";
 import { verifyDraft } from "./ai";
 import { sendMail } from "./send";
-import { Folders } from "../../shared/folders";
+import { fail, sendFailure } from "./mcp-send";
+import { htmlToTextAlternative } from "./text-alternative";
+import type { SendActor } from "./send-budget";
+import type { DraftNotes } from "../../shared/draft-notes";
+import { deleteAttachmentFiles } from "./attachments";
+import { Folders, isSystemFolder } from "../../shared/folders";
 import { LABEL_COLORS } from "../../shared/label-colors";
+import { describeShortcuts, findShortcut, isRebindable, setShortcut, type ShortcutOverrides } from "../../shared/shortcuts";
+import { readPrefs, writePrefs } from "./prefs";
 import type { Env } from "../types";
 
 const splitList = (value: string | null | undefined) =>
@@ -122,6 +128,8 @@ export async function toolDraftReply(
 		body: string;
 		isPlainText?: boolean;
 		runVerifyDraft?: boolean;
+		/** Set for agent drafts: who made it and how it was redrafted. */
+		notes?: DraftNotes;
 	},
 ): Promise<
 	| { status: "draft_saved"; draftId: string; message: string; draft: Record<string, string> }
@@ -150,13 +158,13 @@ export async function toolDraftReply(
 	const original = (await stub.getEmail(params.originalEmailId)) as EmailFull | null;
 	const threadId = original?.thread_id || params.originalEmailId;
 
-	// Append quoted original message
+	// Append quoted original message, its time in the reader's zone.
 	const quotedBlock = original
 		? buildQuotedReplyBlock({
 				date: original.date,
 				sender: original.sender || params.to,
 				body: original.body ?? undefined,
-			})
+			}, (await readPrefs(env)).prefs.timeZone)
 		: "";
 	const bodyHtml = processedBody + quotedBlock;
 
@@ -175,6 +183,7 @@ export async function toolDraftReply(
 		},
 		[],
 	);
+	if (params.notes) await stub.setDraftNotes(draftId, params.notes);
 
 	return {
 		status: "draft_saved",
@@ -204,6 +213,7 @@ export async function toolDraftEmail(
 		in_reply_to?: string;
 		/** Optional thread_id for create_draft style */
 		thread_id?: string;
+		notes?: DraftNotes;
 	},
 ): Promise<
 	| { status: string; draftId: string; threadId?: string; message: string; draft?: Record<string, string> }
@@ -251,6 +261,7 @@ export async function toolDraftEmail(
 		},
 		[],
 	);
+	if (params.notes) await stub.setDraftNotes(draftId, params.notes);
 
 	return {
 		status: "draft_saved",
@@ -286,6 +297,10 @@ export async function toolUpdateDraft(
 	if (!oldDraft) {
 		return { error: "Draft not found" };
 	}
+	// Updating deletes the old message, so only a draft may be replaced.
+	if (oldDraft.folder_id !== Folders.DRAFT) {
+		return { error: "Cannot update: email is not a draft" };
+	}
 
 	// Verify the body BEFORE deleting the old draft to prevent data loss
 	const newDraftId = crypto.randomUUID();
@@ -296,7 +311,10 @@ export async function toolUpdateDraft(
 		return { error: "Draft verification failed — keeping existing draft unchanged. Please try again." };
 	}
 
-	await stub.deleteEmail(params.draftId);
+	const notes = await stub.getDraftNotes(params.draftId);
+	const forward = await stub.getDraftForward(params.draftId);
+	const attachments = await stub.deleteEmail(params.draftId);
+	if (attachments) await deleteAttachmentFiles(env.BUCKET, params.draftId, attachments);
 	await stub.createEmail(
 		Folders.DRAFT,
 		{
@@ -312,6 +330,8 @@ export async function toolUpdateDraft(
 		},
 		[],
 	);
+	if (notes) await stub.setDraftNotes(newDraftId, notes);
+	if (forward) await stub.setDraftForward(newDraftId, forward);
 
 	return {
 		status: "draft_updated",
@@ -330,7 +350,8 @@ export async function toolMarkEmailRead(
 	read: boolean,
 ) {
 	const stub = mailStore(env).mailbox(mailboxId);
-	await stub.updateEmail(emailId, { read });
+	const email = await stub.updateEmail(emailId, { read });
+	if (!email) return { error: "Email not found", emailId };
 	return { status: "updated", emailId, read };
 }
 
@@ -342,13 +363,17 @@ export async function toolMoveEmail(
 	emailId: string,
 	folderId: string,
 ) {
+	// The same targets as the REST move action. Sent and Drafts hold only what this mailbox wrote.
+	if (!(MOVE_FOLDERS as readonly string[]).includes(folderId)) {
+		if (!isSystemFolder(folderId)) {
+			return { error: "Custom folders are labels now. Use label_conversation." };
+		}
+		return { error: `Cannot move to ${folderId}. Use inbox, archive, spam or trash.` };
+	}
 	const stub = mailStore(env).mailbox(mailboxId);
 	const success = await stub.moveEmail(emailId, folderId);
 	if (success) {
 		return { status: "moved", emailId, folder: folderId };
-	}
-	if (!isSystemFolder(folderId)) {
-		return { error: "Custom folders are labels now. Use label_conversation." };
 	}
 	return { error: "Failed to move email" };
 }
@@ -359,6 +384,48 @@ export async function toolListLabels(env: Env) {
 	const labels = await mailStore(env).all().listLabels();
 	return { labels: labels.map(({ id, name, color, count }) => ({ id, name, color, conversations: count })) };
 }
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────
+
+const KEY_FORMAT = 'Keys are written like "e", "shift+x", "cmd+k" (Ctrl off a Mac), "down" or "g i" for a sequence.';
+
+/** Every shortcut, with the keys it answers to now and its defaults. */
+export async function toolListShortcuts(env: Env) {
+	const { prefs } = await readPrefs(env);
+	return { shortcuts: describeShortcuts(prefs.shortcuts), note: `Only rebindable shortcuts can change. ${KEY_FORMAT}` };
+}
+
+/** Give a shortcut new keys, saved for the deployment. A key another shortcut had moves over. */
+export async function toolSetShortcut(env: Env, params: { shortcut: string; keys: string[] }) {
+	const { prefs } = await readPrefs(env);
+	const result = setShortcut(prefs.shortcuts, params.shortcut, params.keys);
+	if (!result.ok) return { error: result.error };
+	await writePrefs(env, { shortcuts: result.overrides });
+	return { status: "saved", shortcut: result.id, keys: result.keys, takenFrom: result.takenFrom };
+}
+
+/** Restore one shortcut's default keys, or every shortcut's when none is named. */
+export async function toolResetShortcuts(env: Env, params: { shortcut?: string }) {
+	const { prefs } = await readPrefs(env);
+	let overrides: ShortcutOverrides = {};
+	if (params.shortcut) {
+		const def = findShortcut(params.shortcut);
+		if (!def || !isRebindable(def.id)) return { error: `Unknown or fixed shortcut: ${params.shortcut}. Use list_shortcuts to see them.` };
+		const result = setShortcut(prefs.shortcuts, def.id, null);
+		if (!result.ok) return { error: result.error };
+		overrides = result.overrides;
+	}
+	await writePrefs(env, { shortcuts: overrides });
+	return { status: "reset", shortcut: params.shortcut ?? "all", shortcuts: describeShortcuts(overrides).filter((s) => s.rebindable).map(({ id, keys }) => ({ id, keys })) };
+}
+
+export const SHORTCUT_TOOL_DESCRIPTIONS = {
+	list: "List the app's keyboard shortcuts: id, label, where each works, its keys now and its default keys, and whether it can be rebound.",
+	set: `Rebind a keyboard shortcut for everyone on this deployment. ${KEY_FORMAT} A key another shortcut had moves to this one; the result says which. An empty list turns the shortcut off. Esc, g, ?, Tab, Enter, Space and Alt keys are kept for the app.`,
+	reset: "Restore a keyboard shortcut's default keys, or every shortcut's when no shortcut is named.",
+	shortcut: "The shortcut's id or label, e.g. archive or Reply all",
+	keys: "One or two keys, e.g. [\"y\"] or [\"j\", \"down\"]",
+};
 
 // ── create_label ───────────────────────────────────────────────────
 
@@ -432,7 +499,7 @@ export async function toolLabelConversation(
 		return { error: `Unknown label: ${unknown.join(", ")}. Use list_labels to see labels, or create_label to make one.` };
 	}
 	const threadKey = await index.threadKeyOf(mailboxId, emailId);
-	if (!threadKey) return { error: "Email not found in the mail index", emailId };
+	if (!threadKey) return { error: "Email not found", emailId };
 
 	const target = { threadKeys: [threadKey], view: "all" };
 	const done: string[] = [];
@@ -452,6 +519,22 @@ export async function toolLabelConversation(
 		done.push("archived");
 	}
 	return { status: "updated", emailId, changes: done };
+}
+
+// ── star_conversation ──────────────────────────────────────────────
+
+/**
+ * Star or unstar the conversation that holds an email, the way the app's star
+ * does: starring marks its latest message, unstarring clears every message.
+ */
+export async function toolStarConversation(env: Env, mailboxId: string, emailId: string, starred: boolean) {
+	const index = mailStore(env).all();
+	const threadKey = await index.threadKeyOf(mailboxId, emailId);
+	if (!threadKey) return { error: "Email not found", emailId };
+	const result = await index.bulk({ threadKeys: [threadKey], view: "all" }, { type: starred ? "star" : "unstar" });
+	const failure = "failed" in result ? result.failed?.[0] : undefined;
+	if (failure) return { error: failure.error };
+	return { status: starred ? "starred" : "unstarred", emailId };
 }
 
 // ── search_all_mail / label_matching ───────────────────────────────
@@ -479,13 +562,12 @@ export const SEARCH_HELP =
 	`Results with words come best match first where the store ranks them (order: "relevance"); add sort:date for newest first.`;
 
 /**
- * Build an index filter. Labels are named by id or name; unknown ones are an
- * error. With `engine`, the query text is checked for that store too.
+ * Build a mail filter. Labels are named by id or name; unknown ones are an
+ * error. The query text is checked too.
  */
 export function mailSearchFilter(
 	search: MailSearch,
 	labels: { id: string; name: string }[],
-	engine?: SearchEngine,
 ): { filter: MailFilter } | { error: string } {
 	const folder = (search.folder ?? "all").trim().toLowerCase();
 	if (!(VIEWS as readonly string[]).includes(folder)) return { error: `Unknown folder: ${search.folder}. Use one of ${VIEWS.join(", ")}.` };
@@ -512,7 +594,6 @@ export function mailSearchFilter(
 		is,
 		has: search.hasAttachment ? ["attachment"] : [],
 		date: search.date as MailFilter["date"],
-		engine,
 	});
 	try {
 		searchOf(filter);
@@ -528,7 +609,7 @@ export function mailSearchFilter(
 /** Search every address at once. Each result names the address it is in. */
 export async function toolSearchAllMail(env: Env, search: MailSearch & { limit?: number }) {
 	const index = mailStore(env).all();
-	const built = mailSearchFilter(search, await index.listLabels(), searchEngine(env));
+	const built = mailSearchFilter(search, await index.listLabels());
 	if ("error" in built) return built;
 	const limit = Math.min(Math.max(search.limit ?? 25, 1), 50);
 	const result = await index.queryMail(built.filter, { limit });
@@ -541,7 +622,7 @@ export async function toolSearchAllMail(env: Env, search: MailSearch & { limit?:
 			date: c.date,
 			from: c.sender_name ? `${c.sender_name} <${c.sender_addr}>` : c.sender_addr,
 			subject: c.subject,
-			// On D1, the text around the matched words; otherwise the opening lines.
+			// The text around the matched words, or the opening lines.
 			snippet: c.snippet_html ? snippetText(c.snippet_html) : c.snippet,
 			unread: c.unread,
 			labels: c.labels,
@@ -568,7 +649,7 @@ export async function toolLabelMatching(
 		return { error: `Unknown label: ${unknown.join(", ")}. Use list_labels to see labels, or create_label to make one.` };
 	}
 	if (!params.add?.length && !params.remove?.length && !params.archive) return { error: "Say which labels to add or remove." };
-	const built = mailSearchFilter(search, labels, searchEngine(env));
+	const built = mailSearchFilter(search, labels);
 	if ("error" in built) return built;
 	const threadKeys = await index.threadKeysMatching(built.filter, LABEL_MATCHING_MAX + 1);
 	if (threadKeys.length === 0) return { status: "no matches", conversations: 0 };
@@ -610,7 +691,8 @@ export async function toolDiscardDraft(
 	if (email.folder_id !== Folders.DRAFT) {
 		return { error: "Cannot discard: email is not a draft" };
 	}
-	await stub.deleteEmail(draftId);
+	const attachments = await stub.deleteEmail(draftId);
+	if (attachments) await deleteAttachmentFiles(env.BUCKET, draftId, attachments);
 	return { status: "discarded", draftId };
 }
 
@@ -641,13 +723,17 @@ export async function toolDeleteEmail(
  * sent as a reply in that thread. The key is `draft:<id>`, the same one the
  * UI uses, so a draft goes out once however many times it is sent.
  */
-export async function toolSendDraft(env: Env, mailboxId: string, draftId: string) {
+export async function toolSendDraft(env: Env, mailboxId: string, draftId: string, actor: SendActor = "agent") {
 	const stub = mailStore(env).mailbox(mailboxId);
 	const draft = (await stub.getEmail(draftId)) as EmailFull | null;
-	if (!draft) return { error: "Draft not found" };
-	if (draft.folder_id !== Folders.DRAFT) return { error: "Cannot send: email is not a draft" };
+	if (!draft) return fail("not_found", "Draft not found");
+	if (draft.folder_id !== Folders.DRAFT) return fail("invalid_input", "Cannot send: email is not a draft");
 	const to = splitList(draft.recipient);
-	if (to.length === 0) return { error: "Cannot send: the draft has no recipient" };
+	if (to.length === 0) return fail("invalid_input", "Cannot send: the draft has no recipient");
+	// A scheduled send keeps its attachments and forward mode in the schedule, not on the draft.
+	if ((await stub.listScheduled()).some((s) => s.emailId === draftId)) {
+		return fail("invalid_input", "This draft is scheduled. Cancel the schedule or send it from the app.");
+	}
 
 	const settings = (await mailStore(env).mailboxes.get(mailboxId)) ?? {};
 	const name = typeof settings.fromName === "string" ? settings.fromName.trim() : "";
@@ -655,6 +741,9 @@ export async function toolSendDraft(env: Env, mailboxId: string, draftId: string
 	const bcc = splitList(draft.bcc);
 	const html = draft.body || "";
 	const original = draft.in_reply_to ? await stub.getEmail(draft.in_reply_to) : null;
+	// A saved forward goes out as a forward with the original's attachments it kept.
+	const forward = original ? await stub.getDraftForward(draftId) : null;
+	const mode = !original ? { kind: "new" as const } : forward ? { kind: "forward" as const, originalId: original.id } : { kind: "reply" as const, originalId: original.id };
 	const result = await sendMail(env, mailboxId, stub, {
 		to,
 		...(cc.length ? { cc } : {}),
@@ -662,9 +751,11 @@ export async function toolSendDraft(env: Env, mailboxId: string, draftId: string
 		from: name && name.toLowerCase() !== mailboxId.toLowerCase() ? { email: mailboxId, name } : mailboxId,
 		subject: draft.subject || "(no subject)",
 		html,
-		text: html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
-	}, original ? { kind: "reply", originalId: original.id } : { kind: "new" }, { idempotencyKey: `draft:${draftId}` });
-	if (!result.ok) return { error: result.error };
-	await stub.deleteEmail(draftId);
+		text: htmlToTextAlternative(html),
+		...(forward?.length ? { forward_attachments: forward } : {}),
+	}, mode, { idempotencyKey: `draft:${draftId}`, actor });
+	if (!result.ok) return sendFailure(result);
+	const attachments = await stub.deleteEmail(draftId);
+	if (attachments) await deleteAttachmentFiles(env.BUCKET, draftId, attachments);
 	return { status: result.duplicate ? "already_sent" : "sent", sentId: result.id, to: to.join(", "), subject: draft.subject || "" };
 }

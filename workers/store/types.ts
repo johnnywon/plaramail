@@ -3,43 +3,65 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 /**
- * The storage contract every caller goes through (docs/d1-migration-plan.md).
- * It is met by the Durable Objects and by the D1 store (workers/store/d1/).
- * Method types come from the Durable Object classes for now, so the two can't
- * drift apart; the names listed here are the contract.
- *
- * Index-sync internals (flushIndex, exportIndexRows, indexStatus, applyBatch,
- * rebuild) are not part of it. They exist only to keep the combined index in
- * step with the mailboxes and go away with D1. See `DurableObjectInternals`.
+ * The storage contract every caller goes through. Method types come from
+ * the D1 classes (workers/store/d1/); the names listed here are the contract,
+ * so a test double only has to supply these.
  */
-import type { MailboxDO } from "../durableObject";
-import type { MailIndexDO } from "../durableObject/mail-index";
+import type { D1AllMail } from "./d1/all-mail";
+import type { D1Mailbox } from "./d1/mailbox";
+import type { MailFilter } from "../lib/mail-index-sql";
+
+/** What a bulk action applies to: picked conversations, or everything a filter matched when the list was shown. */
+export type BulkTarget =
+	| { threadKeys: string[]; view: string; filter?: MailFilter }
+	| { filter: MailFilter; asOf: string; expectedCount: number };
+
+export interface BulkFailure {
+	mailboxId: string;
+	error: string;
+}
 
 /** Operations on one address's mail. */
 export type MailboxStore = Pick<
-	MailboxDO,
+	D1Mailbox,
 	// Messages and threads
 	| "getEmails"
 	| "getEmail"
 	| "getThreadEmails"
+	| "hasInboundMessageId"
 	| "createEmail"
 	| "updateEmail"
 	| "markThreadRead"
 	| "deleteEmail"
 	| "trashOrDelete"
 	| "moveEmail"
+	| "returnToDrafts"
 	| "getAttachment"
 	| "findThreadBySubject"
+	| "findThreadByMessageIds"
+	// Blocked senders
+	| "isBlockedSender"
+	| "blockSender"
+	| "unblockSender"
+	| "listBlockedSenders"
 	// Folder import (folders to labels)
 	| "folderImportCounts"
 	| "folderEmailIds"
 	| "importFolder"
 	| "markFoldersImported"
 	// Sending
-	| "checkSendRateLimit"
+	| "getDraftNotes"
+	| "setDraftNotes"
+	| "getDraftForward"
+	| "setDraftForward"
+	| "takeSendBudget"
+	| "refundSendBudget"
 	| "claimSendKey"
+	| "sentSendKey"
+	| "startSendKey"
+	| "recordSendProvider"
 	| "finishSendKey"
-	| "releaseSendKey"
+	| "failSendKey"
 	| "scheduleSend"
 	| "listScheduled"
 	| "cancelScheduled"
@@ -47,7 +69,7 @@ export type MailboxStore = Pick<
 
 /** Operations across every address: the combined list, labels, bulk actions and undo. */
 export type AllMailStore = Pick<
-	MailIndexDO,
+	D1AllMail,
 	| "queryMail"
 	| "queryFacets"
 	| "folderViews"
@@ -58,12 +80,14 @@ export type AllMailStore = Pick<
 	| "undo"
 	| "trashCount"
 	| "emptyTrash"
+	| "purgeRetention"
 	| "listLabels"
 	| "createLabel"
 	| "updateLabel"
 	| "markLabelsAuto"
 	| "deleteLabel"
 	| "suggest"
+	| "contacts"
 	| "listSavedSearches"
 	| "createSavedSearch"
 	| "updateSavedSearch"

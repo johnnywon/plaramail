@@ -21,12 +21,40 @@ function fakeBucket() {
 }
 
 test("cleanPrefs keeps valid fields, takes the rest from base and drops unknown ones", () => {
-	assert.deepEqual(cleanPrefs({ theme: "light", keys: false, markRead: false, images: "never", replyFrom: false }), { theme: "light", keys: false, markRead: false, images: "never", replyFrom: false });
+	assert.deepEqual(cleanPrefs({ theme: "light", keys: false, markRead: false, images: "never", replyFrom: false }), { theme: "light", keys: false, markRead: false, images: "never", replyFrom: false, shortcuts: {}, activityDays: 90, unmatched: "leave", trashDays: 0, timeZone: "" });
+	assert.equal(cleanPrefs({ unmatched: "leave" }).unmatched, "leave");
+	assert.equal(cleanPrefs({ unmatched: "send" }).unmatched, "leave");
+	assert.equal(cleanPrefs({ activityDays: 180 }).activityDays, 180);
+	assert.equal(cleanPrefs({ activityDays: 30 }).activityDays, 90);
+	assert.ok(!samePrefs({ ...DEFAULT_PREFS, activityDays: 120 }, DEFAULT_PREFS));
 	assert.deepEqual(cleanPrefs({ theme: "neon", keys: "yes", images: 3, extra: 1 }), DEFAULT_PREFS);
 	assert.deepEqual(cleanPrefs(null), DEFAULT_PREFS);
 	assert.deepEqual(cleanPrefs({ images: "always" }, { ...DEFAULT_PREFS, theme: "system" }), { ...DEFAULT_PREFS, theme: "system", images: "always" });
 	assert.ok(samePrefs(cleanPrefs({}), DEFAULT_PREFS));
-	assert.ok(!samePrefs({ ...DEFAULT_PREFS, keys: false }, DEFAULT_PREFS));
+	assert.ok(!samePrefs({ ...DEFAULT_PREFS, keys: true }, DEFAULT_PREFS));
+});
+
+test("Trash and Spam retention is off unless set to 30, 60 or 90 days (WON-212)", () => {
+	assert.equal(DEFAULT_PREFS.trashDays, 0);
+	assert.equal(cleanPrefs({ trashDays: 30 }).trashDays, 30);
+	assert.equal(cleanPrefs({ trashDays: 7 }).trashDays, 0);
+	assert.equal(cleanPrefs({ trashDays: "90" }).trashDays, 0);
+	assert.ok(!samePrefs({ ...DEFAULT_PREFS, trashDays: 60 }, DEFAULT_PREFS));
+});
+
+test("cleanPrefs keeps a time zone Intl knows and drops anything else (#33)", () => {
+	assert.equal(cleanPrefs({ timeZone: "America/New_York" }).timeZone, "America/New_York");
+	assert.equal(cleanPrefs({ timeZone: "Not/A_Zone" }).timeZone, "");
+	assert.equal(cleanPrefs({ timeZone: 5 }, { ...DEFAULT_PREFS, timeZone: "Asia/Tokyo" }).timeZone, "Asia/Tokyo");
+	assert.ok(!samePrefs({ ...DEFAULT_PREFS, timeZone: "Asia/Tokyo" }, DEFAULT_PREFS));
+});
+
+test("cleanPrefs keeps rebound shortcuts that can be bound and drops the rest", () => {
+	const prefs = cleanPrefs({ shortcuts: { archive: ["y", "Escape", 3], help: ["h"], nope: ["q"], star: [] } });
+	assert.deepEqual(prefs.shortcuts, { archive: ["y"], star: [] });
+	assert.deepEqual(cleanPrefs({ theme: "light" }, prefs).shortcuts, prefs.shortcuts);
+	assert.ok(!samePrefs(prefs, DEFAULT_PREFS));
+	assert.ok(samePrefs(cleanPrefs({ shortcuts: { archive: ["y"], star: [] } }), prefs));
 });
 
 test("a deployment with nothing saved reports the defaults as unsaved", async () => {

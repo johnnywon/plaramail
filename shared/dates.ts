@@ -2,13 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-/**
- * Consolidated date formatting utilities.
- *
- * Previously spread across `app/lib/utils.ts` (4 functions) and
- * `workers/lib/html.ts` (`formatEmailDate`). Now one canonical set
- * imported by both the frontend and backend.
- */
+/** Date formatting shared by the frontend and backend. */
 
 /** Parse safely — returns null on invalid dates instead of NaN-date. */
 function safeParse(dateStr: string | undefined | null): Date | null {
@@ -82,19 +76,32 @@ export function formatShortDate(dateStr: string): string {
 	});
 }
 
+/** Whether `Intl` knows this IANA time zone. */
+export function isTimeZone(zone: unknown): zone is string {
+	if (typeof zone !== "string" || !zone) return false;
+	try {
+		new Intl.DateTimeFormat("en-US", { timeZone: zone });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /**
- * Compose quoted replies & backend quoted blocks.
- * "Tue, Apr 15, 2026, 3:42 PM"
+ * Quoted replies the Worker builds.
+ * "Tue, Apr 15, 2026, 3:42 PM" in `timeZone`, or "Tue, Apr 15, 2026, 7:42 PM UTC"
+ * when no valid zone is given, since Workers run in UTC.
  *
  * Uses explicit "en-US" locale for deterministic output on both browser
  * and Cloudflare Workers (which support `toLocaleString`).
  */
-export function formatQuotedDate(dateStr: string | undefined): string {
+export function formatQuotedDate(dateStr: string | undefined, timeZone?: string): string {
 	if (!dateStr) return "";
 	const date = safeParse(dateStr);
 	if (!date) return dateStr;
 
-	return date.toLocaleString("en-US", {
+	const zoned = isTimeZone(timeZone);
+	const text = date.toLocaleString("en-US", {
 		weekday: "short",
 		month: "short",
 		day: "numeric",
@@ -102,5 +109,7 @@ export function formatQuotedDate(dateStr: string | undefined): string {
 		hour: "numeric",
 		minute: "2-digit",
 		hour12: true,
+		timeZone: zoned ? timeZone : "UTC",
 	});
+	return zoned ? text : `${text} UTC`;
 }

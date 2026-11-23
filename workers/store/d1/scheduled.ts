@@ -3,8 +3,8 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 /**
- * Scheduled send on D1, run by the one-minute cron. MailboxDO does this with
- * an alarm at the exact time; on D1 a message goes out up to a minute late.
+ * Scheduled send, run by the one-minute cron. A message goes out up to a
+ * minute after its time.
  *
  * Each run claims due rows before sending (claimed_at), so two overlapping
  * runs can't both send one; the `draft:<id>` send key is the second guard.
@@ -12,6 +12,7 @@
  * Deleting or editing the draft drops its row by foreign key.
  */
 import { Folders } from "../../../shared/folders";
+import { deleteAttachmentFiles } from "../../lib/attachments";
 import { SCHEDULE_MAX_ATTEMPTS, SCHEDULE_RETRY_MS, type ScheduledPayload, sendModeOf } from "../../lib/scheduled-send";
 import { sendMail } from "../../lib/send";
 import type { Env } from "../../types";
@@ -40,6 +41,10 @@ export async function sendDueScheduled(env: Env, sql: Sql, now = Date.now()) {
 		const mailboxId = String(row.mailbox_id);
 		const mailbox = new D1Mailbox(sql, env.BUCKET, mailboxId);
 		let error: string | null;
+		// A refusal by the hourly or daily limit is not a failed attempt: it waits for the limit.
+		let limited = false;
+		// An attempt left in sending may have gone out; retrying can't send it again, so stop.
+		let stuck = false;
 		try {
 			const draft = await mailbox.getEmail(emailId);
 			if (!draft || draft.folder_id !== Folders.DRAFT) {
@@ -49,21 +54,36 @@ export async function sendDueScheduled(env: Env, sql: Sql, now = Date.now()) {
 			const payload = JSON.parse(String(row.payload)) as ScheduledPayload;
 			const result = await sendMail(env, mailboxId, mailbox, payload.email, sendModeOf(payload), { idempotencyKey: `draft:${emailId}` });
 			error = result.ok ? null : result.error;
+			limited = !result.ok && result.status === 429;
+			stuck = !result.ok && result.attempt?.state === "sending";
 		} catch (e) {
 			error = (e as Error).message || "Delivery failed";
+			const key = await sql.first(`SELECT state FROM send_keys WHERE mailbox_id = ? AND key = ?`, mailboxId, `draft:${emailId}`).catch(() => null);
+			stuck = key?.state === "sending";
 		}
-		if (error) {
-			// Count the attempt. With attempts left it retries in 15 minutes; after the last, it keeps its error.
+		if (error && limited) {
+			// Try again in 15 minutes without counting an attempt, until the limit frees up.
 			await sql.run(
-				`UPDATE scheduled_sends SET attempts = attempts + 1, error = ?, claimed_at = NULL,
-					send_at = CASE WHEN attempts + 1 < ? THEN ? ELSE send_at END
-				WHERE email_id = ?`,
-				error.slice(0, 1000), SCHEDULE_MAX_ATTEMPTS, new Date(now + SCHEDULE_RETRY_MS).toISOString(), emailId,
+				`UPDATE scheduled_sends SET error = ?, claimed_at = NULL, send_at = ? WHERE email_id = ?`,
+				error.slice(0, 1000), new Date(now + SCHEDULE_RETRY_MS).toISOString(), emailId,
 			);
 			failed.push(emailId);
 			continue;
 		}
-		await mailbox.deleteEmail(emailId);
+		if (error) {
+			// Count the attempt. With attempts left it retries in 15 minutes; after the last, or when stuck, it keeps its error.
+			const attempts = stuck ? SCHEDULE_MAX_ATTEMPTS : null;
+			await sql.run(
+				`UPDATE scheduled_sends SET attempts = COALESCE(?, attempts + 1), error = ?, claimed_at = NULL,
+					send_at = CASE WHEN ? IS NULL AND attempts + 1 < ? THEN ? ELSE send_at END
+				WHERE email_id = ?`,
+				attempts, error.slice(0, 1000), attempts, SCHEDULE_MAX_ATTEMPTS, new Date(now + SCHEDULE_RETRY_MS).toISOString(), emailId,
+			);
+			failed.push(emailId);
+			continue;
+		}
+		const attachments = await mailbox.deleteEmail(emailId);
+		if (attachments) await deleteAttachmentFiles(env.BUCKET, emailId, attachments);
 		sent.push(emailId);
 	}
 	return { sent, failed };

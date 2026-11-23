@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { loadTs, openDb } from "./helpers/sqlite.mjs";
+import { openD1 } from "./helpers/d1.mjs";
+import { addMessages, d1Db, row } from "./helpers/d1-mail.mjs";
+import { loadTs } from "./helpers/sqlite.mjs";
 
 const idx = await loadTs("workers/lib/mail-index-sql.ts");
 const bulk = await loadTs("workers/lib/mail-bulk-sql.ts");
@@ -8,26 +10,18 @@ const tools = await loadTs("workers/lib/tools.ts");
 
 const labels = [{ id: "receipts", name: "Receipts", color: "#000", count: 0, auto: false }];
 
-function row(email_id, fields = {}) {
-	return {
-		email_id, seq: 1, deleted: false, conversation_id: email_id, message_id: `${email_id}@mail`, state: "inbox",
-		date: "2026-10-09T10:00:00.000Z", sender_addr: "billing@example.org", sender_name: "Billing", sender_domain: "example.org",
-		recipients: "a@example.com", subject: "Your receipt", subject_norm: "your receipt", snippet: "", unread: true, starred: false,
-		has_attachment: false, list_id: null, unsubscribe: null, body_text: "", labels: [], ...fields,
-	};
-}
-
 test("a search spans every address unless it names one", () => {
-	const handle = openDb();
-	idx.createIndexSchema(handle.exec);
-	idx.applyRows(handle.exec, "a@example.com", [row("e1"), row("e2", { sender_addr: "ann@example.net", sender_domain: "example.net", date: "2026-10-08T10:00:00.000Z" })]);
-	idx.applyRows(handle.exec, "b@example.net", [row("e3", { state: "archive", date: "2026-10-10T10:00:00.000Z" })]);
+	const { exec } = d1Db();
+	const msg = (id, fields) => row(id, { sender_addr: "billing@example.org", sender_name: "Billing", sender_domain: "example.org", recipients: "a@example.com", subject: "Your receipt", subject_norm: "your receipt", ...fields });
+	addMessages(exec, "a@example.com", [msg("e1"), msg("e2", { sender_addr: "ann@example.net", sender_domain: "example.net", date: "2026-10-08T10:00:00.000Z" })]);
+	addMessages(exec, "b@example.net", [msg("e3", { state: "archive", date: "2026-10-10T10:00:00.000Z" })]);
+	const matching = (filter, limit) => idx.runSync(bulk.matchingThreadKeysQuery(filter, limit), exec);
 
 	const all = tools.mailSearchFilter({ from: ["example.org"] }, labels);
-	assert.deepEqual(bulk.matchingThreadKeys(handle.exec, all.filter, 10).length, 2, "both addresses, inbox and archive");
+	assert.deepEqual(matching(all.filter, 10).length, 2, "both addresses, inbox and archive");
 	const one = tools.mailSearchFilter({ from: ["example.org"], to: ["b@example.net"] }, labels);
-	assert.equal(bulk.matchingThreadKeys(handle.exec, one.filter, 10).length, 1);
-	assert.equal(bulk.matchingThreadKeys(handle.exec, all.filter, 1).length, 1, "limit holds");
+	assert.equal(matching(one.filter, 10).length, 1);
+	assert.equal(matching(all.filter, 1).length, 1, "limit holds");
 });
 
 test("the search filter refuses unknown labels, folders and an empty search", () => {
@@ -38,23 +32,22 @@ test("the search filter refuses unknown labels, folders and an empty search", ()
 	assert.deepEqual(tools.mailSearchFilter({ unread: false, query: "x" }, labels).filter.is, ["read"]);
 });
 
-test("label_matching labels every match in one bulk call per label", async () => {
-	const calls = [];
-	let matches = ["t1", "t2", "t3"];
-	const indexStub = {
-		listLabels: async () => labels,
-		threadKeysMatching: async () => matches,
-		bulk: async (target, action) => (calls.push({ n: target.threadKeys.length, action }), { affected: 3, undoId: "u", failed: [] }),
-		markLabelsAuto: async () => ({}),
-	};
-	const env = { MAIL_INDEX: { idFromName: () => "global", get: () => indexStub } };
+test("label_matching labels every match, and refuses too many", async () => {
+	const d1 = await openD1();
+	d1.exec(`INSERT INTO labels (id, name, color) VALUES ('receipts', 'Receipts', '#000')`);
+	const billing = (id) => row(id, { sender_addr: "billing@example.org", sender_domain: "example.org", conversation_id: id });
+	addMessages(d1.exec, "a@example.com", [billing("e1"), billing("e2"), row("e3", { sender_addr: "ann@example.net", sender_domain: "example.net" })]);
+	const env = { BUCKET: {}, DB: d1.DB };
+	const labeled = () => d1.exec(`SELECT m.email_id FROM message_labels JOIN messages m ON m.id = message ORDER BY m.email_id`).map((r) => r.email_id);
 
 	const done = await tools.toolLabelMatching(env, { from: ["example.org"] }, { add: ["Receipts"] });
-	assert.deepEqual(done, { status: "updated", conversations: 3, changes: ["added Receipts"] });
-	assert.deepEqual(calls, [{ n: 3, action: { type: "label_add", labelId: "receipts" } }]);
+	assert.deepEqual(done, { status: "updated", conversations: 2, changes: ["added Receipts"] });
+	assert.deepEqual(labeled(), ["e1", "e2"]);
 
-	matches = Array.from({ length: tools.LABEL_MATCHING_MAX + 1 }, (_, i) => `t${i}`);
+	const many = Array.from({ length: tools.LABEL_MATCHING_MAX + 1 }, (_, i) => billing(`m${i}`));
+	addMessages(d1.exec, "b@example.net", many);
+	d1.exec(`DELETE FROM message_labels`);
 	assert.match((await tools.toolLabelMatching(env, { from: ["example.org"] }, { add: ["Receipts"] })).error, /More than/);
-	assert.equal(calls.length, 1, "nothing applied when there are too many");
+	assert.deepEqual(labeled(), [], "nothing applied when there are too many");
 	assert.match((await tools.toolLabelMatching(env, { from: ["example.org"] }, {})).error, /which labels/);
 });

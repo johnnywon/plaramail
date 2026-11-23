@@ -40,5 +40,5 @@ export default function HomeRoute() {
 	}, [emailAddresses, mailboxes, mailboxesFetched]);
 
 	if (!configData) return <div className="flex h-dvh bg-kumo-recessed" />;
-	return <PostalMail addresses={emailAddresses.map((a) => a.toLowerCase())} domains={configData.domains} autoDraft={!!configData.autoDraft} />;
+	return <PostalMail addresses={emailAddresses.map((a) => a.toLowerCase())} domains={configData.domains} autoDraft={!!configData.autoDraft} demo={!!configData.demo} />;
 }

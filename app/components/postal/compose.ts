@@ -7,8 +7,11 @@ import DOMPurify from "dompurify";
 import { useCallback, useMemo } from "react";
 import { extractReplyQuote, getReplyAddresses } from "~/lib/reply";
 import { escapeHtml, getSignatureBlock, htmlToPlainText, splitEmailList } from "~/lib/utils";
+import { messageBytes, messageSizeError } from "../../../shared/message-size";
+import { draftFiles, draftMode, draftSaveFields } from "./draft-mode";
 import { queryKeys } from "~/queries/keys";
 import api from "~/services/api";
+import type { DraftNotes } from "shared/draft-notes";
 import type { Email, Mailbox } from "~/types";
 import { handleOf } from "./identity";
 import { ADDRESS_RE, fullDate } from "./model";
@@ -24,8 +27,27 @@ export interface ComposeFile {
 	name: string;
 	size: number;
 	type: string;
-	/** base64 */
+	/** base64; empty for a file of the forwarded original */
 	content: string;
+	/** A file of the forwarded original, which the Worker copies when it sends. */
+	attachmentId?: string;
+}
+
+/** Why these files and this body are too large to send (WON-215), or null when they fit. */
+export function composeSizeError(files: ComposeFile[], html: string): string | null {
+	return messageSizeError(messageBytes({ html, text: htmlToPlainText(html), fileBytes: files.map((f) => f.size) }));
+}
+
+/** Files as the send request carries them: new files by content, the forwarded original's by id. */
+export function sendFiles(files: ComposeFile[]) {
+	const added = files.filter((f) => !f.attachmentId);
+	const kept = files.flatMap((f) => (f.attachmentId ? [f.attachmentId] : []));
+	return {
+		attachments: added.length
+			? added.map((f) => ({ content: f.content, filename: f.name, type: f.type || "application/octet-stream", disposition: "attachment" as const }))
+			: undefined,
+		forward_attachments: kept.length ? kept : undefined,
+	};
 }
 
 export interface ComposeState {
@@ -57,6 +79,8 @@ export interface ComposeState {
 	askAgent?: boolean;
 	/** Idempotency key for this compose, so a retried Send never sends twice. */
 	sendKey?: string;
+	/** Set when an agent wrote the saved draft: how, and the redraft instructions so far. */
+	notes?: DraftNotes;
 }
 
 export function emptyCompose(from: string): ComposeState {
@@ -84,7 +108,8 @@ export function recipientsToText(list: Recipient[]): string {
 	return list.map((r) => r.addr).join(", ");
 }
 
-function prefixed(subject: string, prefix: "Re" | "Fwd") {
+/** The subject with one Re: or Fwd: in front. Switching Reply and Forward swaps it and keeps the writer's edits. */
+export function prefixed(subject: string, prefix: "Re" | "Fwd") {
 	const base = subject.replace(/^((re|fwd?|fw):\s*)+/i, "");
 	return `${prefix}: ${base}`;
 }
@@ -143,7 +168,11 @@ export function composeFor(mode: Exclude<ComposeMode, "new">, original: Email, m
 		showBcc: false,
 		subject: prefixed(original.subject || "", forward ? "Fwd" : "Re"),
 		html: "",
-		files: [],
+		files: forward
+			? (original.attachments ?? [])
+				.filter((a) => a.disposition !== "inline")
+				.map((a) => ({ name: a.filename, size: a.size, type: a.mimetype, content: "", attachmentId: a.id }))
+			: [],
 		originalId: original.id,
 		originalMailbox: self,
 		quoteHtml,
@@ -163,7 +192,7 @@ export function composeFromDraft(draft: Email, mailboxId: string): ComposeState 
 	const cc = recipientsFromText(draft.cc || "");
 	const bcc = recipientsFromText(draft.bcc || "");
 	return {
-		mode: draft.in_reply_to ? "reply" : "new",
+		mode: draftMode(draft),
 		from: mailboxId,
 		to,
 		cc,
@@ -172,10 +201,11 @@ export function composeFromDraft(draft: Email, mailboxId: string): ComposeState 
 		showBcc: bcc.length > 0,
 		subject: draft.subject || "",
 		html: draft.body || "",
-		files: [],
+		files: draftFiles(draft),
 		draftId: draft.id,
 		originalId: draft.in_reply_to || undefined,
 		originalMailbox: mailboxId,
+		notes: draft.draft_notes,
 	};
 }
 
@@ -233,6 +263,12 @@ function listValue(list: Recipient[]): string | string[] | undefined {
 
 export class ComposeError extends Error {}
 
+/** What the toast says once a message is sent. */
+export function sentText(state: ComposeState): string {
+	const what = { new: "Message sent", reply: "Reply sent", "reply-all": "Reply sent to all", forward: "Forwarded" }[state.mode];
+	return `${what} from ${state.from}`;
+}
+
 /** Whether this message carries its From address's signature. */
 export function usesSignature(state: ComposeState, info: ReadonlyMap<string, AddressInfo>): boolean {
 	const sig = info.get(state.from);
@@ -245,7 +281,7 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 
 	const refresh = useCallback(
 		(mailboxId: string) => {
-			for (const queryKey of [["mail"], ["mail-facets"], ["emails", mailboxId], ["scheduled"]]) queryClient.invalidateQueries({ queryKey });
+			for (const queryKey of [["mail"], ["mail-facets"], ["emails", mailboxId], ["scheduled"], ["agent-drafts"]]) queryClient.invalidateQueries({ queryKey });
 		},
 		[queryClient],
 	);
@@ -259,6 +295,8 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 			const sender = info.get(state.from);
 			const name = sender?.name;
 			const html = `${state.html || "<p></p>"}${usesSignature(state, info) ? sender?.signatureHtml ?? "" : ""}${state.quoteHtml ?? ""}`;
+			const tooLarge = composeSizeError(state.files, html);
+			if (tooLarge) throw new ComposeError(tooLarge);
 			return {
 				to,
 				cc: listValue(state.cc),
@@ -267,16 +305,18 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 				subject: state.subject,
 				html,
 				text: htmlToPlainText(html),
-				attachments: state.files.length
-					? state.files.map((f) => ({ content: f.content, filename: f.name, type: f.type || "application/octet-stream", disposition: "attachment" as const }))
-					: undefined,
+				...sendFiles(state.files),
 			};
 		},
 		[info],
 	);
 
+	/** Throws the ComposeError a send would, without sending. */
+	const check = useCallback((state: ComposeState) => void payload(state), [payload]);
+
+	/** Sends now. Resolves false: the message is sent, not held (see send-hold.ts). */
 	const send = useCallback(
-		async (state: ComposeState) => {
+		async (state: ComposeState): Promise<boolean> => {
 			const email = payload(state);
 			const replying = (state.mode === "reply" || state.mode === "reply-all") && state.originalId;
 			const key = state.sendKey ?? (state.draftId ? `draft:${state.draftId}` : undefined);
@@ -285,6 +325,7 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 			else await api.sendEmail(state.from, email, key);
 			if (state.draftId) await api.deleteEmail(state.from, state.draftId).catch(() => {});
 			refresh(state.from);
+			return false;
 		},
 		[payload, refresh],
 	);
@@ -299,6 +340,7 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 				body: `${state.html}${state.quoteHtml ?? ""}`,
 				in_reply_to: state.originalId,
 				draft_id: state.draftId,
+				...draftSaveFields(state),
 			});
 			refresh(state.from);
 			return (result as { id?: string; draft_id?: string }).id ?? (result as { draft_id?: string }).draft_id ?? "";
@@ -330,7 +372,7 @@ export function useMailSender(info: ReadonlyMap<string, AddressInfo>) {
 		[payload, refresh],
 	);
 
-	return { send, save, discard, schedule };
+	return { check, send, save, discard, schedule };
 }
 
 export async function readFiles(list: FileList | File[]): Promise<ComposeFile[]> {
@@ -362,7 +404,7 @@ export function textToParagraphs(text: string): string {
 
 // ── Pop-out handoff ──────────────────────────────────────────────────
 
-export const HANDOFF_KEY = "agp-compose-handoff";
+export const HANDOFF_KEY = "pm-compose-handoff";
 
 export function handOff(state: ComposeState): boolean {
 	try {
@@ -370,7 +412,7 @@ export function handOff(state: ComposeState): boolean {
 	} catch {
 		return false;
 	}
-	const win = window.open(`${window.location.pathname}${window.location.search}#compose`, `agp-compose-${Date.now()}`, "width=760,height=780");
+	const win = window.open(`${window.location.pathname}${window.location.search}#compose`, `pm-compose-${Date.now()}`, "width=760,height=780");
 	return !!win;
 }
 

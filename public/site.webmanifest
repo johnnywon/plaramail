@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Agents Go Postal",
-  "short_name": "AGP",
+  "name": "PlaraMail",
+  "short_name": "PlaraMail",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

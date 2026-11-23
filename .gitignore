@@ -20,4 +20,7 @@ worker-configuration.d.ts
 .gstack/
 # Local dev config with your account ID (npm run dev:local)
 wrangler.local.jsonc
+wrangler.qa.jsonc
 CLAUDE.local.md
+/test-results/
+/playwright-report/

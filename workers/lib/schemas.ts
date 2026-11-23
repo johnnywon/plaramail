@@ -11,6 +11,7 @@
  * Zod schemas: used across route handlers to eliminate duplication.
  */
 import { z } from "zod";
+import type { DraftNotes } from "../../shared/draft-notes";
 
 // ── TypeScript Interfaces ──────────────────────────────────────────
 
@@ -36,6 +37,8 @@ export interface EmailFull extends EmailMetadata {
 	message_id?: string | null;
 	raw_headers?: string | null;
 	attachments?: AttachmentInfo[];
+	/** Drafts an agent made: how it made them. */
+	draft_notes?: DraftNotes;
 }
 
 export interface AttachmentInfo {
@@ -54,6 +57,34 @@ const RecipientFieldSchema = z.union([
 	z.array(z.string().email()).min(1),
 ]);
 
+export const HeaderSafeStringSchema = z.string().max(998).refine((value) => !/[\r\n]/.test(value), {
+	message: "must not contain line breaks",
+});
+export const HeaderValueSchema = HeaderSafeStringSchema;
+
+export function hasHeaderLineBreaks(...values: (string | null | undefined)[]): boolean {
+	return values.some((value) => value != null && /[\r\n]/.test(value));
+}
+
+export const MailboxSettingsSchema = z.object({
+	fromName: z.string().max(200).optional(),
+	forwarding: z.object({
+		enabled: z.boolean(),
+		email: z.union([z.literal(""), z.string().email()]),
+	}).optional(),
+	signature: z.object({
+		enabled: z.boolean(),
+		text: z.string().max(10000),
+		html: z.string().optional(),
+	}).optional(),
+	autoReply: z.object({
+		enabled: z.boolean(),
+		subject: HeaderValueSchema,
+		message: z.string().max(10000),
+	}).optional(),
+	agentSystemPrompt: z.string().max(20000).optional(),
+});
+
 export const ErrorResponseSchema = z.object({
 	error: z.string(),
 });
@@ -67,7 +98,7 @@ export const SendEmailRequestSchema = z
 			z.string().email(),
 			z.object({ email: z.string().email(), name: z.string() }),
 		]),
-		subject: z.string(),
+		subject: HeaderValueSchema,
 		html: z.string().optional(),
 		text: z.string().optional(),
 		attachments: z
@@ -81,9 +112,11 @@ export const SendEmailRequestSchema = z
 				}),
 			)
 			.optional(),
-		in_reply_to: z.string().optional(),
-		references: z.array(z.string()).optional(),
-		thread_id: z.string().optional(),
+		/** On a forward: ids of the original's attachments to send with it, copied from R2. */
+		forward_attachments: z.array(z.string().min(1).max(100)).max(50).optional(),
+		in_reply_to: HeaderValueSchema.optional(),
+		references: z.array(HeaderValueSchema).max(100).optional(),
+		thread_id: HeaderValueSchema.optional(),
 	})
 	.refine((data) => data.html || data.text, {
 		message: "Either 'html' or 'text' must be provided",

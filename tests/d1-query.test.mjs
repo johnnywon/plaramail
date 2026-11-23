@@ -5,8 +5,8 @@ import { Miniflare } from "miniflare";
 import { loadTs, openDb } from "./helpers/sqlite.mjs";
 import { D1_SCHEMA } from "./helpers/d1-schema.mjs";
 
-// The combined list, facet and folder queries (mail-index-sql.ts) run on the
-// D1 schema unchanged: synchronously on node:sqlite and asynchronously on D1.
+// The combined list, facet and folder queries (mail-index-sql.ts) run the
+// same on node:sqlite (synchronously, as unit tests run them) and on D1.
 
 const idx = await loadTs("workers/lib/mail-index-sql.ts");
 const SCHEMA = D1_SCHEMA;
@@ -73,7 +73,7 @@ const QUERIES = {
 	address: () => idx.mailQuery(filter({ view: "all", address: ["b@example.org"] }), { now: NOW }),
 	from: () => idx.mailQuery(filter({ view: "all", from: ["example.org"] }), { now: NOW }),
 	label: () => idx.mailQuery(filter({ view: "all", label: ["money"] }), { now: NOW }),
-	search: () => idx.mailQuery(filter({ view: "all", q: "invoice" }), { now: NOW }),
+	search: () => idx.mailQuery(filter({ view: "all", q: "invoice sort:date" }), { now: NOW }),
 	page: () => idx.mailQuery(filter({ view: "all" }), { now: NOW, limit: 2 }),
 	folder: () => idx.mailQuery(filter({ view: "folder:receipts" }), { now: NOW }),
 	facets: () => idx.facetsQuery(filter({ view: "all" }), NOW),

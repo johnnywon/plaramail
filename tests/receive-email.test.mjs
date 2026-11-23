@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "esbuild";
+import { NODE_REQUIRE } from "./helpers/node-require.mjs";
+import { openD1 } from "./helpers/d1.mjs";
 
 const bundle = await build({
 	entryPoints: ["workers/index.ts"],
 	bundle: true,
-	platform: "node",
+	platform: "node", banner: NODE_REQUIRE,
 	format: "esm",
 	write: false,
 });
@@ -18,35 +20,29 @@ function rawMessage(headers, subject = "Routing test") {
 	return { rawSize: raw.length, raw: new ReadableStream({ start(controller) { controller.enqueue(raw); controller.close(); } }) };
 }
 
-// A bucket with no mailboxes yet, and Durable Objects that record what they are asked to do.
-function freshEnvironment(addresses) {
-	const objects = new Map();
-	const calls = [];
+// A database with no mailboxes yet.
+async function freshEnvironment(addresses, prefs = null) {
+	const d1 = await openD1();
 	return {
-		calls,
-		objects,
+		d1,
 		env: {
-			EMAIL_ADDRESSES: addresses,
-			BUCKET: {
-				head: async (key) => (calls.push(["head", key]), objects.has(key) ? {} : null),
-				put: async (key, value) => { calls.push(["put", key]); objects.set(key, value); },
-			},
-			MAILBOX: {
-				idFromName: (name) => name,
-				get: (id) => ({
-					setMailboxId: async (email) => calls.push(["setMailboxId", id, email]),
-					findThreadBySubject: async () => null,
-					createEmail: async (folder, email) => calls.push(["createEmail", id, folder, email.subject]),
-				}),
-			},
+			EMAIL_ADDRESSES: addresses, DB: d1.DB,
+			BUCKET: { head: async () => ({}), get: async (key) => (key === "config/prefs.json" && prefs ? { json: async () => prefs } : null) },
+		},
+		/** [mailbox, folder, subject] of every stored message. */
+		stored: async () => (await d1.sql.all(`SELECT mailbox_id, folder_id, subject FROM messages ORDER BY id`))
+			.map((r) => [r.mailbox_id, r.folder_id, r.subject]),
+		settings: async (id) => {
+			const row = await d1.sql.first(`SELECT settings FROM mailboxes WHERE id = ?`, id);
+			return row ? JSON.parse(row.settings) : null;
 		},
 	};
 }
 
-async function deliveredMailbox(envelopeTo, headers) {
-	const { env, calls } = freshEnvironment(["hello@example.com", "support@example.org"]);
-	await receiveEmail({ to: envelopeTo, ...rawMessage(headers) }, env, { waitUntil: () => {} });
-	return calls.filter(([op]) => op === "createEmail").map(([, id]) => id);
+async function deliveredMailbox(envelopeTo, headers, rejections = []) {
+	const { env, stored } = await freshEnvironment(["hello@example.com", "support@example.org"]);
+	await receiveEmail({ to: envelopeTo, ...rawMessage(headers), setReject: (reason) => rejections.push(reason) }, env, { waitUntil: () => {} });
+	return (await stored()).map(([mailbox]) => mailbox);
 }
 
 test("a delivery to the second To address reaches its own mailbox", async () => {
@@ -64,105 +60,125 @@ test("a Bcc delivery reaches its envelope mailbox", async () => {
 });
 
 test("an unconfigured envelope recipient is ignored", async () => {
+	const rejections = [];
 	assert.deepEqual(
-		await deliveredMailbox("other@example.net", "To: hello@example.com"),
+		await deliveredMailbox("other@example.net", "To: hello@example.com", rejections),
 		[],
 	);
+	assert.deepEqual(rejections, ["Unknown recipient"]);
 });
 
 test("the first delivery to a configured address creates its mailbox and keeps the message", async () => {
-	const { env, calls, objects } = freshEnvironment(["hello@example.com"]);
-	await receiveEmail({ to: "Hello@Example.com", ...rawMessage("To: hello@example.com", "Before anyone signed in") }, env, { waitUntil: () => {} });
-	assert.deepEqual(JSON.parse(objects.get("mailboxes/hello@example.com.json")).fromName, "hello");
-	assert.deepEqual(calls.filter(([op]) => op !== "head"), [
-		["put", "mailboxes/hello@example.com.json"],
-		["setMailboxId", "hello@example.com", "hello@example.com"],
-		["createEmail", "hello@example.com", "inbox", "Before anyone signed in"],
-	]);
+	const { env, stored, settings } = await freshEnvironment(["hello@example.com"]);
+	await receiveEmail({ to: "Hello@Example.com", ...rawMessage("To: hello@example.com", "Before anyone signed in"), setReject: () => {} }, env, { waitUntil: () => {} });
+	assert.equal((await settings("hello@example.com")).fromName, "hello");
+	assert.deepEqual(await stored(), [["hello@example.com", "inbox", "Before anyone signed in"]]);
 });
 
 test("a later delivery leaves the existing mailbox settings alone", async () => {
-	const { env, calls, objects } = freshEnvironment(["hello@example.com"]);
-	objects.set("mailboxes/hello@example.com.json", JSON.stringify({ fromName: "Custom" }));
-	await receiveEmail({ to: "hello@example.com", ...rawMessage("To: hello@example.com") }, env, { waitUntil: () => {} });
-	assert.equal(JSON.parse(objects.get("mailboxes/hello@example.com.json")).fromName, "Custom");
-	assert.deepEqual(calls.filter(([op]) => op === "put" || op === "setMailboxId"), []);
+	const { d1, env, stored, settings } = await freshEnvironment(["hello@example.com"]);
+	await d1.addMailboxes("hello@example.com");
+	await d1.sql.run(`UPDATE mailboxes SET settings = ? WHERE id = ?`, JSON.stringify({ fromName: "Custom" }), "hello@example.com");
+	await receiveEmail({ to: "hello@example.com", ...rawMessage("To: hello@example.com"), setReject: () => {} }, env, { waitUntil: () => {} });
+	assert.equal((await settings("hello@example.com")).fromName, "Custom");
+	assert.equal((await stored()).length, 1);
 });
 
 test("without EMAIL_ADDRESSES, mail for a mailbox nobody created is ignored", async () => {
-	const { env, calls } = freshEnvironment([]);
-	await receiveEmail({ to: "anyone@example.com", ...rawMessage("To: anyone@example.com") }, env, { waitUntil: () => {} });
-	assert.deepEqual(calls, [["head", "mailboxes/anyone@example.com.json"]]);
+	const { d1, env, stored } = await freshEnvironment([]);
+	const rejections = [];
+	await receiveEmail({ to: "anyone@example.com", ...rawMessage("To: anyone@example.com"), setReject: (reason) => rejections.push(reason) }, env, { waitUntil: () => {} });
+	assert.deepEqual(await stored(), []);
+	assert.deepEqual(await d1.sql.all(`SELECT id FROM mailboxes`), []);
+	assert.deepEqual(rejections, ["Unknown recipient"]);
+});
+
+/** An enabled agent on every address with one rule, as Console > Your agents saves it. */
+const addAgent = (d1, rules = []) => d1.sql.run(
+	`INSERT INTO agents (id, name, job, addresses, rules, mode, created_at, updated_at) VALUES ('a1', 'Ann', 'Answer questions', '[]', ?, 'draft', 'x', 'x')`,
+	JSON.stringify(rules),
+);
+
+/** Deliver one message; returns whether the agent was asked to draft. */
+async function agentAsked(raw, env) {
+	let asked = false;
+	const background = [];
+	await receiveEmail(
+		{ to: "jane@example.org", rawSize: raw.length, raw: new ReadableStream({ start(c) { c.enqueue(raw); c.close(); } }), setReject: () => {} },
+		{ ...env, EMAIL_AGENT: { idFromName: (name) => name, get: () => ({ handleNewEmail: async () => { asked = true; return { status: "drafted", draftId: null }; } }) } },
+		{ waitUntil: (promise) => background.push(promise) },
+	);
+	await Promise.all(background);
+	return asked;
+}
+
+const message = (subject) => new TextEncoder().encode(`From: sender@example.net\r\nTo: jane@example.org\r\nSubject: ${subject}\r\n\r\nHello`);
+
+test("new mail goes to the agent only when an agent's rules take it", async () => {
+	const { d1, env } = await freshEnvironment(["jane@example.org"]);
+	await addAgent(d1, [{ field: "subject", op: "contains", value: "invoice" }]);
+	assert.equal(await agentAsked(message("Lunch?"), env), false, "no agent takes it: nothing runs");
+	assert.equal(await agentAsked(message("Invoice 42"), env), true);
+});
+
+test("mail no agent takes is drafted only when the PlaraMail Agent is set to draft it", async () => {
+	const leave = await freshEnvironment(["jane@example.org"]);
+	assert.equal(await agentAsked(message("Hello"), leave.env), false, "the default leaves it");
+	const draft = await freshEnvironment(["jane@example.org"], { unmatched: "draft" });
+	assert.equal(await agentAsked(message("Hello"), draft.env), true);
 });
 
 test("an inbound message triggers the receiving agent through RPC", async () => {
 	const raw = new TextEncoder().encode(
 		"From: sender@example.net\r\nTo: jane@example.org\r\nSubject: Draft me\r\n\r\nHello",
 	);
-	let savedEmail;
 	let agentInput;
 	const background = [];
-	const mailbox = {
-		findThreadBySubject: async () => null,
-		createEmail: async (_folder, email) => { savedEmail = email; },
-	};
+	const { d1, env } = await freshEnvironment(["jane@example.org"]);
+	await addAgent(d1);
 	const agent = {
 		fetch: async () => { throw new Error("Direct agent fetch is unsupported"); },
-		handleNewEmail: async (input) => { agentInput = input; },
+		handleNewEmail: async (input) => { agentInput = input; return { status: "drafted", draftId: null }; },
 	};
 	await receiveEmail(
 		{
 			to: "jane@example.org",
 			rawSize: raw.length,
 			raw: new ReadableStream({ start(controller) { controller.enqueue(raw); controller.close(); } }),
+			setReject: () => {},
 		},
-		{
-			AUTO_DRAFT_ENABLED: "true",
-			EMAIL_ADDRESSES: ["jane@example.org"],
-			BUCKET: { head: async () => ({}) },
-			MAILBOX: { idFromName: (name) => name, get: () => mailbox },
-			EMAIL_AGENT: { idFromName: (name) => name, get: () => agent },
-		},
+		{ ...env, EMAIL_AGENT: { idFromName: (name) => name, get: () => agent } },
 		{ waitUntil: (promise) => background.push(promise) },
 	);
 	await Promise.all(background);
+	const savedEmail = await d1.sql.first(`SELECT email_id AS id, subject, thread_id FROM messages`);
 	assert.equal(savedEmail.subject, "Draft me");
 	assert.deepEqual(agentInput, {
 		mailboxId: "jane@example.org",
 		emailId: savedEmail.id,
 		sender: "sender@example.net",
-		subject: "Draft me",
 		threadId: savedEmail.thread_id,
 	});
+	// The run is recorded and settled.
+	assert.deepEqual(await d1.sql.first(`SELECT state, attempts FROM auto_draft_runs WHERE email_id = ?`, savedEmail.id), { state: "drafted", attempts: 1 });
 });
 
-test("inbound mail is saved without triggering the agent when auto-drafting is off", async () => {
+test("inbound mail is saved without triggering the agent when no agent takes it", async () => {
 	const raw = new TextEncoder().encode(
 		"From: sender@example.net\r\nTo: jane@example.org\r\nSubject: No automatic draft\r\n\r\nHello",
 	);
-	let savedEmail;
 	const background = [];
+	const { d1, env } = await freshEnvironment(["jane@example.org"]);
 	await receiveEmail(
 		{
 			to: "jane@example.org",
 			rawSize: raw.length,
 			raw: new ReadableStream({ start(controller) { controller.enqueue(raw); controller.close(); } }),
+			setReject: () => {},
 		},
-		{
-			AUTO_DRAFT_ENABLED: "false",
-			EMAIL_ADDRESSES: ["jane@example.org"],
-			BUCKET: { head: async () => ({}) },
-			MAILBOX: {
-				idFromName: (name) => name,
-				get: () => ({
-					findThreadBySubject: async () => null,
-					createEmail: async (_folder, email) => { savedEmail = email; },
-				}),
-			},
-			EMAIL_AGENT: { idFromName: () => { throw new Error("Agent must not be called"); } },
-		},
+		{ ...env, EMAIL_AGENT: { idFromName: () => { throw new Error("Agent must not be called"); } } },
 		{ waitUntil: (promise) => background.push(promise) },
 	);
-	assert.equal(savedEmail.subject, "No automatic draft");
+	assert.equal((await d1.sql.first(`SELECT subject FROM messages`)).subject, "No automatic draft");
 	assert.equal(background.length, 0);
 });

@@ -4,9 +4,7 @@
 
 /**
  * Compiles a SearchQuery (shared/search-query.ts) to WHERE clauses over
- * `messages m`. The same SQL runs on the combined index (MailIndexDO) and on
- * D1, whose tables share the column names. A few operators need tables only
- * D1 has; on the index they are an error.
+ * `messages m` on D1.
  *
  * Every word, phrase and text operator goes into one FTS5 expression, so a
  * statement never holds more than one MATCH. Phase 0 found that two MATCHes
@@ -14,8 +12,7 @@
  * the database; tests/search-compile.test.mjs checks every statement.
  */
 import { type DateValue, IN_VALUES, type Leaf, type SearchQuery, type Term } from "../../shared/search-query";
-
-export type SearchEngine = "index" | "d1";
+import { foldLetters } from "../lib/search-fold";
 
 export interface Clause {
 	sql: string;
@@ -55,7 +52,7 @@ export function viewClause(view: string): Clause | null {
 }
 
 /** A quoted FTS5 phrase. Inside quotes FTS5 only tokenizes, so user text is never query syntax. */
-const phrase = (text: string, prefix: boolean) => `"${text.replace(/"/g, '""')}"${prefix ? "*" : ""}`;
+const phrase = (text: string, prefix: boolean) => `"${foldLetters(text).replace(/"/g, '""')}"${prefix ? "*" : ""}`;
 
 /** Each word as a prefix phrase, ANDed, in the given columns (all when empty). */
 function words(text: string, columns: string): string | null {
@@ -81,46 +78,72 @@ export function resolveDate(value: DateValue, now: number, tzOffset: number): st
 		case "instant": return value.iso;
 		case "day": return new Date(Date.UTC(value.year, value.month - 1, value.day) + tzOffset * 60_000).toISOString();
 		case "ago": {
-			const d = new Date(now);
 			if (value.unit === "d") return new Date(now - value.amount * DAY_MS).toISOString();
 			if (value.unit === "w") return new Date(now - value.amount * 7 * DAY_MS).toISOString();
-			if (value.unit === "m") d.setUTCMonth(d.getUTCMonth() - value.amount);
-			else d.setUTCFullYear(d.getUTCFullYear() - value.amount);
+			// The same day in the target month, or its last day: 1m before March 31 is February 28.
+			const d = new Date(now);
+			const months = d.getUTCFullYear() * 12 + d.getUTCMonth() - (value.unit === "m" ? value.amount : value.amount * 12);
+			const year = Math.floor(months / 12);
+			const month = months - year * 12;
+			const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+			d.setUTCFullYear(year, month, Math.min(d.getUTCDate(), lastDay));
 			return d.toISOString();
 		}
 	}
 }
 
-type Compiled = { fts: string } | { sql: Clause } | { error: string } | null;
+/**
+ * A word-index phrase also matches addresses that end the same way
+ * (`ann@example.org` is the words of `jo.ann@example.org`), so a full address
+ * carries the exact check too.
+ */
+type Compiled = { fts: string; exact?: Clause } | { sql: Clause } | { error: string } | null;
 
-const D1_ONLY = "works once mail is stored in D1";
+const FULL_ADDRESS = /^[^@\s]+@[^@\s]+$/;
 
-function compileLeaf(leaf: Leaf, engine: SearchEngine, now: number, tzOffset: number): Compiled {
+/** `from:` or `to:` with a full address: that address and no other. */
+function exactAddress(op: "from" | "to", value: string): Clause | null {
+	const v = value.trim().toLowerCase();
+	if (!FULL_ADDRESS.test(v)) return null;
+	if (op === "from") return { sql: `m.sender_addr = ?`, params: [v] };
+	// `recipients` is To, Cc and Bcc joined with ", ", lowercased.
+	return {
+		sql: `instr(' ' || replace(replace(replace(replace(m.recipients, ',', ' '), ';', ' '), '<', ' '), '>', ' ') || ' ', ?) > 0`,
+		params: [` ${v} `],
+	};
+}
+
+function compileLeaf(leaf: Leaf, now: number, tzOffset: number): Compiled {
 	const fts = (expr: string | null): Compiled => (expr ? { fts: expr } : null);
 	const sql = (text: string, ...params: unknown[]): Compiled => ({ sql: { sql: text, params } });
-	const d1 = (label: string, build: () => Compiled): Compiled => (engine === "d1" ? build() : { error: `${label} ${D1_ONLY}` });
 	switch (leaf.type) {
 		case "word": return fts(textLeaf(leaf.text, false, ""));
 		case "phrase": return fts(textLeaf(leaf.text, true, ""));
 		case "date": return sql(`m.date ${leaf.op === "before" ? "<" : ">="} ?`, resolveDate(leaf.value, now, tzOffset));
-		case "size": return d1(`${leaf.op}:`, () => sql(`m.size ${leaf.op === "larger" ? ">" : "<"} ?`, leaf.bytes));
+		case "size": return sql(`m.size ${leaf.op === "larger" ? ">" : "<"} ?`, leaf.bytes);
 	}
 	const { value } = leaf;
 	switch (leaf.op) {
 		case "subject": return fts(textLeaf(value, leaf.phrase, "subject : "));
-		case "from": return fts(personLeaf(value, leaf.phrase, "{sender_name sender_addr}", "sender_addr"));
-		case "to": return fts(personLeaf(value, leaf.phrase, "recipients", "recipients"));
-		case "filename": return d1("filename:", () => fts(textLeaf(value, leaf.phrase, "attachment_names : ")));
-		case "cc": return d1("cc:", () => sql(`instr(lower(COALESCE(m.cc, '')), ?) > 0`, value.replace(/^@/, "")));
+		case "from":
+		case "to": {
+			const expr = leaf.op === "from"
+				? personLeaf(value, leaf.phrase, "{sender_name sender_addr}", "sender_addr")
+				: personLeaf(value, leaf.phrase, "recipients", "recipients");
+			const exact = leaf.phrase ? null : exactAddress(leaf.op, value);
+			return expr && exact ? { fts: expr, exact } : fts(expr);
+		}
+		case "filename": return fts(textLeaf(value, leaf.phrase, "attachment_names : "));
+		case "cc": return sql(`instr(lower(COALESCE(m.cc, '')), ?) > 0`, value.replace(/^@/, ""));
 		case "list": return sql(`instr(lower(COALESCE(m.list_id, '')), ?) > 0`, value);
 		case "label": {
+			// The current name, spaces optionally written as hyphens. Not the id: it keeps the label's first name.
 			const v = value.toLowerCase();
-			return sql(`m.id IN (SELECT ml.message FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE l.id = ? OR lower(l.name) = ?)`, v, v);
+			return sql(`m.id IN (SELECT ml.message FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE lower(l.name) = ? OR replace(lower(l.name), ' ', '-') = ?)`, v, v);
 		}
 		case "in": {
 			const view = value === "draft" ? "drafts" : value;
 			if ((IN_VALUES as readonly string[]).includes(view)) return { sql: viewClause(view)! };
-			if (engine === "index") return sql(`m.state = ?`, `folder:${value}`);
 			return sql(
 				`m.state IN (SELECT 'folder:' || f.id FROM folders f WHERE f.mailbox_id = m.mailbox_id AND (f.id = ? OR lower(f.name) = ?))`,
 				value, value,
@@ -131,7 +154,7 @@ function compileLeaf(leaf: Leaf, engine: SearchEngine, now: number, tzOffset: nu
 				case "unread": return sql(`m.unread = 1`);
 				case "read": return sql(`m.unread = 0`);
 				case "starred": return sql(`m.starred = 1`);
-				case "scheduled": return d1("is:scheduled", () => sql(`m.email_id IN (SELECT email_id FROM scheduled_sends)`));
+				case "scheduled": return sql(`m.email_id IN (SELECT email_id FROM scheduled_sends)`);
 				case "replied":
 					// A later message sent in the same conversation.
 					return sql(`m.state != 'sent' AND EXISTS (SELECT 1 FROM messages r WHERE r.thread_key = m.thread_key AND r.state = 'sent' AND r.deleted = 0 AND r.date > m.date)`);
@@ -143,12 +166,12 @@ function compileLeaf(leaf: Leaf, engine: SearchEngine, now: number, tzOffset: nu
 				case "unsubscribe": return sql(`m.unsubscribe IS NOT NULL`);
 				case "draft": return sql(`EXISTS (SELECT 1 FROM messages d WHERE d.thread_key = m.thread_key AND d.state = 'draft' AND d.deleted = 0)`);
 				case "pdf":
-					return d1("has:pdf", () => sql(`EXISTS (SELECT 1 FROM attachments a WHERE a.email_id = m.email_id AND (a.mimetype = 'application/pdf' OR lower(a.filename) LIKE '%.pdf'))`));
+					return sql(`EXISTS (SELECT 1 FROM attachments a WHERE a.email_id = m.email_id AND (a.mimetype = 'application/pdf' OR lower(a.filename) LIKE '%.pdf'))`);
 				case "image":
-					return d1("has:image", () => sql(`EXISTS (SELECT 1 FROM attachments a WHERE a.email_id = m.email_id AND a.mimetype LIKE 'image/%' AND COALESCE(a.disposition, 'attachment') != 'inline')`));
+					return sql(`EXISTS (SELECT 1 FROM attachments a WHERE a.email_id = m.email_id AND a.mimetype LIKE 'image/%' AND COALESCE(a.disposition, 'attachment') != 'inline')`);
 				case "link":
 					// Set when mail is stored (migrations/0002_has_link.sql); older mail is checked by the cron.
-					return d1("has:link", () => sql(`m.has_link = 1`));
+					return sql(`m.has_link = 1`);
 			}
 			break;
 	}
@@ -158,7 +181,6 @@ function compileLeaf(leaf: Leaf, engine: SearchEngine, now: number, tzOffset: nu
 const or = (list: string[]) => (list.length === 1 ? list[0] : `(${list.join(" OR ")})`);
 
 export interface CompileOptions {
-	engine: SearchEngine;
 	now: number;
 	tzOffset: number;
 	/** Match only the newest this-many messages, for facet counts over broad words. */
@@ -189,11 +211,24 @@ export function compileSearch(query: Pick<SearchQuery, "terms" | "errors">, opti
 			clauses.push({ sql: `m.id IN (SELECT value FROM json_each(?))`, params: [JSON.stringify(ids)] });
 			continue;
 		}
-		const parts = term.any.map((leaf) => compileLeaf(leaf, options.engine, options.now, options.tzOffset));
+		const parts = term.any.map((leaf) => compileLeaf(leaf, options.now, options.tzOffset));
 		const failed = parts.find((p): p is { error: string } => !!p && "error" in p);
 		if (failed) {
 			errors.push(failed.error);
 			continue;
+		}
+		const exacts = parts.flatMap((p) => (p && "exact" in p && p.exact ? [p.exact] : []));
+		if (exacts.length > 0 && exacts.length === parts.length) {
+			// Only full addresses: the exact check decides. A positive term keeps
+			// the phrases too, so the word index narrows the rows first.
+			const joined: Clause = exacts.length === 1
+				? exacts[0]
+				: { sql: `(${exacts.map((c) => c.sql).join(" OR ")})`, params: exacts.flatMap((c) => c.params) };
+			if (term.negate) {
+				clauses.push({ sql: `NOT (${joined.sql})`, params: joined.params });
+				continue;
+			}
+			clauses.push(joined);
 		}
 		const ftsParts = parts.flatMap((p) => (p && "fts" in p ? [p.fts] : []));
 		const sqlParts = parts.flatMap((p) => (p && "sql" in p ? [p.sql] : []));

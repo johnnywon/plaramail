@@ -134,10 +134,11 @@ export function openParam(ref: OpenRef): string {
 	return `${ref.mailboxId}:${ref.emailId}`;
 }
 
-/** Full URL search for a filter plus the open conversation. */
-export function toSearch(filter: MailFilter, open?: OpenRef | null): string {
+/** Full URL search for a filter plus the open conversation and the search text. */
+export function toSearch(filter: MailFilter, open?: OpenRef | null, search = ""): string {
 	const params = filterToParams(filter);
 	if (open) params.set("open", openParam(open));
+	if (search.trim()) params.set("search", search);
 	return `?${params}`;
 }
 
@@ -162,18 +163,38 @@ export interface LabelRef {
 const IN_VIEWS: Record<string, string> = { draft: "drafts", drafts: "drafts", inbox: "inbox", sent: "sent", archive: "archive", spam: "spam", trash: "trash", all: "all", starred: "starred", unread: "unread" };
 
 function resolveLabel(value: string, labels: readonly LabelRef[]): string | null {
+	// The current name, spaces optionally written as hyphens. Not the id: it keeps the label's first name.
 	const v = value.trim().toLowerCase();
-	return labels.find((l) => l.id === v || l.name.toLowerCase() === v)?.id ?? null;
+	return labels.find((l) => l.name.toLowerCase() === v || l.name.toLowerCase().replace(/\s+/g, "-") === v)?.id ?? null;
+}
+
+/** Your own addresses and domains: `to:` picks an address chip only for these. */
+export interface OwnAddresses {
+	addresses: readonly string[];
+	domains?: readonly string[];
+}
+
+const NO_ADDRESSES: OwnAddresses = { addresses: [] };
+
+/** Whether `to:value` names one of your addresses, a domain of yours, or a local part of yours. */
+function ownsAddress(value: string, own: OwnAddresses): boolean {
+	const v = value.toLowerCase();
+	const domain = v.replace(/^@/, "");
+	if (!v.includes("@") || v.startsWith("@")) {
+		if ((own.domains ?? []).some((d) => d.toLowerCase() === domain)) return true;
+	}
+	return own.addresses.some((a) => addressMatches(v, a.toLowerCase()));
 }
 
 /** The chip a lone, not excluded item becomes, or the view `in:` picks. Null leaves it in the search text. */
-function chipOf(leaf: Leaf, labels: readonly LabelRef[]): Chip | { view: string } | null {
+function chipOf(leaf: Leaf, labels: readonly LabelRef[], own: OwnAddresses): Chip | { view: string } | null {
 	if (leaf.type === "date") return leaf.value.kind === "day" ? { kind: leaf.op, value: formatLeaf(leaf).slice(leaf.op.length + 1) } : null;
 	if (leaf.type !== "op") return null;
 	const { op, value } = leaf;
 	switch (op) {
 		case "from": return !leaf.phrase && (value.includes("@") || value.includes(".")) ? { kind: "from", value } : null;
-		case "to": return leaf.phrase ? null : { kind: "address", value };
+		// Any other value matches the recipient on the server, as the API and agents run it.
+		case "to": return !leaf.phrase && ownsAddress(value, own) ? { kind: "address", value } : null;
 		case "subject": return leaf.phrase ? null : { kind: "subject", value };
 		case "label": {
 			const id = resolveLabel(value, labels);
@@ -189,17 +210,17 @@ function chipOf(leaf: Leaf, labels: readonly LabelRef[]): Chip | { view: string 
 /**
  * Turn search text into chips with the shared parser (shared/search-query.ts).
  * A lone operator the URL has a chip for becomes that chip; `in:` changes the
- * view; `label:` takes a label name or id. Everything else, including
+ * view; `label:` takes a label's current name. Everything else, including
  * exclusions, OR, unknown labels and the newer operators, stays as text for
  * the server to parse. Operators with bad values are left out and reported.
  */
-export function parseSearchText(input: string, labels: readonly LabelRef[] = []): { view?: string; chips: Chip[]; text: string; errors: QueryError[] } {
+export function parseSearchText(input: string, labels: readonly LabelRef[] = [], own: OwnAddresses = NO_ADDRESSES): { view?: string; chips: Chip[]; text: string; errors: QueryError[] } {
 	const query = parseSearch(input);
 	let chips: Chip[] = [];
 	let view: string | undefined;
 	const rest: string[] = [];
 	for (const term of query.terms) {
-		const chip = !term.negate && term.any.length === 1 ? chipOf(term.any[0], labels) : null;
+		const chip = !term.negate && term.any.length === 1 ? chipOf(term.any[0], labels, own) : null;
 		const valid = chip && "kind" in chip ? validChip(chip) : chip;
 		if (valid && "view" in valid) view = valid.view;
 		else if (valid) chips = addChip(chips, valid);
@@ -210,8 +231,8 @@ export function parseSearchText(input: string, labels: readonly LabelRef[] = [])
 }
 
 /** Apply search-field input to a filter: operators become chips, the rest replaces the text chip. */
-export function applySearch(filter: MailFilter, input: string, labels: readonly LabelRef[] = []): MailFilter {
-	const parsed = parseSearchText(input, labels);
+export function applySearch(filter: MailFilter, input: string, labels: readonly LabelRef[] = [], own: OwnAddresses = NO_ADDRESSES): MailFilter {
+	const parsed = parseSearchText(input, labels, own);
 	let chips = filter.chips;
 	for (const chip of parsed.chips) chips = addChip(chips, chip);
 	if (parsed.text) chips = addChip(chips, { kind: "q", value: parsed.text });
@@ -221,40 +242,6 @@ export function applySearch(filter: MailFilter, input: string, labels: readonly 
 /** Values of one chip kind, in path order. */
 export function chipValues(filter: MailFilter, kind: ChipKind): string[] {
 	return filter.chips.filter((c) => c.kind === kind).map((c) => c.value);
-}
-
-// ── Legacy redirects ───────────────────────────────────────────────
-
-const FOLDER_VIEWS: Record<string, string> = { inbox: "inbox", sent: "sent", draft: "drafts", archive: "archive", trash: "trash", spam: "spam" };
-
-/**
- * Map an old per-mailbox `/mailbox/...` URL to the mail view, or null if it
- * is not one. A custom folder converted to a label (same id) opens that label in
- * All mail.
- */
-export function legacyRedirect(pathname: string, search: string, labelIds: ReadonlySet<string> = new Set()): string | null {
-	const match = pathname.match(/^\/mailbox\/([^/]+)(?:\/(emails)\/([^/]+)|\/(search|settings))?\/?$/);
-	if (!match) return null;
-	const mailboxId = decodeURIComponent(match[1]).toLowerCase();
-	const old = new URLSearchParams(search);
-	if (match[4] === "settings") return `/?address=${encodeURIComponent(mailboxId)}`;
-	const params = new URLSearchParams();
-	const folder = match[2] ? decodeURIComponent(match[3]) : null;
-	const asLabel = folder !== null && !FOLDER_VIEWS[folder] && labelIds.has(folder);
-	if (folder !== null) params.set("view", FOLDER_VIEWS[folder] ?? (asLabel ? "all" : `folder:${folder}`));
-	params.append("address", mailboxId);
-	if (asLabel) params.append("label", folder);
-	if (match[4] === "search") {
-		const q = old.get("q")?.trim();
-		if (q) {
-			const filter = applySearch({ view: params.get("view") ?? "inbox", chips: [{ kind: "address", value: mailboxId }], sort: "date", dir: "desc" }, q);
-			return `/${toSearch(filter)}`;
-		}
-	}
-	const email = old.get("email");
-	if (email) params.set("open", `${mailboxId}:${email}`);
-	if (old.get("compose") === "new") params.set("compose", "new");
-	return `/?${params}`;
 }
 
 // ── Client-side matching ───────────────────────────────────────────

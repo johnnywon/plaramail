@@ -3,24 +3,28 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
-	ArchiveIcon, ArrowsClockwiseIcon, CaretDownIcon, CheckIcon, ClockIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon,
+	ArchiveIcon, ArrowsClockwiseIcon, CaretDownIcon, CaretRightIcon, CheckIcon, ClockIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon,
 	FileIcon, FunnelSimpleIcon, MagnifyingGlassIcon, PaperclipIcon, PaperPlaneTiltIcon, PencilSimpleLineIcon, SortAscendingIcon,
-	SortDescendingIcon, StarIcon, TrashIcon, TrayArrowUpIcon, TrayIcon, WarningIcon, XIcon,
+	SortDescendingIcon, StarIcon, TrashIcon, TrayArrowUpIcon, TrayIcon, WarningIcon, WarningOctagonIcon, XIcon,
 } from "@phosphor-icons/react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { MailFilter } from "~/lib/mail-filter";
 import type { Conversation, Label, MailFacets, ScheduledSend } from "~/services/api";
-import { AddressText, type Identities, LabelChip, LabelTag, Swatch } from "./identity";
-import { AllAddressesIcon } from "./NavIcons";
+import { AddressText, type Identities, LabelTag, Swatch } from "./identity";
+import { toSearch, VIEW_LABELS } from "~/lib/mail-filter";
+import { ADDRESS_FOLDERS, ALL_FOLDERS, AllAddressesIcon, InboxIcon, VIEW_ICONS } from "./NavIcons";
+import { Keys, useShortcuts } from "./shortcuts";
 import { marks, snippetMarkup } from "./search-window";
-import { dayKey, dayLabel, filterCount, hasChip, labelOf, type MailAction, RESTORABLE, scopeOf, sendTimeLabel, timeLabel, toggleChip, withoutKinds } from "./model";
+import { rowSender } from "./row-sender";
+import { dayKey, dayLabel, filterCount, hasChip, labelOf, type MailAction, RESTORABLE, scoped, scopeOf, sendTimeLabel, timeLabel, toggleChip, withoutKinds } from "./model";
 
 export interface ListPaneProps {
 	identities: Identities;
 	filter: MailFilter;
 	go: (filter: MailFilter) => void;
-	title: string;
 	searching: boolean;
+	/** The search in the URL, kept in each row's link. */
+	search: string;
 	allUnread?: number;
 	unreadByAddress: ReadonlyMap<string, number>;
 	onNew: () => void;
@@ -58,14 +62,27 @@ export interface ListPaneProps {
 	onHome: () => void;
 }
 
-const EMPTY: Record<string, { Icon: typeof TrayIcon; title: string; body: string }> = {
-	drafts: { Icon: FileIcon, title: "No drafts", body: "Drafts you or the agent start show up here until they're sent." },
-	sent: { Icon: PaperPlaneTiltIcon, title: "Nothing sent yet", body: "Mail you send from any address appears here, with the address it went out from." },
-	archive: { Icon: ArchiveIcon, title: "Archive is empty", body: "Press E on any message to archive it. You can undo." },
-	spam: { Icon: WarningIcon, title: "No spam", body: "Nothing suspicious has arrived." },
-	trash: { Icon: TrashIcon, title: "Trash is empty", body: "Anything you delete lands here first." },
-	starred: { Icon: StarIcon, title: "No starred mail", body: "Star a conversation to keep it here." },
+const EMPTY: Record<string, { Icon: typeof TrayIcon; title: string }> = {
+	drafts: { Icon: FileIcon, title: "No drafts" },
+	sent: { Icon: PaperPlaneTiltIcon, title: "Nothing sent yet" },
+	archive: { Icon: ArchiveIcon, title: "Archive is empty" },
+	spam: { Icon: WarningIcon, title: "No spam" },
+	trash: { Icon: TrashIcon, title: "Trash is empty" },
+	starred: { Icon: StarIcon, title: "No starred mail" },
 };
+
+/** Whether the main pointer can hover. Then the row toolbar waits for it and the selecting check is only a picture. */
+function useCanHover(): boolean {
+	return useSyncExternalStore(
+		(change) => {
+			const query = window.matchMedia("(hover: hover)");
+			query.addEventListener("change", change);
+			return () => query.removeEventListener("change", change);
+		},
+		() => window.matchMedia("(hover: hover)").matches,
+		() => false,
+	);
+}
 
 function Highlighted({ text, terms }: { text: string; terms: string[] }) {
 	return <>{marks(text, terms).map((p, i) => (p.mark ? <mark key={i}>{p.text}</mark> : p.text))}</>;
@@ -73,9 +90,12 @@ function Highlighted({ text, terms }: { text: string; terms: string[] }) {
 
 export function ListPane(props: ListPaneProps) {
 	const { identities, filter, go, rows } = props;
+	const { tip } = useShortcuts();
+	const canHover = useCanHover();
 	const scope = scopeOf(filter);
 	const labelView = labelOf(filter);
 	const [scopeOpen, setScopeOpen] = useState(false);
+	const [folderOpen, setFolderOpen] = useState(false);
 	const [fltOpen, setFltOpen] = useState(false);
 	const sentinel = useRef<HTMLDivElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
@@ -102,18 +122,20 @@ export function ListPane(props: ListPaneProps) {
 		el?.scrollIntoView({ block: "nearest" });
 	}, [props.currentKey]);
 
+	// The address and the folder are one unit: the folder menu lists what the sidebar shows under
+	// the picked address, and switching address keeps the folder when the new one has it.
+	const foldersOf = (value: string | null) => (value ? ADDRESS_FOLDERS : ALL_FOLDERS);
 	const pickScope = (value: string | null) => {
 		setScopeOpen(false);
-		go({ view: "inbox", chips: value ? [{ kind: "address", value }] : [], sort: filter.sort, dir: filter.dir });
+		const keep = !labelView && foldersOf(value).some((f) => f.view === filter.view);
+		go(scoped(keep ? filter.view : "inbox", value, filter));
 	};
 
-	const scopeIcon = labelView ? (
-		<LabelTag id={labelView} />
-	) : scope ? (
-		<Swatch identity={identities.of(scope)} />
-	) : (
-		<AllAddressesIcon size={14} />
-	);
+	// The header reads which addresses (as a mark), then which folder (or label), each with its own icon.
+	const scopeIcon = scope ? <Swatch identity={identities.of(scope)} /> : <AllAddressesIcon size={14} />;
+	const FolderIcon = VIEW_ICONS[filter.view] ?? InboxIcon;
+	const folderIcon = labelView ? <LabelTag id={labelView} /> : <FolderIcon size={14} />;
+	const folderName = labelView ? props.labelsById.get(labelView)?.name ?? "Label" : VIEW_LABELS[filter.view] ?? filter.view;
 
 	const status = props.facets?.status;
 	const labelFacet = new Map((props.facets?.label ?? []).map((f) => [f.value, f.count]));
@@ -132,10 +154,10 @@ export function ListPane(props: ListPaneProps) {
 	};
 
 	const empty = props.searching
-		? { Icon: MagnifyingGlassIcon, title: "No results", body: "Try fewer words, or a filter like from:, to: or label:." }
+		? { Icon: MagnifyingGlassIcon, title: "No results" }
 		: EMPTY[filter.view] ?? (unreadOnly
-			? { Icon: TrayIcon, title: "No unread mail", body: "Everything here has been read." }
-			: { Icon: TrayIcon, title: "Nothing here", body: "No messages match this view." });
+			? { Icon: TrayIcon, title: "No unread mail" }
+			: { Icon: TrayIcon, title: "Nothing here" });
 
 	let lastDay: string | null = null;
 	const groupByDay = filter.sort === "date";
@@ -144,11 +166,45 @@ export function ListPane(props: ListPaneProps) {
 	return (
 		<section className="pg-list-col" aria-label="Conversations">
 			<div className="pg-list-head">
-				<button type="button" className="pg-scope-btn" onClick={() => setScopeOpen((v) => !v)} title="Switch address" aria-expanded={scopeOpen} aria-haspopup="listbox">
+				<button type="button" className="pg-scope-btn" onClick={() => setScopeOpen((v) => !v)} title={`Switch address · ${scope ?? "All addresses"}`} aria-label={`Address, ${scope ?? "All addresses"}`} aria-expanded={scopeOpen} aria-haspopup="listbox">
 					<span className="pg-scope-icon">{scopeIcon}</span>
-					<span className="pg-title">{props.title}</span>
 					<CaretDownIcon size={10} weight="bold" color="var(--pg-text-6)" style={{ flex: "none" }} />
 				</button>
+				<CaretRightIcon className="pg-crumb-sep" size={10} weight="bold" aria-hidden />
+				{/* The folder is also a menu of its peers: every folder for this address, then the labels. No caret. */}
+				<button type="button" className="pg-folder" onClick={() => setFolderOpen((v) => !v)} title="Switch folder" aria-expanded={folderOpen} aria-haspopup="listbox">
+					<span className="pg-scope-icon">{folderIcon}</span>
+					<span className="pg-title">{folderName}{props.searching && <span className="pg-title-note"> · search</span>}</span>
+				</button>
+				{folderOpen && (
+					<>
+						<div className="pg-scrim-click" onClick={() => setFolderOpen(false)} />
+						<div className="pg-popover pg-scope-menu pg-folder-menu" role="listbox" aria-label="Folder">
+							{foldersOf(scope).map(({ view, label, Icon }) => {
+								const on = !labelView && filter.view === view;
+								return (
+									<button key={view} type="button" role="option" aria-selected={on} aria-current={on || undefined} className="pg-menu-item" onClick={() => { setFolderOpen(false); go(scoped(view, scope, filter)); }}>
+										<Icon size={14} />
+										<span className="pg-flex pg-ellipsis">{label}</span>
+										{on && <CheckIcon size={12} weight="bold" />}
+									</button>
+								);
+							})}
+							{/* Labels sit under All addresses in the sidebar, so only its menu lists them. */}
+							{!scope && props.labels.length > 0 && <div className="pg-menu-rule" />}
+							{!scope && props.labels.map((label) => {
+								const on = labelView === label.id;
+								return (
+									<button key={label.id} type="button" role="option" aria-selected={on} aria-current={on || undefined} className="pg-menu-item" onClick={() => { setFolderOpen(false); go({ view: "all", chips: [{ kind: "label", value: label.id }], sort: filter.sort, dir: filter.dir }); }}>
+										<LabelTag id={label.id} />
+										<span className="pg-flex pg-ellipsis">{label.name}</span>
+										{on && <CheckIcon size={12} weight="bold" />}
+									</button>
+								);
+							})}
+						</div>
+					</>
+				)}
 				{scopeOpen && (
 					<>
 						<div className="pg-scrim-click" onClick={() => setScopeOpen(false)} />
@@ -185,7 +241,7 @@ export function ListPane(props: ListPaneProps) {
 				{filter.view === "trash" && props.rows.length > 0 && (
 					<button type="button" className="pg-btn pg-btn-sm pg-btn-outline" onClick={props.onEmptyTrash} title="Delete everything in Trash forever">Empty Trash</button>
 				)}
-				<button type="button" className="pg-new-btn" onClick={props.onNew} title="New email (C)" aria-label="New email">
+				<button type="button" className="pg-new-btn" onClick={props.onNew} title={tip("compose", "New message")} aria-label="New message">
 					<PencilSimpleLineIcon size={16} />
 				</button>
 				<div className="pg-group">
@@ -198,7 +254,7 @@ export function ListPane(props: ListPaneProps) {
 					>
 						<EnvelopeSimpleIcon size={16} weight={unreadOnly ? "fill" : "regular"} />
 					</button>
-					<button type="button" className="pg-icon-btn" style={{ position: "relative" }} aria-pressed={nFilters > 0} aria-expanded={fltOpen} title="Filter · Unread, starred, attachments, date and more" onClick={() => setFltOpen((v) => !v)}>
+					<button type="button" className="pg-icon-btn" style={{ position: "relative" }} aria-pressed={nFilters > 0} aria-expanded={fltOpen} aria-label={nFilters ? `Filter, ${nFilters} on` : "Filter"} title="Filter" onClick={() => setFltOpen((v) => !v)}>
 						<FunnelSimpleIcon size={16} weight={nFilters ? "fill" : "regular"} />
 						{nFilters > 0 && <span className="pg-flt-badge">{nFilters}</span>}
 					</button>
@@ -227,7 +283,7 @@ export function ListPane(props: ListPaneProps) {
 								] as const).map(([kind, value, label, Icon, n]) => {
 									const on = hasChip(filter, kind, value);
 									return (
-										<button key={value} type="button" role="menuitemcheckbox" aria-checked={on} className="pg-menu-item" onClick={() => go(toggleChip(filter, { kind, value }))}>
+										<button key={value} type="button" role="menuitemcheckbox" aria-checked={on} aria-label={n == null ? label : `${label}, ${n}`} className="pg-menu-item" onClick={() => go(toggleChip(filter, { kind, value }))}>
 											<span className="pg-check pg-check-neutral" data-on={on}>{on && <CheckIcon size={10} weight="bold" />}</span>
 											<Icon size={14} color="var(--pg-text-6)" style={{ flex: "none" }} />
 											<span className="pg-flex pg-ellipsis">{label}</span>
@@ -240,7 +296,7 @@ export function ListPane(props: ListPaneProps) {
 								{props.labels.map((label) => {
 									const on = hasChip(filter, "label", label.id);
 									return (
-										<button key={label.id} type="button" role="menuitemcheckbox" aria-checked={on} className="pg-menu-item" onClick={() => go(toggleChip(filter, { kind: "label", value: label.id }))}>
+										<button key={label.id} type="button" role="menuitemcheckbox" aria-checked={on} aria-label={labelFacet.has(label.id) ? `${label.name}, ${labelFacet.get(label.id)}` : label.name} className="pg-menu-item" onClick={() => go(toggleChip(filter, { kind: "label", value: label.id }))}>
 											<span className="pg-check pg-check-neutral" data-on={on}>{on && <CheckIcon size={10} weight="bold" />}</span>
 											<LabelTag id={label.id} />
 											<span className="pg-flex pg-ellipsis">{label.name}</span>
@@ -249,9 +305,9 @@ export function ListPane(props: ListPaneProps) {
 									);
 								})}
 								<span className="pg-caption">RECEIVED</span>
-								<div className="pg-flt-dates">
+								<div className="pg-flt-dates" role="radiogroup" aria-label="Received">
 									{([["any", "Any"], ["today", "Today"], ["7d", "7 days"], ["30d", "30 days"]] as const).map(([value, label]) => (
-										<button key={value} type="button" aria-pressed={dateChip === value} onClick={() => setDate(value)}>{label}</button>
+										<button key={value} type="button" role="radio" aria-checked={dateChip === value} onClick={() => setDate(value)}>{label}</button>
 									))}
 								</div>
 							</div>
@@ -268,9 +324,9 @@ export function ListPane(props: ListPaneProps) {
 				<div className="pg-order">
 					<span>{props.rankSkipped ? "Too many matches to rank. Newest first." : props.order === "relevance" ? "Best match first" : "Newest first"}</span>
 					<span className="pg-flex" />
-					<div className="pg-segmented" role="group" aria-label="Order">
-						<button type="button" aria-pressed={props.order === "relevance"} onClick={() => props.onOrder("relevance")}>Relevance</button>
-						<button type="button" aria-pressed={props.order === "date"} onClick={() => props.onOrder("date")}>Newest</button>
+					<div className="pg-segmented" role="radiogroup" aria-label="Order">
+						<button type="button" role="radio" aria-checked={props.order === "relevance"} onClick={() => props.onOrder("relevance")}>Relevance</button>
+						<button type="button" role="radio" aria-checked={props.order === "date"} onClick={() => props.onOrder("date")}>Newest</button>
 					</div>
 				</div>
 			)}
@@ -300,14 +356,14 @@ export function ListPane(props: ListPaneProps) {
 					<div className="pg-empty">
 						<div className="pg-empty-icon"><empty.Icon size={20} /></div>
 						<h2>{empty.title}</h2>
-						<p>{empty.body}</p>
 						<button type="button" className="pg-btn" onClick={props.searching ? props.onClearSearch : props.onHome}>
 							{props.searching ? "Clear search" : "Back to Inbox"}
-							<span className="pg-keyhint pg-mono" style={{ fontSize: 10, color: "var(--pg-text-8)" }}>G I</span>
+							{!props.searching && <Keys id="goInbox" className="pg-keyhint pg-mono" style={{ fontSize: 10, color: "var(--pg-text-8)" }} />}
 						</button>
 					</div>
 				)}
-				{!props.loading && rows.map((row) => {
+				{/* Each conversation is a list item whose subject links to it, so agents read its parts and its URL. The whole row still opens it. */}
+				{!props.loading && rows.length > 0 && <div role="list">{rows.map((row) => {
 					const day = dayKey(row.date);
 					const dayStart = day !== lastDay;
 					const gap = groupByDay && dayStart && lastDay !== null;
@@ -316,26 +372,26 @@ export function ListPane(props: ListPaneProps) {
 					const sched = row.state === "draft" ? props.scheduled.get(row.email_id) : undefined;
 					const identity = identities.of(row.mailbox_id);
 					const rowLabels = row.labels.map((id) => props.labelsById.get(id)).filter((l): l is Label => !!l);
+					const unread = row.unread && row.state !== "draft";
+					const open = (e: React.MouseEvent) => {
+						if (e.shiftKey && selecting) props.onCheck(row, true);
+						else props.onOpen(row);
+					};
 					return (
 						<Fragment key={row.thread_key}>
 							{gap && <div className="pg-gap" aria-hidden />}
 							<div
 								className="pg-row"
-								role="button"
-								tabIndex={0}
+								role="listitem"
 								data-key={row.thread_key}
-								data-unread={row.unread && row.state !== "draft"}
+								data-unread={unread}
 								data-checked={checked || undefined}
 								aria-current={props.currentKey === row.thread_key || undefined}
-								aria-label={`${row.unread ? "Unread. " : ""}${row.sender_name || row.sender_addr}: ${row.subject || "(no subject)"}`}
 								onClick={(e) => {
-									if (e.shiftKey && selecting) props.onCheck(row, true);
-									else props.onOpen(row);
-								}}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" && e.target === e.currentTarget) props.onOpen(row);
+									if (!(e.target as Element).closest("a, button")) open(e);
 								}}
 							>
+								{unread && <span className="pg-sr">Unread</span>}
 								<div className="pg-row-when">
 									<span className={groupByDay && dayStart ? "pg-day-first" : undefined}>{dayLabel(row.date)}</span>
 									<span>{timeLabel(row.date)}</span>
@@ -344,66 +400,81 @@ export function ListPane(props: ListPaneProps) {
 									<div className="pg-row-glyphs">
 										{row.starred && <StarIcon size={12} weight="fill" className="pg-star" aria-label="Starred" />}
 										{row.has_attachment && <PaperclipIcon size={12} aria-label="Attachment" />}
+										{rowLabels.map((l) => (
+											<span key={l.id} className="pg-row-label" title={l.name} role="img" aria-label={`${l.name} label`}><LabelTag id={l.id} size={12} /></span>
+										))}
 									</div>
 								</div>
 								<div className="pg-row-main">
 									{/* Inside one address every row would repeat it, so the To line only shows when it tells rows apart. */}
 									{(scope !== row.mailbox_id || row.also_in.length > 0) && (
-										<div className="pg-row-to" title={`Delivered to ${row.mailbox_id} — replies send from here`}>
+										<div className="pg-row-to" title={`Delivered to ${row.mailbox_id} · Replies send from here`}>
 											<Swatch identity={identity} />
 											<AddressText address={row.mailbox_id} identity={identity} />
 											{row.also_in.length > 0 && <span className="pg-also">+{row.also_in.length}</span>}
 										</div>
 									)}
-									<div className="pg-row-sender">{row.state === "draft" ? "Draft" : row.sender_name || row.sender_addr}</div>
-									<div className="pg-row-subject"><Highlighted text={row.subject || "(no subject)"} terms={props.terms} /></div>
+									<RowSenderLine row={row} />
+									<div className="pg-row-subject">
+										<a
+											className="pg-row-link"
+											href={toSearch(filter, { mailboxId: row.mailbox_id, emailId: row.email_id }, props.search)}
+											onClick={(e) => {
+												// Cmd or Ctrl opens it in a new tab like any link.
+												if (e.metaKey || e.ctrlKey || e.altKey) return;
+												e.preventDefault();
+												open(e);
+											}}
+										>
+											<Highlighted text={row.subject || "(no subject)"} terms={props.terms} />
+										</a>
+									</div>
 									{snippetMarkup(row.snippet_html) !== null
 										? <div className="pg-row-preview" dangerouslySetInnerHTML={{ __html: snippetMarkup(row.snippet_html)! }} />
 										: row.snippet && <div className="pg-row-preview"><Highlighted text={row.snippet} terms={props.terms} /></div>}
 									{/* TODO(roadmap): rule chips on rows (Inquiry, Receipts, DMARC, Triage with their icons) return with rules. */}
-									{(rowLabels.length > 0 || sched) && (
+									{sched && (
 										<div className="pg-row-labels">
 											{sched && (
 												<span className="pg-row-badge" data-error={!!sched.error || undefined} title={sched.error ?? undefined} onClick={(e) => e.stopPropagation()}>
 													<ClockIcon size={10} />
 													{sched.error ? "Send failed" : `Scheduled · ${sendTimeLabel(new Date(sched.sendAt))}`}
-													<button type="button" onClick={() => props.onCancelScheduled(sched)}>Cancel</button>
+													<button type="button" aria-label="Cancel scheduled send" onClick={() => props.onCancelScheduled(sched)}>Cancel</button>
 												</span>
 											)}
-											{rowLabels.map((l) => (
-												<LabelChip key={l.id} label={l} />
-											))}
 										</div>
 									)}
 								</div>
+								{/* Select stays first: with a mouse, it's the one button kept in the accessibility tree while the toolbar waits for hover. */}
 								<div className="pg-row-tools" onClick={(e) => e.stopPropagation()}>
-									<button type="button" title="Select (X) · shift-click for a range" aria-label="Select" aria-pressed={checked} onClick={(e) => props.onCheck(row, e.shiftKey)}>
+									<button type="button" title={tip("select", "Select", "shift-click for a range")} aria-label="Select" role="checkbox" aria-checked={checked} onClick={(e) => props.onCheck(row, e.shiftKey)}>
 										<span className="pg-check" data-on={checked}>{checked && <CheckIcon size={10} weight="bold" />}</span>
 									</button>
 									<span className="pg-sep" />
 									{RESTORABLE.has(filter.view) && (
-										<button type="button" title="Move to Inbox" aria-label="Move to Inbox" onClick={() => props.onRowAction(row, "restore")}><TrayArrowUpIcon size={15} /></button>
+										<button type="button" title="Move to Inbox" aria-label="Move to Inbox" onClick={() => props.onRowAction(row, "restore")}><TrayArrowUpIcon size={16} /></button>
 									)}
-									<button type="button" title="Archive (E)" aria-label="Archive" onClick={() => props.onRowAction(row, "archive")}><ArchiveIcon size={15} /></button>
+									<button type="button" title={tip("archive", "Archive")} aria-label="Archive" onClick={() => props.onRowAction(row, "archive")}><ArchiveIcon size={16} /></button>
 									<button type="button" title={row.starred ? "Unstar" : "Star"} aria-label={row.starred ? "Unstar" : "Star"} onClick={() => props.onRowAction(row, "star")}>
-										<StarIcon size={15} weight={row.starred ? "fill" : "regular"} />
+										<StarIcon size={16} weight={row.starred ? "fill" : "regular"} />
 									</button>
 									<button type="button" title={row.unread ? "Mark read" : "Mark unread"} aria-label={row.unread ? "Mark read" : "Mark unread"} onClick={() => props.onRowAction(row, "read")}>
-										{row.unread ? <EnvelopeOpenIcon size={15} /> : <EnvelopeSimpleIcon size={15} />}
+										{row.unread ? <EnvelopeOpenIcon size={16} /> : <EnvelopeSimpleIcon size={16} />}
 									</button>
 									{filter.view !== "trash" && (
-										<button type="button" title="Move to trash" aria-label="Move to trash" onClick={() => props.onRowAction(row, "trash")}><TrashIcon size={15} /></button>
+										<button type="button" title="Move to Trash" aria-label="Move to Trash" onClick={() => props.onRowAction(row, "trash")}><TrashIcon size={16} /></button>
 									)}
 								</div>
-								<div className="pg-row-checkonly" onClick={(e) => e.stopPropagation()}>
-									<button type="button" title="Select (X) · shift-click for a range" aria-label="Select" aria-pressed={checked} onClick={(e) => props.onCheck(row, e.shiftKey)}>
+								{/* With a mouse, hover always brings up the toolbar's Select first, so this check is only a picture. */}
+								<div className="pg-row-checkonly" aria-hidden={canHover || undefined} onClick={(e) => e.stopPropagation()}>
+									<button type="button" tabIndex={canHover ? -1 : undefined} title={tip("select", "Select", "shift-click for a range")} aria-label="Select" role="checkbox" aria-checked={checked} onClick={(e) => props.onCheck(row, e.shiftKey)}>
 										<span className="pg-check" data-on={checked}>{checked && <CheckIcon size={10} weight="bold" />}</span>
 									</button>
 								</div>
 							</div>
 						</Fragment>
 					);
-				})}
+				})}</div>}
 				{props.hasNextPage && <div ref={sentinel} className="pg-more">{props.fetchingNext ? <span className="pg-count">Loading…</span> : null}</div>}
 				{selecting && (
 					<div className="pg-bulk">
@@ -411,17 +482,30 @@ export function ListPane(props: ListPaneProps) {
 							<span className="pg-sel-count">{props.checked.size} selected</span>
 							<button type="button" className="pg-all" onClick={props.onSelectAll}>All</button>
 							<div style={{ flex: 1 }} />
-							{RESTORABLE.has(filter.view) && <button type="button" className="pg-tool" title="Move to Inbox" aria-label="Move to Inbox" onClick={() => props.onBulk("restore")}><TrayArrowUpIcon size={15} /></button>}
-							<button type="button" className="pg-tool" title="Archive" aria-label="Archive" onClick={() => props.onBulk("archive")}><ArchiveIcon size={15} /></button>
-							<button type="button" className="pg-tool" title="Read" aria-label="Mark read" onClick={() => props.onBulk("read")}><EnvelopeOpenIcon size={15} /></button>
-							<button type="button" className="pg-tool" title="Star" aria-label="Star" onClick={() => props.onBulk("star")}><StarIcon size={15} /></button>
-							{filter.view !== "trash" && <button type="button" className="pg-tool" title="Trash" aria-label="Move to trash" onClick={() => props.onBulk("trash")}><TrashIcon size={15} /></button>}
+							{RESTORABLE.has(filter.view) && <button type="button" className="pg-tool" title="Move to Inbox" aria-label="Move to Inbox" onClick={() => props.onBulk("restore")}><TrayArrowUpIcon size={16} /></button>}
+							<button type="button" className="pg-tool" title={tip("archive", "Archive")} aria-label="Archive" onClick={() => props.onBulk("archive")}><ArchiveIcon size={16} /></button>
+							<button type="button" className="pg-tool" title={tip("markRead", "Mark read")} aria-label="Mark read" onClick={() => props.onBulk("read")}><EnvelopeOpenIcon size={16} /></button>
+							<button type="button" className="pg-tool" title={tip("star", "Star")} aria-label="Star" onClick={() => props.onBulk("star")}><StarIcon size={16} /></button>
+							{filter.view !== "trash" && <button type="button" className="pg-tool" title={tip("trash", "Move to Trash")} aria-label="Move to Trash" onClick={() => props.onBulk("trash")}><TrashIcon size={16} /></button>}
+							{filter.view !== "spam" && <button type="button" className="pg-tool" title={tip("spam", "Report spam")} aria-label="Report spam" onClick={() => props.onBulk("spam")}><WarningOctagonIcon size={16} /></button>}
 							<span className="pg-sep" />
-							<button type="button" className="pg-tool" title="Clear selection (Esc)" aria-label="Clear selection" onClick={props.onClearSelection} style={{ color: "var(--pg-text-6)" }}><XIcon size={14} /></button>
+							<button type="button" className="pg-tool" title={tip("back", "Clear selection")} aria-label="Clear selection" onClick={props.onClearSelection} style={{ color: "var(--pg-text-6)" }}><XIcon size={14} /></button>
 						</div>
 					</div>
 				)}
 			</div>
 		</section>
+	);
+}
+
+/** The sender, or for sent mail "To" and the first recipient. */
+function RowSenderLine({ row }: { row: Conversation }) {
+	const who = rowSender(row);
+	return (
+		<div className="pg-row-sender">
+			{who.to && <span className="pg-row-sender-to">To </span>}
+			{who.text}
+			{who.more ? <span className="pg-row-sender-more"> +{who.more}</span> : null}
+		</div>
 	);
 }

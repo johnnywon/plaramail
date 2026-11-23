@@ -8,6 +8,7 @@
  * Buttons keep using `title` (or `data-tip`). On first hover the title moves
  * to `data-tip` so the browser's own tooltip never shows. Titles follow
  * "Label (Key) · hint": the key becomes keycaps, the hint a second line.
+ * With key hints off (data-keys="off" on .postal) the keycaps are left out.
  * `data-tip-hint` adds a hint without touching the title. Icon-only buttons
  * with only an `aria-label` get a tooltip from that.
  */
@@ -29,16 +30,24 @@ export interface TipContent {
 
 const MODIFIERS = new Set(["⌘", "⇧", "⌥", "⌃"]);
 
-/** Split "⌘↵" into ["⌘", "↵"] and "Esc" into ["Esc"]. */
+/** Split "⌘↵" into ["⌘", "↵"], "Ctrl+K" into ["Ctrl", "K"], "G I" into ["G", "I"] and "Esc" into ["Esc"]. */
 export function splitKeys(keys: string): string[] {
-	const out: string[] = [];
-	let rest = keys.trim();
-	while (rest && MODIFIERS.has(rest[0])) {
-		out.push(rest[0]);
-		rest = rest.slice(1);
-	}
-	if (rest) out.push(rest);
-	return out;
+	return keys.trim().split(/\s+/).flatMap((step) => {
+		const out: string[] = [];
+		let rest = step;
+		for (;;) {
+			const word = /^(Ctrl|Alt|Shift)\+(.+)$/.exec(rest);
+			if (word) {
+				out.push(word[1]);
+				rest = word[2];
+			} else if (rest.length > 1 && MODIFIERS.has(rest[0])) {
+				out.push(rest[0]);
+				rest = rest.slice(1);
+			} else break;
+		}
+		if (rest) out.push(rest);
+		return out;
+	});
 }
 
 /** "Select (X) · shift-click for a range" → label, keycaps, hint. */
@@ -46,7 +55,7 @@ export function parseTip(text: string, extraHint?: string | null): TipContent | 
 	const [head, ...rest] = text.split(" · ");
 	const main = head.trim();
 	if (!main) return null;
-	const match = /^(.*\S)\s*\(([^()]{1,8})\)$/.exec(main);
+	const match = /^(.*\S)\s*\(([^()]{1,12})\)$/.exec(main);
 	const hint = [rest.join(" · ").trim(), extraHint?.trim()].filter(Boolean).join(". ");
 	return {
 		label: match ? match[1] : main,
@@ -80,6 +89,7 @@ function tipFor(el: HTMLElement): TipContent | null {
 	if (!text) return null;
 	const tip = parseTip(text, el.getAttribute("data-tip-hint"));
 	if (!tip) return null;
+	if (el.closest(".postal")?.getAttribute("data-keys") === "off") tip.keys = [];
 	// A tooltip that repeats the button's own text adds nothing.
 	const visible = el.textContent?.trim().toLowerCase() ?? "";
 	if (!tip.keys.length && !tip.hint && visible === tip.label.toLowerCase()) return null;

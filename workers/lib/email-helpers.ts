@@ -5,17 +5,14 @@
 /**
  * Shared email helpers to eliminate duplication across API routes, MCP, and agent.
  *
- * Includes: DO stub helpers, sender validation, message-ID generation,
+ * Includes: sender validation, message-ID generation,
  * threading, HTML utilities, and tool-logic (getFullEmail / getFullThread).
  */
 import type { MailboxStore } from "../store";
 import type { EmailFull } from "./schemas";
+import { formatQuotedDate } from "../../shared/dates";
 import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
-import { formatQuotedDate } from "../../shared/dates";
-
-// ── DO Stub ────────────────────────────────────────────────────────
-
 
 // ── Sender Validation ──────────────────────────────────────────────
 
@@ -163,24 +160,18 @@ export function stripHtmlToText(html: string): string {
 }
 
 /**
- * Format a date string for use in quoted reply blocks.
- * @deprecated Use `formatQuotedDate` from `shared/dates` directly.
- */
-export const formatEmailDate = formatQuotedDate;
-
-/**
  * Build a quoted reply block HTML string from original email data.
  */
 export function buildQuotedReplyBlock(original: {
 	date?: string;
 	sender?: string;
 	body?: string;
-}): string {
+}, timeZone?: string): string {
 	if (!original.body) return "";
 	
 	// HTML-escape sender and date to prevent injection
 	const originalSender = escapeHtml(original.sender || "unknown");
-	const originalDate = escapeHtml(formatEmailDate(original.date || ""));
+	const originalDate = escapeHtml(formatQuotedDate(original.date || "", timeZone));
 
 	// Sanitize the body to plain text to prevent stored XSS.
 	// The original HTML renders safely in the sandboxed iframe, but quoted
@@ -214,7 +205,7 @@ export async function getFullEmail(
 }
 
 /**
- * Fetch all emails in a thread with full bodies in a single DO call.
+ * Fetch all emails in a thread with full bodies in a single store call.
  * Uses `getThreadEmails` which runs 2 SQL queries (emails + attachments)
  * instead of the previous N+1 pattern (1 list query + N getEmail calls).
  */
@@ -230,7 +221,7 @@ export async function getFullThread(
 		return { ...email, body_text: textBody };
 	});
 
-	// Already sorted ASC by the DO query, but ensure consistency
+	// Already sorted ASC by the store query, but ensure consistency
 	enriched.sort(
 		(a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
 	);

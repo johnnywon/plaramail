@@ -4,6 +4,7 @@ import { loadTs } from "./helpers/sqlite.mjs";
 
 const f = await loadTs("app/lib/mail-filter.ts");
 const P = (s) => new URLSearchParams(s);
+const OWN = { addresses: ["billing@example.com", "ops@example.com"], domains: ["example.com", "example.net"] };
 
 test("a bare URL lands on unread Inbox; an explicit view does not", () => {
 	assert.deepEqual(f.parseFilter(P("")), { view: "inbox", chips: [{ kind: "is", value: "unread" }], sort: "date", dir: "desc" });
@@ -51,10 +52,12 @@ test("open param round trip", () => {
 	assert.deepEqual(f.parseOpen(P("open=Billing@Example.org:abc-1")), { mailboxId: "billing@example.org", emailId: "abc-1" });
 	assert.equal(f.parseOpen(P("open=nocolon")), null);
 	assert.equal(f.toSearch(f.parseFilter(P("view=sent")), { mailboxId: "a@x.example.org", emailId: "e1" }), "?view=sent&open=a%40x.example.org%3Ae1");
+	assert.equal(f.toSearch(f.parseFilter(P("view=inbox")), null, "from:ann "), "?view=inbox&search=from%3Aann+");
+	assert.equal(f.toSearch(f.parseFilter(P("view=inbox")), null, "  "), "?view=inbox");
 });
 
 test("search text: operators become chips, in: sets the view, the rest is text", () => {
-	const parsed = f.parseSearchText(`from:ann@b.example.com to:billing subject:"q 3 report" subject:lunch in:archive is:Starred has:attachment before:2026-09-01 after:2026-08-01 label:x rest words`);
+	const parsed = f.parseSearchText(`from:ann@b.example.com to:billing subject:"q 3 report" subject:lunch in:archive is:Starred has:attachment before:2026-09-01 after:2026-08-01 label:x rest words`, [], OWN);
 	assert.equal(parsed.view, "archive");
 	assert.deepEqual(parsed.chips, [
 		{ kind: "from", value: "ann@b.example.com" }, { kind: "address", value: "billing" }, { kind: "subject", value: "lunch" },
@@ -68,6 +71,21 @@ test("search text: operators become chips, in: sets the view, the rest is text",
 	assert.equal(f.parseSearchText("email:foo@bar.example.com").text, "email:foo@bar.example.com");
 });
 
+test("to: is an address chip only for your own address, domain or local part", () => {
+	const chips = (s) => f.parseSearchText(s, [], OWN).chips;
+	const text = (s) => f.parseSearchText(s, [], OWN).text;
+	assert.deepEqual(chips("to:billing@example.com"), [{ kind: "address", value: "billing@example.com" }]);
+	assert.deepEqual(chips("to:Billing"), [{ kind: "address", value: "billing" }]);
+	assert.deepEqual(chips("to:example.com"), [{ kind: "address", value: "example.com" }]);
+	assert.deepEqual(chips("to:@example.net"), [{ kind: "address", value: "@example.net" }], "a domain you receive on with no address listed");
+	assert.equal(text("to:ann@example.org"), "to:ann@example.org", "someone you wrote to is a recipient search");
+	assert.equal(text("to:ann"), "to:ann");
+	assert.equal(text("to:example.org"), "to:example.org");
+	assert.deepEqual(f.parseSearchText("to:billing").chips, [], "without your addresses nothing becomes a chip");
+	const next = f.applySearch({ view: "inbox", chips: [], sort: "date", dir: "desc" }, "to:ann@example.org", [], OWN);
+	assert.deepEqual(next.chips, [{ kind: "q", value: "to:ann@example.org" }]);
+});
+
 test("search text the URL has no chip for stays text", () => {
 	const t = (s) => f.parseSearchText(s).text;
 	assert.equal(t("-from:store.example.com invoice"), "-from:store.example.com invoice");
@@ -79,7 +97,7 @@ test("search text the URL has no chip for stays text", () => {
 
 const LABELS = [{ id: "receipts", name: "Receipts" }, { id: "tax-2026", name: "Tax 2026" }];
 
-test("label: resolves a name or id to the label's id; unknown labels stay text", () => {
+test("label: resolves a name to the label's id; unknown labels stay text", () => {
 	assert.deepEqual(f.parseSearchText("label:receipts", LABELS).chips, [{ kind: "label", value: "receipts" }]);
 	assert.deepEqual(f.parseSearchText('label:"tax 2026" invoice', LABELS), { view: undefined, chips: [{ kind: "label", value: "tax-2026" }], text: "invoice", errors: [] });
 	assert.deepEqual(f.parseSearchText("label:Tax-2026", LABELS).chips, [{ kind: "label", value: "tax-2026" }]);
@@ -89,9 +107,10 @@ test("label: resolves a name or id to the label's id; unknown labels stay text",
 	assert.deepEqual(next.chips, [{ kind: "label", value: "receipts" }, { kind: "label", value: "tax-2026" }]);
 });
 
-test("after the folder conversion, a custom folder link opens its label in All mail", () => {
-	const labels = new Set(["receipts"]);
-	assert.equal(f.legacyRedirect("/mailbox/a@x.example.org/emails/receipts", "", labels), "/?view=all&address=a%40x.example.org&label=receipts");
-	assert.equal(f.legacyRedirect("/mailbox/a@x.example.org/emails/travel", "", labels), "/?view=folder%3Atravel&address=a%40x.example.org");
-	assert.equal(f.legacyRedirect("/mailbox/a@x.example.org/emails/inbox", "", new Set(["inbox"])), "/?view=inbox&address=a%40x.example.org");
+
+test("label: resolves the current name only; a renamed label's first name doesn't (#43)", () => {
+	const renamed = [{ id: "receipts", name: "Bills" }, { id: "tax-2026", name: "Tax 2026" }];
+	assert.deepEqual(f.parseSearchText("label:bills", renamed).chips, [{ kind: "label", value: "receipts" }]);
+	assert.deepEqual(f.parseSearchText("label:receipts", renamed).chips, []);
+	assert.deepEqual(f.parseSearchText("label:tax-2026", renamed).chips, [{ kind: "label", value: "tax-2026" }], "spaces may be written as hyphens");
 });

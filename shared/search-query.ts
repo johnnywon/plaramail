@@ -3,7 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 /**
- * The search language (docs/d1-migration-plan.md, One query language). One
+ * The search language. One
  * parser for the search bar, the API, the agent's tools and MCP. It turns
  * text into a typed SearchQuery; workers/store/search.ts compiles that to SQL.
  *

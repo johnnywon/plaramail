@@ -106,7 +106,7 @@ function sources(files, convert) {
 	};
 }
 
-const search = (sql, q) => idx.runAsync(eng.d1MailQuery(idx.emptyFilter({ view: "anywhere", q, engine: "d1" }), { now: NOW }), (s, ...p) => sql.all(s, ...p));
+const search = (sql, q) => idx.runAsync(eng.d1MailQuery(idx.emptyFilter({ view: "anywhere", q }), { now: NOW }), (s, ...p) => sql.all(s, ...p));
 const ids = (page) => page.conversations.map((c) => c.email_id);
 
 test("the cron converts queued files and the text becomes searchable", async () => {
@@ -201,7 +201,7 @@ test("a code inside attachment text is found as a substring", async () => {
 test("migration 0004 indexes text converted before it", async () => {
 	const { sql } = openSql();
 	const files = readdirMigrations();
-	for (const s of statements(files.filter((f) => !f.name.startsWith("0004")).map((f) => f.text).join("\n"))) await sql.run(s);
+	for (const s of statements(files.filter((f) => f.name < "0004").map((f) => f.text).join("\n"))) await sql.run(s);
 	await sql.run(`INSERT INTO mailboxes (id, created_at) VALUES (?, 'x')`, A);
 	await sql.run(`INSERT INTO folders (mailbox_id, id, name) VALUES (?, 'inbox', 'inbox')`, A);
 	await sql.run(`INSERT INTO messages (email_id, mailbox_id, folder_id, conversation_id, date) VALUES ('e1', ?, 'inbox', 'e1', 'd')`, A);

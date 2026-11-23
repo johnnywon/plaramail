@@ -9,6 +9,7 @@
  */
 import DOMPurify from "dompurify";
 import type { Attachment } from "~/types";
+import { isHtmlBody, plainTextToHtml } from "../components/plain-text";
 
 /**
  * Split a comma-separated email field into individual addresses.
@@ -92,10 +93,26 @@ export function rewriteInlineImages(
 			const cid = att.content_id.startsWith("<")
 				? att.content_id.slice(1, -1)
 				: att.content_id;
+			// The sender writes the Content-ID. One with quotes or brackets could break the markup around it.
+			if (!/^[^\s"'<>]+$/.test(cid)) continue;
 			result = result.replace(new RegExp(`cid:${cid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "gi"), url);
 		}
 	}
 	return result;
+}
+
+/**
+ * The HTML the reader shows for a message body. Text-only mail becomes HTML the
+ * app writes from escaped text; it has no cid: images, so the rewrite is for HTML mail only.
+ */
+export function messageBodyHtml(
+	raw: string,
+	mailboxId: string,
+	emailId: string,
+	attachments?: { id: string; content_id?: string | null; disposition?: string | null }[],
+): string {
+	if (!isHtmlBody(raw)) return plainTextToHtml(raw);
+	return rewriteInlineImages(raw, mailboxId, emailId, attachments);
 }
 
 export function getNonInlineAttachments(attachments?: Attachment[]): Attachment[] {

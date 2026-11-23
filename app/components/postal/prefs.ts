@@ -19,9 +19,10 @@ export interface Layout {
 
 const DEFAULT_LAYOUT: Layout = { nav: null, panel: null, mailboxesOpen: true, labelsOpen: true };
 
-const PREFS_KEY = "agp-prefs";
-const LAYOUT_KEY = "agp-layout";
-
+const PREFS_KEY = "pm-prefs";
+const LAYOUT_KEY = "pm-layout";
+/** The shortcut keys this browser last showed, so a change made elsewhere gets a toast once. */
+export const SEEN_SHORTCUTS_KEY = "pm-shortcuts-seen";
 export function readJson<T>(key: string, fallback: T): T {
 	if (typeof window === "undefined") return fallback;
 	try {
@@ -62,16 +63,31 @@ export function readPrefs(): Prefs {
 
 const PREFS_QUERY = ["prefs"] as const;
 
-/** The deployment's prefs. The first browser to find none saved uploads its own copy, so settings made before carry over. */
+/** This browser's IANA time zone, or "" when it doesn't say. */
+function browserTimeZone(): string {
+	try {
+		return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * The deployment's prefs. The first browser to find none saved uploads its own copy, so settings made before carry over.
+ * A browser in another time zone saves its own, so quotes the Worker writes show the reader's times.
+ */
 async function fetchPrefs(): Promise<Prefs> {
 	const { prefs, saved } = await api.getPrefs();
+	const timeZone = browserTimeZone();
+	const zoneChanged = !!timeZone && prefs.timeZone !== timeZone;
 	if (saved) {
-		writeJson(PREFS_KEY, prefs);
-		return prefs;
+		const next = zoneChanged ? (await api.savePrefs({ timeZone })).prefs : prefs;
+		writeJson(PREFS_KEY, next);
+		return next;
 	}
 	const local = readPrefs();
-	if (samePrefs(local, DEFAULT_PREFS)) return prefs;
-	return (await api.savePrefs(local)).prefs;
+	if (samePrefs(local, DEFAULT_PREFS) && !zoneChanged) return prefs;
+	return (await api.savePrefs(zoneChanged ? { ...local, timeZone } : local)).prefs;
 }
 
 /**
