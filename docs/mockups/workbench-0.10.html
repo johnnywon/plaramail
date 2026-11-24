@@ -136,9 +136,8 @@ svg.i20 { width: 20px; height: 20px; }
 /* Trust: the rungs in one row, the gate to Send with the evidence beside a week of runs. */
 .trust { border: 1px solid var(--pg-line-2); background: var(--pg-input); display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr) 200px; }
 .rungs { margin: 0; padding: 8px; list-style: none; display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--pg-line); border-radius: 0; }
-.rung { display: grid; grid-template-columns: 22px auto 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; color: var(--pg-text-4); }
+.rung { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; color: var(--pg-text-4); }
 .rung b { font-size: 15px; font-weight: 600; letter-spacing: -.01em; color: var(--pg-text-1); }
-.rung small { font-size: 12px; color: var(--pg-text-6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rung-n { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--pg-line-4); font: 600 11px var(--pg-mono); color: var(--pg-text-6); }
 .rung[data-state="now"] { background: var(--pg-active); box-shadow: inset 0 0 0 1px oklch(from var(--pg-con-accent) l c h / .55); }
 .rung[data-state="now"] .rung-n { border-color: var(--pg-con-accent); background: var(--pg-con-accent); color: var(--pg-base); }
@@ -280,7 +279,7 @@ svg.i20 { width: 20px; height: 20px; }
   .trust { grid-template-columns: minmax(0, 1fr); }
   .rungs { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--pg-line); }
   .rung { flex: 1; grid-template-columns: 22px auto; gap: 8px; padding: 10px; justify-content: center; }
-  .rung small, .rung .rung-ic { display: none; }
+  .rung .rung-ic { display: none; }
   .rung b { font-size: 13px; }
   .gate { padding: 16px; }
   .gate-list li { grid-template-columns: 18px minmax(0, 1fr) auto; align-items: start; }
@@ -405,49 +404,47 @@ svg.i20 { width: 20px; height: 20px; }
         <div class="page-row">
           <div class="page-title">
             <h1><svg class="i20"><use href="#robot"/></svg>Decline pitches</h1>
-            <p>Decline guest post, link exchange and sponsored content pitches politely.</p>
           </div>
           <div class="actions">
             <span class="badge" data-tone="draft" data-dot data-live>Working</span>
-            <button class="btn" type="button"><svg class="i"><use href="#robot"/></svg>Pause Agent Decline pitches</button>
+            <button class="btn" type="button"><svg class="i"><use href="#robot"/></svg>Pause</button>
           </div>
         </div>
       </div>
 
       <!-- Trust: the mode row with the evidence for the next move. -->
       <section class="section" aria-label="Trust">
-        <div class="section-head"><h2>Trust</h2><span class="quiet">31 handled, 1 skipped in 7 days</span></div>
+        <div class="section-head"><h2>Trust</h2></div>
         <div class="trust">
           <ol class="rungs">
-            <li class="rung" data-state="done"><span class="rung-n"><svg class="i12"><use href="#check"/></svg></span><b>Watch</b><small>Logs the reply it would write</small><svg class="i16 rung-ic"><use href="#eye"/></svg></li>
-            <li class="rung" data-state="now"><span class="rung-n">2</span><b>Draft</b><small>Writes a draft, you send it</small><span class="badge rung-ic" data-tone="draft" data-dot>Now</span></li>
-            <li class="rung" data-state="next"><span class="rung-n">3</span><b>Send</b><small>Sends its replies, up to 25 a day</small><svg class="i16 rung-ic"><use href="#plane"/></svg></li>
+            <li class="rung" data-state="done"><span class="rung-n"><svg class="i12"><use href="#check"/></svg></span><b>Watch</b><svg class="i16 rung-ic"><use href="#eye"/></svg></li>
+            <li class="rung" data-state="now"><span class="rung-n">2</span><b>Draft</b><span class="badge rung-ic" data-tone="draft" data-dot>Now</span></li>
+            <li class="rung" data-state="next"><span class="rung-n">3</span><b>Send</b><svg class="i16 rung-ic"><use href="#plane"/></svg></li>
           </ol>
           <div class="gate">
             <h3>To move to Send</h3>
             <ul class="gate-list">
               <li>
                 <span class="gate-mark"></span>
-                <span>Test on past mail, 20 or more, none failed<small>Instructions changed after the Nov 21 run. A new run is testing.</small></span>
-                <span class="gate-val">14 of 25</span>
+                <span>Test on 20, none failed</span>
+                <span class="gate-val">Running 14/25</span>
                 <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="56" height="4"/></svg>
               </li>
               <li data-met>
                 <span class="gate-mark"><svg class="i12"><use href="#check"/></svg></span>
-                <span>10 drafts sent, 8 of the last 10 unedited<small>14 sent since Nov 10</small></span>
-                <span class="gate-val">9 of 10</span>
+                <span>8 of 10 sent unedited</span>
+                <span class="gate-val">9/10</span>
                 <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="100" height="4"/></svg>
               </li>
               <li data-met>
                 <span class="gate-mark"><svg class="i12"><use href="#check"/></svg></span>
-                <span>No safety-check failures in 7 days<small>31 replies checked</small></span>
-                <span class="gate-val">0 failed</span>
+                <span>No safety failures, 7 days</span>
+                <span class="gate-val">0</span>
                 <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="100" height="4"/></svg>
               </li>
             </ul>
             <div class="toolbar">
               <button class="btn btn-primary" type="button" disabled><svg class="i12"><use href="#lock"/></svg>Move to Send</button>
-              <button class="btn btn-quiet" type="button"><svg class="i12"><use href="#arrow-l"/></svg>Back to Watch</button>
             </div>
           </div>
           <figure class="week" aria-label="Last 7 days">
@@ -470,7 +467,7 @@ svg.i20 { width: 20px; height: 20px; }
         <!-- Left: setup -->
         <div class="wb-col">
           <section class="section" aria-label="How it works">
-            <div class="section-head"><h2>How it works</h2><span class="quiet">Saved 4 min ago</span></div>
+            <div class="section-head"><h2>Setup</h2><button class="btn btn-sm" type="button"><svg class="i12"><use href="#pencil"/></svg>Edit</button></div>
             <dl class="sum">
               <div class="sum-row">
                 <dt>Job</dt>
@@ -482,9 +479,8 @@ svg.i20 { width: 20px; height: 20px; }
                   <span class="addr-line"><i class="sw d1"></i><span class="addr"><b>press</b><i>@</i><span class="d1">example.com</span></span></span>
                   <span class="addr-line"><i class="sw d1"></i><span class="addr"><b>hello</b><i>@</i><span class="d1">example.com</span></span></span>
                   <span class="addr-line"><i class="sw d2"></i><span class="addr"><b>editor</b><i>@</i><span class="d2">example.org</span></span></span>
-                  <span class="rule"><em>Rule</em>Subject contains <code>guest post, link exchange, sponsored</code></span>
+                  <span class="rule"><em>Subject has</em> <code>guest post, link exchange, sponsored</code></span>
                 </dd>
-                <button class="btn btn-sm sum-tag" type="button"><svg class="i12"><use href="#pencil"/></svg>Edit</button>
               </div>
               <div class="sum-row">
                 <dt>Does</dt>
@@ -505,111 +501,104 @@ Alex</span></dd>
                 <dt>Limits</dt>
                 <dd><span class="nums"><span class="num"><b>25</b>a day</span><span class="num"><b>2</b>per sender</span></span></dd>
               </div>
-              <div class="sum-row">
-                <dt>Name</dt>
-                <dd><span class="inline">Decline pitches</span></dd>
-              </div>
             </dl>
-            <p class="note">Edits save on their own. Test on past mail runs the setup as it is now.</p>
           </section>
-          <div class="danger-zone"><button class="btn" type="button">Delete Agent Decline pitches</button></div>
+          <div class="danger-zone"><button class="btn" type="button">Delete agent</button></div>
         </div>
 
         <!-- Right: what the agent did, and Test on past mail -->
         <div class="wb-col">
           <section class="section" aria-label="Recent work">
-            <div class="section-head"><h2>Recent work</h2><button class="btn btn-sm btn-quiet" type="button">Show all 63</button></div>
+            <div class="section-head"><h2>Recent work</h2><button class="btn btn-sm btn-quiet" type="button">All 63</button></div>
             <div class="panel">
               <ul class="list">
                 <li class="item"><button class="item-btn" type="button">
                   <span class="item-when">Today 9:42</span>
                   <span class="item-main"><b>Guest post for your blog?</b><span class="item-meta">dana@outreach.example.net <span class="dot">·</span> <span class="addr"><b>editor</b><i>@</i><span class="d2">example.org</span></span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Drafted</span><span class="item-out">Waiting in Draft review</span></span>
+                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Waiting</span></span>
                 </button></li>
                 <li class="item"><button class="item-btn" type="button">
                   <span class="item-when">Today 8:15</span>
                   <span class="item-main"><b>Link exchange proposal</b><span class="item-meta">raj@seo.example.net <span class="dot">·</span> <span class="addr"><b>hello</b><i>@</i><span class="d1">example.com</span></span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Drafted</span><span class="item-out" data-edited>Edited, then sent</span></span>
+                  <span class="item-side"><span class="badge" data-dot>Sent</span><span class="item-out" data-edited>Edited</span></span>
                 </button></li>
                 <li class="item" data-dim><button class="item-btn" type="button">
                   <span class="item-when">Mon 16:03</span>
-                  <span class="item-main"><b>Re: invoice 2291, sponsored slot</b><span class="item-meta">billing@vendor.example.net <span class="dot">·</span> <span>Skipped: a reply about an invoice, not a pitch</span></span></span>
+                  <span class="item-main"><b>Re: invoice 2291, sponsored slot</b><span class="item-meta">billing@vendor.example.net <span class="dot">·</span> <span>Not a pitch</span></span></span>
                   <span class="item-side"><span class="badge" data-dot>Skipped</span></span>
                 </button></li>
                 <li class="item"><button class="item-btn" type="button">
                   <span class="item-when">Mon 11:27</span>
                   <span class="item-main"><b>Sponsored content opportunity</b><span class="item-meta">mia@brandworks.example.net <span class="dot">·</span> <span class="addr"><b>press</b><i>@</i><span class="d1">example.com</span></span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Drafted</span><span class="item-out">Sent as written</span></span>
+                  <span class="item-side"><span class="badge" data-dot>Sent</span></span>
                 </button></li>
                 <li class="item"><button class="item-btn" type="button">
                   <span class="item-when">Mon 10:02</span>
                   <span class="item-main"><b>Quick question about a guest post</b><span class="item-meta">leo@writers.example.net <span class="dot">·</span> <span class="addr"><b>editor</b><i>@</i><span class="d2">example.org</span></span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Drafted</span><span class="item-out">Sent as written</span></span>
+                  <span class="item-side"><span class="badge" data-dot>Sent</span></span>
                 </button></li>
                 <li class="item"><button class="item-btn" type="button">
                   <span class="item-when">Sun 19:50</span>
                   <span class="item-main"><b>Follow up: link exchange</b><span class="item-meta">raj@seo.example.net <span class="dot">·</span> <span class="addr"><b>hello</b><i>@</i><span class="d1">example.com</span></span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Drafted</span><span class="item-out">Discarded</span></span>
+                  <span class="item-side"><span class="badge" data-dot>Discarded</span></span>
                 </button></li>
               </ul>
             </div>
           </section>
 
           <section class="section" aria-label="Test on past mail">
-            <div class="section-head"><h2>Test on past mail</h2><span class="quiet">Nothing is sent</span></div>
+            <div class="section-head"><h2>Test on past mail</h2></div>
             <div class="test-box">
               <div class="test-controls">
-                <div class="field"><svg class="i"><use href="#search"/></svg><span>Search to narrow, such as from:seo.example.net</span></div>
-                <span class="count"><b>25</b>messages</span>
+                <div class="field"><svg class="i"><use href="#search"/></svg><span>Search</span></div>
+                <span class="count"><b>25</b></span>
                 <button class="btn run" type="button"><svg class="i12"><use href="#stop"/></svg>Stop</button>
-                <div class="test-scope">The last 25 to <span class="addr"><b>press</b><i>@</i><span class="d1">example.com</span></span>, <span class="addr"><b>hello</b><i>@</i><span class="d1">example.com</span></span> and <span class="addr"><b>editor</b><i>@</i><span class="d2">example.org</span></span>. Up to 50.</div>
               </div>
               <div class="test-progress">
-                <div class="test-progress-top"><span class="badge" data-tone="draft" data-dot data-live>Testing</span><b>14 of 25</b><span class="quiet">with the instructions as they are now</span></div>
+                <div class="test-progress-top"><span class="badge" data-tone="draft" data-dot data-live>Testing</span><b>14 of 25</b></div>
                 <svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="56" height="4"/></svg>
-                <div class="tallies"><span>Would take <b>6</b></span><span>Would skip <b>8</b></span><span data-k="diff">Differs from then <b>2</b></span><span>Failed <b>0</b></span></div>
+                <div class="tallies"><span>Take <b>6</b></span><span>Skip <b>8</b></span><span data-k="diff">Differs <b>2</b></span><span>Failed <b>0</b></span></div>
               </div>
               <ul class="list">
                 <li class="item t-item" data-open><button class="item-btn" type="button">
                   <span class="item-main"><b>Link exchange proposal</b><span class="item-meta">raj@seo.example.net <span class="dot">·</span> <span>Today 8:15</span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Would take</span><span class="then">Then <em>Drafted, edited</em></span></span>
+                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Take</span><span class="then">Then <em>Sent, edited</em></span></span>
                 </button>
                   <div class="t-body">
                     <div class="reply"><h4>Would write</h4><p>Hi Raj, thanks for reaching out. We don't take guest posts, paid links or sponsored articles, so we'll pass.
 
 Alex</p></div>
-                    <div class="reply"><h4>Sent then, after your edit</h4><p>Hi Raj, thanks for reaching out. We don't take guest posts or paid links, so we'll pass<del>. Happy to send our media kit if useful</del>.
+                    <div class="reply"><h4>Sent</h4><p>Hi Raj, thanks for reaching out. We don't take guest posts or paid links, so we'll pass<del>. Happy to send our media kit if useful</del>.
 
 Alex</p></div>
-                    <span class="t-why">Would take: subject matches "link exchange" and the job fits. 612 tokens.</span>
                   </div>
                 </li>
                 <li class="item t-item"><button class="item-btn" type="button">
                   <span class="item-main"><b>Re: Follow up: link exchange</b><span class="item-meta">raj@seo.example.net <span class="dot">·</span> <span>Sun 19:50</span></span></span>
-                  <span class="item-side"><span class="badge" data-dot>Would skip</span><span class="then">Then <em>Drafted, discarded</em> <span class="badge" data-tone="warn">Differs</span></span></span>
+                  <span class="item-side"><span class="badge" data-dot>Skip</span><span class="then">Then <em>Discarded</em> <span class="badge" data-tone="warn">Differs</span></span></span>
                 </button></li>
                 <li class="item t-item"><button class="item-btn" type="button">
                   <span class="item-main"><b>Sponsored content opportunity</b><span class="item-meta">mia@brandworks.example.net <span class="dot">·</span> <span>Mon 11:27</span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Would take</span><span class="then">Then <em>Drafted, sent as written</em></span></span>
+                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Take</span><span class="then">Then <em>Sent</em></span></span>
                 </button></li>
                 <li class="item t-item"><button class="item-btn" type="button">
                   <span class="item-main"><b>Re: invoice 2291, sponsored slot</b><span class="item-meta">billing@vendor.example.net <span class="dot">·</span> <span>Mon 16:03</span></span></span>
-                  <span class="item-side"><span class="badge" data-dot>Would skip</span><span class="then">Then <em>Skipped</em></span></span>
+                  <span class="item-side"><span class="badge" data-dot>Skip</span><span class="then">Then <em>Skipped</em></span></span>
                 </button></li>
                 <li class="item t-item"><button class="item-btn" type="button">
                   <span class="item-main"><b>Partnership: guest article swap</b><span class="item-meta">kim@growth.example.net <span class="dot">·</span> <span>Nov 19</span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Would take</span><span class="then">Then <em>Skipped</em> <span class="badge" data-tone="warn">Differs</span></span></span>
+                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Take</span><span class="then">Then <em>Skipped</em> <span class="badge" data-tone="warn">Differs</span></span></span>
                 </button></li>
                 <li class="item t-item"><button class="item-btn" type="button">
                   <span class="item-main"><b>Your newsletter, sponsorship rates?</b><span class="item-meta">ops@adnet.example.net <span class="dot">·</span> <span>Nov 18</span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="draft" data-dot data-live>Running</span><span class="then">Then <em>Drafted, sent as written</em></span></span>
+                  <span class="item-side"><span class="badge" data-tone="draft" data-dot data-live>Running</span><span class="then">Then <em>Sent</em></span></span>
                 </button></li>
                 <li class="item t-item" data-dim><button class="item-btn" type="button">
                   <span class="item-main"><b>Guest post pitch: 10 tools for remote teams</b><span class="item-meta">sam@contentco.example.net <span class="dot">·</span> <span>Nov 18</span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="watch" data-dot>Queued</span><span class="then">Then <em>Drafted, sent as written</em></span></span>
+                  <span class="item-side"><span class="badge" data-tone="watch" data-dot>Queued</span><span class="then">Then <em>Sent</em></span></span>
                 </button></li>
               </ul>
-              <div class="test-foot"><span>Tokens and cost show when the run ends.</span><span class="mono">Last run Nov 21 · 25 messages · 0 failed · 14,820 tokens · $0.02</span></div>
+              <div class="test-foot"><span class="mono">Last run Nov 21 · 25 · 0 failed · $0.02</span></div>
             </div>
           </section>
         </div>
@@ -629,52 +618,50 @@ Alex</p></div>
   <h2>Move to Send</h2>
   <div class="mock-cards">
     <div>
-      <p class="mock-cap">Gate met: Move to Send opens this, with the record</p>
+      <p class="mock-cap">Gate met</p>
       <div class="modal" role="dialog" aria-label="Move Decline pitches to Send">
         <div class="modal-head"><svg class="i16"><use href="#robot"/></svg><h2>Move Decline pitches to Send</h2><button type="button" aria-label="Close"><svg class="i"><use href="#x"/></svg></button></div>
         <div class="modal-body">
-          <p>It sends its replies on its own, up to 25 a day and 2 a day to one sender. Every reply passes the safety check first.</p>
+          <p>Up to 25 replies a day, 2 per sender.</p>
           <table class="record">
-            <thead><tr><th>Needs</th><th>Record</th><th>When</th></tr></thead>
+            <thead><tr><th>Check</th><th>Record</th><th>When</th></tr></thead>
             <tbody>
-              <tr><th>Test on past mail, 20 or more, none failed</th><td><span class="ok"><svg class="i12"><use href="#check"/></svg>25 tested, 0 failed</span></td><td class="mono">Nov 24</td></tr>
-              <tr><th>10 drafts sent, 8 of the last 10 unedited</th><td><span class="ok"><svg class="i12"><use href="#check"/></svg>14 sent, 9 of 10 unedited</span></td><td class="mono">Nov 10 to 24</td></tr>
-              <tr><th>No safety-check failures in 7 days</th><td><span class="ok"><svg class="i12"><use href="#check"/></svg>31 checked, 0 failed</span></td><td class="mono">Nov 17 to 24</td></tr>
+              <tr><th>Test on 20, none failed</th><td><span class="ok"><svg class="i12"><use href="#check"/></svg>25, 0 failed</span></td><td class="mono">Nov 24</td></tr>
+              <tr><th>8 of 10 sent unedited</th><td><span class="ok"><svg class="i12"><use href="#check"/></svg>9/10</span></td><td class="mono">Nov 10 to 24</td></tr>
+              <tr><th>No safety failures, 7 days</th><td><span class="ok"><svg class="i12"><use href="#check"/></svg>0</span></td><td class="mono">Nov 17 to 24</td></tr>
             </tbody>
           </table>
-          <p class="note">This record goes in the Activity log with the move.</p>
         </div>
         <div class="modal-foot"><button class="btn btn-quiet" type="button">Cancel</button><button class="btn btn-primary" type="button"><svg class="i12"><use href="#plane"/></svg>Move to Send</button></div>
       </div>
     </div>
     <div>
-      <p class="mock-cap">Gate not met: the move stays off and says what is missing</p>
+      <p class="mock-cap">Gate not met</p>
       <div class="gate-card">
         <div class="gate">
           <h3>To move to Send</h3>
           <ul class="gate-list">
             <li data-met>
               <span class="gate-mark"><svg class="i12"><use href="#check"/></svg></span>
-              <span>Test on past mail, 20 or more, none failed<small>Nov 24</small></span>
-              <span class="gate-val">25 · 0 failed</span>
+              <span>Test on 20, none failed</span>
+              <span class="gate-val">25/25</span>
               <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="100" height="4"/></svg>
             </li>
             <li>
               <span class="gate-mark"></span>
-              <span>10 drafts sent, 8 of the last 10 unedited<small>3 more to send</small></span>
+              <span>8 of 10 sent unedited</span>
               <span class="gate-val">7 sent</span>
               <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="70" height="4"/></svg>
             </li>
             <li data-bad>
               <span class="gate-mark"><svg class="i12"><use href="#x"/></svg></span>
-              <span>No safety-check failures in 7 days<small>Failed on Nov 22, clears Nov 29</small></span>
-              <span class="gate-val">1 failed</span>
+              <span>No safety failures, 7 days</span>
+              <span class="gate-val">Clears Nov 29</span>
               <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="100" height="4"/></svg>
             </li>
           </ul>
           <div class="toolbar">
             <button class="btn btn-primary" type="button" disabled><svg class="i12"><use href="#lock"/></svg>Move to Send</button>
-            <span class="quiet">Send needs all three.</span>
           </div>
         </div>
       </div>
