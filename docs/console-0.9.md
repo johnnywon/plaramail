@@ -15,6 +15,7 @@ The console replaces the mail with its own rail, opened at `?console=<page>`.
 | Overview | The last 24 hours: agent actions, sends, auto-drafts, failures, each agent's count today, sends per address |
 | Your agents | Every agent: name, job, addresses, mode, in the order they take mail. The PlaraMail Agent is the built-in one. |
 | Draft review | Drafts waiting for you, as mail rows |
+| Approvals | Sends and bulk changes held for approval, each with Approve and Drop, the latest decided, and each agent's and MCP client's Hold for approval switch |
 | Activity log | Every action by an agent, an MCP client or you, kept 90, 120 or 180 days |
 | AI models | The agent model and its facts, and Cloudflare and OpenRouter side by side: training, retention, models, key |
 | MCP | The server URL, connect steps per client, connected apps (OAuth grants, read or read and send) with Revoke |
@@ -78,6 +79,18 @@ An agent's Test runs it on mail it already has, as if each message had just arri
 - **Kept.** Each agent keeps its latest run, as the evidence for moving it up a rung (WON-531). A new run replaces it, and deleting the agent deletes it.
 
 As built: `workers/agent/test-run.ts`, `shared/agent-test.ts`, migration `0016_agent_tests.sql`, and Test on the agent's page (`AgentTest.tsx`). The browser tests one message per request, `POST /api/v1/agents/:id/test` to start (`search`, `limit`), then `POST .../test/next` until the run is done, so no request runs long and a run left half done picks up again when the page is opened. `POST .../test/stop` stops it and keeps what was tested; `GET .../test` returns the latest run. A demo build refuses all three.
+
+## Approval queue (0.10, WON-532)
+
+Agent sends and bulk changes can wait for one-click approval.
+
+- **Hold for approval.** Each agent and each MCP client has its own switch, in Console > Approvals. It is on by default for an agent's first 7 days in Send and off otherwise. A switch someone set stays as set.
+- **What waits.** A send (`send_draft`, `reply_to_email`, `send_email`), and a bulk change: any one call that moves, trashes, labels or marks more than 25 messages. From MCP that is `label_matching`, `label_conversation` and unstarring with `star_conversation` over more than 25 messages.
+- **One click.** Approve runs the call as it was made, through the same checks: a reply whose conversation moved on is still refused. Drop discards it. Both are in the Activity log.
+- **24 hours.** A queued item waits 24 hours, then expires and is logged as dropped.
+- **Limits.** A queued send counts toward the daily limit when it is approved, not when it is queued. An approved send over the limit fails and says so.
+
+As built: `workers/lib/approvals.ts` (the queue and the switches), `workers/lib/approval-run.ts` (holding and running calls), migration `0017_approval_queue.sql`. `GET /api/v1/approvals`, `POST /api/v1/approvals/:id/approve`, `POST /api/v1/approvals/:id/drop`, `PUT /api/v1/approvals/holds/:kind/:id`. The cron drops expired items every minute. Send mode stays off until 0.10; an agent's `send_since` is recorded so the 7-day default applies once it opens. The in-app chat agent is not held: a person is present for each of its turns.
 
 ## Build order
 

@@ -3,7 +3,8 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 /**
- * The one-minute cron. It sends due scheduled mail, then, when
+ * The one-minute cron. It sends due scheduled mail, drops held calls past
+ * their 24 hours (workers/lib/approvals.ts), then, when
  * ATTACHMENT_SEARCH is "true", converts a few attachments to searchable text.
  * Once an hour it deletes activity and auto-draft runs past the retention,
  * marks failed the auto-draft runs whose worker died, and, when prefs set
@@ -12,6 +13,7 @@
  */
 import { failAbandonedRuns, pruneRuns } from "./agent/runs";
 import { pruneActivity } from "./lib/activity";
+import { expireQueue } from "./lib/approvals";
 import { recordError, sendAlerts } from "./lib/alerts";
 import { DEMO } from "./lib/demo";
 import { resetDemo } from "./lib/dev-seed";
@@ -52,6 +54,8 @@ export async function runCron(env: Env, now = Date.now()) {
 		console.error(`scheduled send failed for ${scheduled.failed.length} message(s)`);
 		await recordError(env, "scheduled-send", `${scheduled.failed.length} scheduled message(s) failed to send`, now);
 	}
+	// Held sends and bulk changes past their 24 hours are dropped and logged (WON-532).
+	const expired = await expireQueue(recordsSql(env), now).catch(failed("approval queue"));
 	const attachments = String(env.ATTACHMENT_SEARCH ?? "") === "true"
 		? await extractAttachmentTextBatch(env, now).catch(failed("attachment text"))
 		: null;
@@ -64,5 +68,5 @@ export async function runCron(env: Env, now = Date.now()) {
 			return null;
 		})
 		: null;
-	return { scheduled, attachments, pruned, purged, alerted };
+	return { scheduled, expired, attachments, pruned, purged, alerted };
 }

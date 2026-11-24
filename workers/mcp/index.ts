@@ -43,6 +43,8 @@ import { MCP_TOOLS, type McpToolName } from "../../shared/mcp-tools";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { MCP_ATTACHMENTS_MAX, MCP_ATTACHMENT_BYTES_MAX, replyTarget, toolReplyToEmail, toolSendEmail } from "../lib/mcp-send";
 import { canSend, type McpProps } from "./scopes";
+import { holdMcpSend, mcpBulkHold, type McpCaller } from "../lib/approval-run";
+import { BULK_OVER } from "../../shared/approvals";
 import type { Env } from "../types";
 import pkg from "../../package.json";
 
@@ -98,6 +100,10 @@ const attachmentsSchema = z.array(attachmentSchema).max(MCP_ATTACHMENTS_MAX).opt
 const idempotencyKeySchema = z.string().regex(/^[A-Za-z0-9._:-]{8,80}$/)
 	.describe("A key you make up for this send, 8 to 80 letters, digits, or . _ : -. Retrying with the same key never sends twice.");
 
+/** Added to the description of every tool whose call can be held for approval. */
+const HOLD_NOTE = ` If this app's calls are held for approval, the result is status "queued" with an approvalId: nothing happened yet, and a person approves or drops it in the app within 24 hours. Don't call again to retry it.`;
+const BULK_HOLD_NOTE = ` A change to more than ${BULK_OVER} messages can be held for approval: the result is then status "queued" and nothing changed yet. Don't call again to retry it.`;
+
 /** The result object inside an MCP response, for the activity log. */
 function mcpView(response: { content?: { type: string; text?: string }[]; isError?: boolean }): unknown {
 	const text = response.content?.find((c) => c.type === "text")?.text ?? "";
@@ -135,6 +141,9 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 				return logged<any>(sql, { actor: "mcp", client }, name, args ?? {}, () => handler(args, extra), mcpView);
 			});
 		const sends = canSend(props, env);
+		// Hold for approval is per client (Console > MCP): its sends and bulk changes wait in Console > Approvals.
+		const caller: McpCaller = { clientId: props?.clientId ?? "local", clientName: props?.clientName ?? null };
+		const held = (result: Record<string, unknown> | null) => (result ? mcpResult(result) : null);
 
 		/**
 		 * Verify a mailbox exists before operating on it.
@@ -365,7 +374,7 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 		if (sends) {
 		tool(
 			"send_draft",
-			"Send a saved draft now and remove it from Drafts. A reply draft is sent in its thread. A draft that was already sent returns \"Draft not found\" and is not sent again.",
+			`Send a saved draft now and remove it from Drafts. A reply draft is sent in its thread. A draft that was already sent returns "Draft not found" and is not sent again.${HOLD_NOTE}`,
 			{
 				mailboxId: z.string().describe("The mailbox the draft is in. It is sent from that address."),
 				draftId: z.string().describe("The ID of the draft to send"),
@@ -373,13 +382,15 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 			async ({ mailboxId, draftId }) => {
 				const denied = await verifyMailbox(mailboxId);
 				if (denied) return denied;
+				const hold = held(await holdMcpSend(env, sql, caller, "send_draft", { mailboxId, draftId }));
+				if (hold) return hold;
 				return mcpResult(await toolSendDraft(env, mailboxId, draftId, "mcp"));
 			},
 		);
 
 		tool(
 			"reply_to_email",
-			"Send a reply to a received email now, in its conversation, from the address it was sent to. Pass the email's replyTarget from get_email as expectedRecipients. The reply is refused if a newer email arrived in the conversation or the reply address changed. It is saved to Sent.",
+			"Send a reply to a received email now, in its conversation, from the address it was sent to. Pass the email's replyTarget from get_email as expectedRecipients. The reply is refused if a newer email arrived in the conversation or the reply address changed. It is saved to Sent." + HOLD_NOTE,
 			{
 				mailboxId: z.string().describe("The mailbox the email is in. The reply is sent from that address."),
 				emailId: z.string().describe("The received email to reply to: the newest one in its conversation"),
@@ -391,13 +402,15 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 			async ({ mailboxId, ...input }) => {
 				const denied = await verifyMailbox(mailboxId);
 				if (denied) return denied;
-				return mcpResult(await toolReplyToEmail(env, mailboxId, props?.clientId ?? "local", input));
+				const hold = held(await holdMcpSend(env, sql, caller, "reply_to_email", { mailboxId, ...input }));
+				if (hold) return hold;
+				return mcpResult(await toolReplyToEmail(env, mailboxId, caller.clientId, input));
 			},
 		);
 
 		tool(
 			"send_email",
-			"Send a new email now from one of your addresses. It starts a new conversation and is saved to Sent.",
+			"Send a new email now from one of your addresses. It starts a new conversation and is saved to Sent." + HOLD_NOTE,
 			{
 				mailboxId: z.string().describe("The address to send from"),
 				to: z.array(z.string().email()).min(1).max(20).describe("Recipients"),
@@ -407,7 +420,9 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 				attachments: attachmentsSchema,
 				idempotencyKey: idempotencyKeySchema,
 			},
-			async ({ mailboxId, ...input }) => mcpResult(await toolSendEmail(env, mailboxId, props?.clientId ?? "local", input)),
+			async ({ mailboxId, ...input }) =>
+				held(await holdMcpSend(env, sql, caller, "send_email", { mailboxId, ...input }))
+				?? mcpResult(await toolSendEmail(env, mailboxId, caller.clientId, input)),
 		);
 		}
 
@@ -485,7 +500,7 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 		// ── label_conversation ─────────────────────────────────────
 		tool(
 			"label_conversation",
-			"Add or remove labels on the conversation that holds an email. Labeling leaves the conversation where it is unless archive is true.",
+			"Add or remove labels on the conversation that holds an email. Labeling leaves the conversation where it is unless archive is true." + BULK_HOLD_NOTE,
 			{
 				mailboxId: z.string().describe("The mailbox email address"),
 				emailId: z.string().describe("Any email ID in the conversation"),
@@ -496,14 +511,15 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 			async ({ mailboxId, emailId, add, remove, archive }) => {
 				const denied = await verifyMailbox(mailboxId);
 				if (denied) return denied;
-				return mcpResult(await toolLabelConversation(env, mailboxId, emailId, { add, remove, archive }));
+				return mcpResult(await toolLabelConversation(env, mailboxId, emailId, { add, remove, archive },
+					mcpBulkHold(sql, caller, "label_conversation", { mailboxId, emailId, add, remove, archive })));
 			},
 		);
 
 		// ── star_conversation ──────────────────────────────────────
 		tool(
 			"star_conversation",
-			"Star or unstar the conversation that holds an email. Starring marks its latest message; unstarring clears every message.",
+			"Star or unstar the conversation that holds an email. Starring marks its latest message; unstarring clears every message." + BULK_HOLD_NOTE,
 			{
 				mailboxId: z.string().describe("The mailbox email address"),
 				emailId: z.string().describe("Any email ID in the conversation"),
@@ -512,7 +528,8 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 			async ({ mailboxId, emailId, starred }) => {
 				const denied = await verifyMailbox(mailboxId);
 				if (denied) return denied;
-				return mcpResult(await toolStarConversation(env, mailboxId, emailId, starred));
+				return mcpResult(await toolStarConversation(env, mailboxId, emailId, starred,
+					mcpBulkHold(sql, caller, "star_conversation", { mailboxId, emailId, starred })));
 			},
 		);
 
@@ -536,14 +553,15 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 		);
 		tool(
 			"label_matching",
-			`Add or remove labels on every conversation that matches a search, across all addresses, in one call. Up to ${LABEL_MATCHING_MAX} conversations.`,
+			`Add or remove labels on every conversation that matches a search, across all addresses, in one call. Up to ${LABEL_MATCHING_MAX} conversations.${BULK_HOLD_NOTE}`,
 			{
 				...mailSearch,
 				add: z.array(z.string()).optional().describe("Label ids or names to add"),
 				remove: z.array(z.string()).optional().describe("Label ids or names to remove"),
 				archive: z.boolean().optional().describe("Also move the matching Inbox mail to Archive"),
 			},
-			async ({ add, remove, archive, ...search }) => mcpResult(await toolLabelMatching(env, search, { add, remove, archive })),
+			async ({ add, remove, archive, ...search }) => mcpResult(await toolLabelMatching(env, search, { add, remove, archive },
+				mcpBulkHold(sql, caller, "label_matching", { ...search, add, remove, archive }))),
 		);
 
 		// ── mark_email_read ────────────────────────────────────────

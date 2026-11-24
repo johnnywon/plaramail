@@ -3,7 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 /** The console's pages: the agents' work, tools and models, then the mail client's settings. */
-export const AGENT_PAGES = ["home", "agents", "review", "logs"] as const;
+export const AGENT_PAGES = ["home", "agents", "review", "approvals", "logs"] as const;
 export const SETUP_PAGES = ["mcp", "models", "mailroom"] as const;
 export const SETTINGS_TABS = ["general", "addresses", "signatures", "labels", "shortcuts", "storage"] as const;
 export const CONSOLE_TABS = [...AGENT_PAGES, ...SETUP_PAGES, ...SETTINGS_TABS] as const;
@@ -12,7 +12,7 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 /** Each page's name, on the rail, its page head and in console search. */
 export const CONSOLE_LABELS: Record<ConsoleTab, string> = {
-	home: "Overview", agents: "Your agents", review: "Draft review", logs: "Activity log",
+	home: "Overview", agents: "Your agents", review: "Draft review", approvals: "Approvals", logs: "Activity log",
 	models: "AI models", mcp: "MCP", mailroom: "PlaraMail Agent",
 	addresses: "Addresses", signatures: "Signatures", labels: "Labels",
 	general: "Preferences", shortcuts: "Keyboard shortcuts", storage: "Mail storage",
@@ -21,7 +21,7 @@ export const CONSOLE_LABELS: Record<ConsoleTab, string> = {
 /** The rail, top to bottom. The PlaraMail Agent page sits under Your agents. */
 export const CONSOLE_RAIL: { group: string | null; tabs: ConsoleTab[] }[] = [
 	{ group: null, tabs: ["home"] },
-	{ group: "Agents", tabs: ["agents", "review", "logs"] },
+	{ group: "Agents", tabs: ["agents", "review", "approvals", "logs"] },
 	{ group: "Connections", tabs: ["models", "mcp"] },
 	{ group: "Mail", tabs: ["addresses", "signatures", "labels"] },
 	{ group: "App", tabs: ["general", "shortcuts", "storage"] },
@@ -32,7 +32,7 @@ export const isSettingsTab = (tab: ConsoleTab): tab is SettingsTab => (SETTINGS_
 /** Names from before (0.7's console tabs, ?settings=agent, ?settings=index, the MCP dialog) and other words for a page. */
 const RENAMED: Record<string, ConsoleTab> = {
 	overview: "home", activity: "logs", limits: "mailroom", drafting: "mailroom", model: "models", connections: "mcp",
-	agent: "mailroom", index: "storage", tools: "mcp", preferences: "general", settings: "general", prefs: "general",
+	agent: "mailroom", index: "storage", approval: "approvals", queue: "approvals", tools: "mcp", preferences: "general", settings: "general", prefs: "general",
 };
 
 /** A page by its slug or another name for it. Any other non-empty name opens Overview, so the console never closes on a typo. */
