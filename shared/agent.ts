@@ -8,8 +8,24 @@
  */
 export const SHARED_AGENT = "all";
 
+import pkg from "../package.json";
+
 /** The release hired agents get Send in. The Console's badges and the API's refusal read it from here. */
 export const SEND_VERSION = "0.10";
+
+/** Whether `version` is SEND_VERSION or later, by major and minor: "0.9.8" is not, "0.10.0" is. */
+export function sendOpen(version: string, at = SEND_VERSION): boolean {
+	const parts = (v: string) => v.split(".").slice(0, 2).map((n) => Number.parseInt(n, 10) || 0);
+	const [major, minor] = parts(version);
+	const [needMajor, needMinor] = parts(at);
+	return major > needMajor || (major === needMajor && minor >= needMinor);
+}
+
+/**
+ * Send opens with the release: bumping package.json to SEND_VERSION turns it on,
+ * and nothing else does. Below it the API refuses Send and an agent stored in Send works as Draft.
+ */
+export const SEND_OPEN = sendOpen(pkg.version);
 
 /** What the chat panel tells the agent about the conversation on screen. */
 export type AgentContext = {

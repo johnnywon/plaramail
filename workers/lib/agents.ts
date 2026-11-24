@@ -17,7 +17,7 @@
  * reaches them. Send waits for SEND_VERSION (SEND_ENABLED): an agent earns it with
  * Test on past mail and a record of drafts sent unchanged.
  */
-import { SEND_VERSION } from "../../shared/agent";
+import { SEND_OPEN, SEND_VERSION } from "../../shared/agent";
 import { z } from "zod";
 import { RUN_STALE_MS } from "../agent/runs";
 import type { Sql } from "../store/sql";
@@ -39,8 +39,8 @@ export const modesFor = (does: AgentDoes): readonly AgentMode[] => (isAction(doe
 /** A new action agent's daily limit. A reply agent's is 25. */
 export const ACTION_DAILY_LIMIT = 100;
 
-/** Off until SEND_VERSION. While off, the API refuses Send and an agent stored in Send works as Draft. */
-export const SEND_ENABLED = false;
+/** Off until the release reaches SEND_VERSION (shared/agent.ts). While off, the API refuses Send and an agent stored in Send works as Draft. */
+export const SEND_ENABLED = SEND_OPEN;
 export { SEND_VERSION };
 export const SEND_LATER = `Send arrives in ${SEND_VERSION}. Use Draft for now.`;
 
