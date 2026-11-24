@@ -7,7 +7,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import api from "~/services/api";
 import type { ConsoleTab } from "./console-tabs";
-import { Async, Badge, Button, Code, CopyField, Name, Note, Section, Table, Tabs } from "./ConsoleUI";
+import type { McpApp } from "~/services/api";
+import { Async, Badge, Button, Code, CopyField, Name, Note, Picker, Section, Table, Tabs } from "./ConsoleUI";
+import { AddressText, Swatch, type Identities } from "./identity";
 import { BYPASS_PATHS, checkBypass } from "./mcp-access";
 
 type Client = "claude-code" | "claude-desktop" | "codex" | "cursor" | "grok" | "other";
@@ -53,8 +55,54 @@ export function ago(iso: string, now = Date.now()): string {
 	return `${Math.round(s / 86_400)}d ago`;
 }
 
-/** Console > MCP: the server's URL, how to connect a client, and the apps connected, with Revoke. */
-export function McpTab({ onTab }: { onTab: (tab: ConsoleTab) => void }) {
+/** What a connected app can use: every address, one, or a count with the list as its title. */
+function AppAddresses({ app, identities }: { app: McpApp; identities: Identities }) {
+	if (app.every) return <span>Every address</span>;
+	if (app.addresses.length === 1) return <AddressText address={app.addresses[0]} identity={identities.of(app.addresses[0])} bold={false} />;
+	return <span title={app.addresses.join(", ")}>{app.addresses.length} addresses</span>;
+}
+
+/** Narrow one app to some of its addresses. Only addresses it already has are offered. */
+function NarrowApp({ app, identities, onDone }: { app: McpApp; identities: Identities; onDone: () => void }) {
+	const [value, setValue] = useState(app.addresses);
+	const queryClient = useQueryClient();
+	const save = useMutation({
+		mutationFn: () => api.narrowMcpApp(app.id, value),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["mcp-apps"] });
+			onDone();
+		},
+	});
+	const domains = new Map<string, string[]>();
+	for (const a of app.addresses) {
+		const d = a.slice(a.indexOf("@") + 1);
+		domains.set(d, [...(domains.get(d) ?? []), a]);
+	}
+	const groups = [...domains].map(([domain, list]) => ({
+		key: domain, label: domain, mark: <Swatch identity={identities.of(list[0])} />,
+		items: list.map((a) => ({ value: a, text: a, label: <AddressText address={a} identity={identities.of(a)} bold={false} /> })),
+	}));
+	const unchanged = value.length === app.addresses.length && !app.every;
+	return (
+		<Section
+			title={`Addresses for ${app.name}`}
+			sub="Its tools see and act on only the addresses ticked, from its next call. To add an address, connect the app again."
+		>
+			<Picker groups={groups} value={value} onChange={setValue} noun="addresses" />
+			{value.length === 0 && <Note tone="warn">Choose at least one address. To remove every address, revoke the app.</Note>}
+			{save.error && <Note tone="error">{(save.error as Error).message}</Note>}
+			<div className="pg-ui-actions">
+				<Button onClick={onDone}>Cancel</Button>
+				<Button variant="primary" disabled={value.length === 0 || unchanged || save.isPending} onClick={() => save.mutate()}>
+					{save.isPending ? "Saving" : "Save"}
+				</Button>
+			</div>
+		</Section>
+	);
+}
+
+/** Console > MCP: the server's URL, how to connect a client, and the apps connected, with their addresses and Revoke. */
+export function McpTab({ onTab, identities }: { onTab: (tab: ConsoleTab) => void; identities: Identities }) {
 	const url = `${window.location.origin}/mcp`;
 	const [client, setClient] = useState<Client>("claude-code");
 	const step = setup(client, url);
@@ -70,6 +118,8 @@ export function McpTab({ onTab }: { onTab: (tab: ConsoleTab) => void }) {
 		mutationFn: (id: string) => api.revokeMcpApp(id),
 		onSettled: () => queryClient.invalidateQueries({ queryKey: ["mcp-apps"] }),
 	});
+	const [editing, setEditing] = useState<string | null>(null);
+	const edited = apps.data?.apps.find((a) => a.id === editing);
 
 	return (
 		<>
@@ -114,13 +164,21 @@ export function McpTab({ onTab }: { onTab: (tab: ConsoleTab) => void }) {
 							columns={[
 								{ key: "name", label: "App", head: true, cell: (r) => <Name icon={<PlugsConnectedIcon size={14} />}>{r.name}</Name> },
 								{ key: "access", label: "Can", cell: (r) => (r.scopes.includes("mail.send") ? <Badge tone="danger">Read and send</Badge> : <Badge tone="ok">Read</Badge>) },
-								{ key: "used", label: "Last used", cell: (r) => <span className="pg-mono">{lastUse.has(r.name) ? ago(lastUse.get(r.name)!) : "never"}</span> },
+								{
+									key: "addresses", label: "Addresses", cell: (r) => r.addresses.length < 2 ? <AppAddresses app={r} identities={identities} /> : (
+										<Button size="sm" variant="quiet" aria-label={`Change addresses for ${r.name}`} onClick={() => setEditing(r.id)}>
+											<AppAddresses app={r} identities={identities} />
+										</Button>
+									),
+								},
+								{ key: "used", label: "Last used", wide: true, cell: (r) => <span className="pg-mono">{lastUse.has(r.name) ? ago(lastUse.get(r.name)!) : "never"}</span> },
 								{ key: "revoke", label: "", cell: (r) => <Button size="sm" disabled={revoke.isPending} onClick={() => revoke.mutate(r.id)}>Revoke</Button> },
 							]}
 						/>
 					)}
 				</Async>
 			</Section>
+			{edited && <NarrowApp key={edited.id} app={edited} identities={identities} onDone={() => setEditing(null)} />}
 		</>
 	);
 }

@@ -8,12 +8,17 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 
 - Test on past mail. An agent's page has Test: it runs the agent on the latest 25 received messages for its addresses, or what a search finds, 50 at most, and lists for each whether it took the message and the reply it would have written. Nothing is sent and no draft is saved. The run shows its tokens and cost when it finishes. Each agent keeps its latest run. `GET` and `POST /api/v1/agents/:id/test`, `POST /api/v1/agents/:id/test/next` and `/stop`. New D1 migration: `0016_agent_tests.sql`.
 - Approval queue. Each agent and each MCP client has a Hold for approval switch in Console > Approvals. While it is on, its sends and its bulk changes (one call that moves, trashes, labels or marks more than 25 messages) wait in Console > Approvals, each with Approve and Drop. An agent's switch is on by default for its first 7 days in Send; an MCP client's is off. A queued item waits 24 hours, then is dropped and logged. A queued send counts toward the daily limit when it is approved. A held MCP call returns `status: "queued"` with an `approvalId` (docs/mcp.md). `GET /api/v1/approvals`, `POST /api/v1/approvals/:id/approve`, `POST /api/v1/approvals/:id/drop`, `PUT /api/v1/approvals/holds/:kind/:id`.
+- MCP grants limited to chosen addresses. The consent page lists the deployment's addresses, none ticked, and Connect needs at least one. The server limits every tool to the grant's addresses: `list_mailboxes`, `search_all_mail` and `label_matching` see only them, and a tool given another address answers "not found", including tools that take an email, thread or draft id. `list_labels` counts only the grant's mail, and `rename_label` and `delete_label` are refused for a label on mail at another address. docs/mcp.md, Addresses.
+- Console > MCP shows each connected app's addresses. Click them to narrow an app to fewer; its next tool call sees only those. `PUT /api/v1/mcp/apps/:id/addresses` takes `{ "addresses": [...] }`, a non-empty subset of the app's current addresses.
 
 ### Changed
 
+- Apps connected before this version keep every address, including ones added later, until narrowed in Console > MCP.
+- An MCP session belongs to one grant. A client with a session from before this version gets `404 Session not found` once and starts a new session.
 - Mail to `name+tag@example.com` goes to the `name@example.com` mailbox when only the base address is in `EMAIL_ADDRESSES`. The To header keeps the tag. An address configured with a plus still gets its own mailbox. Email Routing must also send the tagged address to the Worker: turn on subaddressing for the zone.
 
 D1 migration: `0017_approval_queue.sql`. `npm run deploy` applies it.
+D1 migration: `0018_mcp_grant_addresses.sql`. `npm run deploy` applies it.
 
 ## 0.9.6
 

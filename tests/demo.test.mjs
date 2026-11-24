@@ -36,6 +36,7 @@ const WRITES = {
 	"POST /api/v1/agents/:id/test": AI,
 	"POST /api/v1/agents/:id/test/next": AI,
 	"POST /api/v1/agents/:id/test/stop": SETTINGS,
+	"PUT /api/v1/mcp/apps/:id/addresses": SETTINGS,
 	"DELETE /api/v1/mcp/apps/:id": SETTINGS,
 	"POST /api/v1/approvals/:id/approve": SETTINGS,
 	"POST /api/v1/approvals/:id/drop": SETTINGS,

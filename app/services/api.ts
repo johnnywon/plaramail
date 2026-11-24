@@ -131,6 +131,10 @@ export interface McpApp {
 	name: string;
 	scopes: string[];
 	connectedAt: string;
+	/** The addresses the app can use now. */
+	addresses: string[];
+	/** Connected before address limits and never narrowed: every address, including ones added later. */
+	every: boolean;
 }
 
 export interface ActivityPage {
@@ -556,6 +560,8 @@ const api = {
 	getMcpUsage: () => get<McpUsage>("/api/v1/mcp/usage"),
 	getMcpApps: () => get<{ apps: McpApp[] }>("/api/v1/mcp/apps"),
 	revokeMcpApp: (id: string) => del<{ ok: true }>(`/api/v1/mcp/apps/${encodeURIComponent(id)}`),
+	narrowMcpApp: (id: string, addresses: string[]) =>
+		put<{ id: string; addresses: string[]; every: false }>(`/api/v1/mcp/apps/${encodeURIComponent(id)}/addresses`, { addresses }),
 	getAutoDraftRuns: (mailbox?: string) => get<AutoDraftRun[]>("/api/v1/auto-draft/runs", mailbox ? { params: { mailbox } } : undefined),
 
 	// Agents (Console > Agents)

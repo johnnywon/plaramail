@@ -17,17 +17,28 @@ const COMPATIBILITY_FLAGS = JSON.parse(
 ).compatibility_flags;
 
 const MAILBOX = "a@example.com";
+/** A second address, for grants limited to MAILBOX (WON-533). */
+const OTHER = "b@example.com";
 const ORIGIN = "http://localhost";
 const REDIRECT = "http://localhost:3333/callback";
 let mf;
 let client;
 let reader;
+let narrow;
+let narrowToken;
 
 const seeded = [
 	{ id: "e1", subject: "Invoice for October", sender: "billing@example.net", body: "<p>Amount due: 42</p>" },
 	{ id: "e2", subject: "Weekly digest", sender: "news@example.org", body: "<p>This week</p>" },
 ].map((e, i) => ({
 	recipient: MAILBOX, date: new Date(Date.UTC(2026, 9, 1, i)).toISOString(), read: false, starred: false,
+	thread_id: e.id, message_id: `${e.id}@mail`, raw_headers: "[]", ...e,
+}));
+
+const otherSeeded = [
+	{ id: "b1", subject: "Payroll run", sender: "hr@example.org", body: "<p>Salaries</p>" },
+].map((e) => ({
+	recipient: OTHER, date: new Date(Date.UTC(2026, 9, 1, 5)).toISOString(), read: false, starred: false,
 	thread_id: e.id, message_id: `${e.id}@mail`, raw_headers: "[]", ...e,
 }));
 
@@ -48,7 +59,7 @@ before(async () => {
 		script: bundle.outputFiles[0].text,
 		compatibilityDate: "2025-11-28",
 		compatibilityFlags: COMPATIBILITY_FLAGS,
-		bindings: { EMAIL_ADDRESSES: [MAILBOX] },
+		bindings: { EMAIL_ADDRESSES: [MAILBOX, OTHER] },
 		email: { send_email: [{ name: "EMAIL" }] },
 		r2Buckets: ["BUCKET"],
 		d1Databases: ["DB"],
@@ -60,21 +71,26 @@ before(async () => {
 	for (const s of statements(D1_SCHEMA)) await mf.dispatchFetch(`${ORIGIN}/_sql`, { method: "POST", body: s });
 	const seed = await mf.dispatchFetch(`${ORIGIN}/_seed`, { method: "POST", body: JSON.stringify({ mailbox: MAILBOX, emails: seeded }) });
 	assert.equal(seed.status, 200, await seed.text());
+	const other = await mf.dispatchFetch(`${ORIGIN}/_seed`, { method: "POST", body: JSON.stringify({ mailbox: OTHER, emails: otherSeeded }) });
+	assert.equal(other.status, 200, await other.text());
 
 	client = await connect("mcp-test", await grant({ send: true }));
 	reader = await connect("mcp-reader", await grant({ send: false }));
+	narrowToken = await grant({ send: true, name: "mcp-narrow", addresses: [MAILBOX] });
+	narrow = await connect("mcp-narrow", narrowToken);
 });
 
 after(async () => {
 	await client?.close();
 	await reader?.close();
+	await narrow?.close();
 	await mf?.dispose();
 });
 
 const b64url = (bytes) => Buffer.from(bytes).toString("base64url");
 
 /** Register a client and walk the consent page; returns the consent page and, if approved, a token. */
-async function authorizeFlow({ name = "mcp-test", send, decision = "approve" }) {
+async function authorizeFlow({ name = "mcp-test", send, decision = "approve", addresses = [MAILBOX, OTHER] }) {
 	const reg = await mf.dispatchFetch(`${ORIGIN}/mcp/oauth/register`, {
 		method: "POST", headers: { "content-type": "application/json" },
 		body: JSON.stringify({ client_name: name, redirect_uris: [REDIRECT], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] }),
@@ -93,17 +109,19 @@ async function authorizeFlow({ name = "mcp-test", send, decision = "approve" }) 
 	const handle = html.match(/name="handle" value="([^"]+)"/)[1];
 	const cookie = page.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
 	const form = new URLSearchParams({ handle, decision, ...(send ? { send: "on" } : {}) });
+	for (const address of addresses) form.append("address", address);
 	const done = await mf.dispatchFetch(`${ORIGIN}/authorize`, {
-		method: "POST", redirect: "manual", headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin: ORIGIN }, body: form,
+		method: "POST", redirect: "manual", headers: { cookie, accept: "text/html", "content-type": "application/x-www-form-urlencoded", origin: ORIGIN }, body: form,
 	});
+	if (decision === "approve" && addresses.length === 0) return { html, refused: done };
 	assert.equal(done.status, 302, await done.clone().text());
 	const back = new URL(done.headers.get("location"));
 	return { html, client_id, verifier, back };
 }
 
 /** An access token for a client approved with or without sending. */
-async function grant({ send, name }) {
-	const { client_id, verifier, back } = await authorizeFlow({ send, name });
+async function grant({ send, name, addresses }) {
+	const { client_id, verifier, back } = await authorizeFlow({ send, name, addresses });
 	const token = await mf.dispatchFetch(`${ORIGIN}/mcp/oauth/token`, {
 		method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
 		body: new URLSearchParams({ grant_type: "authorization_code", code: back.searchParams.get("code"), redirect_uri: REDIRECT, client_id, code_verifier: verifier, resource: `${ORIGIN}/mcp` }),
@@ -412,4 +430,109 @@ test("a grant without the send scope can't call the send tools", async () => {
 		.catch((e) => ({ isError: true, data: e.message }));
 	assert.equal(refused.isError, true);
 	assert.match(JSON.stringify(refused.data), /not found|send_email/i);
+});
+
+// ── WON-533: a grant limited to chosen addresses ──────────────────
+
+const refusedFor = async (as, name, args) => {
+	const r = await call(name, args, as);
+	assert.equal(r.isError, true, `${name} should refuse: ${JSON.stringify(r.data)}`);
+	return r.data;
+};
+
+test("the consent page lists every address with none ticked, and needs one", async () => {
+	const { html, refused } = await authorizeFlow({ name: "mcp-none", addresses: [] });
+	for (const address of [MAILBOX, OTHER]) assert.match(html, new RegExp(`name="address" value="${address}"(?! checked)`));
+	assert.ok(!/name="address"[^>]*checked/.test(html), "no address starts ticked");
+	assert.equal(refused.status, 400);
+	assert.match(await refused.text(), /Choose at least one address/);
+});
+
+test("a narrowed grant lists and searches only its addresses", async () => {
+	assert.deepEqual((await ok("list_mailboxes")).map((m) => m.id).sort(), [MAILBOX, OTHER]);
+	const boxes = (await call("list_mailboxes", {}, narrow)).data;
+	assert.deepEqual(boxes.map((m) => m.id), [MAILBOX]);
+
+	assert.deepEqual(found(await ok("search_all_mail", { query: "payroll" })), ["b1"], "the full grant finds it");
+	assert.deepEqual(found((await call("search_all_mail", { query: "payroll" }, narrow)).data), []);
+	assert.deepEqual(found((await call("search_all_mail", { to: [OTHER], folder: "anywhere" }, narrow)).data), []);
+	const own = (await call("search_all_mail", { query: "invoice" }, narrow)).data.conversations;
+	assert.ok(own.length > 0 && own.every((c) => c.mailboxId === MAILBOX), "its own address still searches");
+});
+
+test("a narrowed grant can't read another address, by mailbox or by message id", async () => {
+	for (const [name, args] of [
+		["list_emails", { mailboxId: OTHER }],
+		["get_email", { mailboxId: OTHER, emailId: "b1" }],
+		["get_thread", { mailboxId: OTHER, threadId: "b1" }],
+		["search_emails", { mailboxId: OTHER, query: "payroll" }],
+	]) assert.match(JSON.stringify(await refusedFor(narrow, name, args)), /not found/i, name);
+	await refusedFor(narrow, "get_email", { mailboxId: MAILBOX, emailId: "b1" });
+	const thread = (await call("get_thread", { mailboxId: MAILBOX, threadId: "b1" }, narrow)).data;
+	assert.deepEqual(thread.messages ?? [], [], "a thread id from another address finds nothing");
+});
+
+test("a narrowed grant can't organize or draft on another address", async () => {
+	for (const [name, args] of [
+		["mark_email_read", { mailboxId: OTHER, emailId: "b1", read: true }],
+		["move_email", { mailboxId: OTHER, emailId: "b1", folderId: "archive" }],
+		["label_conversation", { mailboxId: OTHER, emailId: "b1", add: [] }],
+		["star_conversation", { mailboxId: OTHER, emailId: "b1", starred: true }],
+		["draft_reply", { mailboxId: OTHER, originalEmailId: "b1", to: "hr@example.org", subject: "Re: Payroll run", bodyHtml: "<p>x</p>" }],
+		["create_draft", { mailboxId: OTHER, subject: "x", bodyHtml: "<p>x</p>" }],
+		["update_draft", { mailboxId: OTHER, draftId: "b1", subject: "x" }],
+		["delete_email", { mailboxId: OTHER, emailId: "b1" }],
+	]) await refusedFor(narrow, name, args);
+	await refusedFor(narrow, "star_conversation", { mailboxId: MAILBOX, emailId: "b1", starred: true });
+	await refusedFor(narrow, "mark_email_read", { mailboxId: MAILBOX, emailId: "b1", read: true });
+
+	await ok("create_label", { name: "Payroll" });
+	const matched = (await call("label_matching", { query: "payroll", folder: "anywhere", add: ["Payroll"] }, narrow)).data;
+	assert.equal(matched.conversations, 0);
+	const b1 = await ok("get_email", { mailboxId: OTHER, emailId: "b1" });
+	assert.equal(!!b1.read, false);
+	assert.equal(!!b1.starred, false);
+	assert.equal(b1.folder_id, "inbox");
+	assert.deepEqual(found(await ok("search_all_mail", { label: ["Payroll"], folder: "anywhere" })), []);
+});
+
+test("a narrowed grant's labels count only its mail, and it can't rename or delete a label on other mail", async () => {
+	await ok("create_label", { name: "Shared" });
+	await ok("label_conversation", { mailboxId: MAILBOX, emailId: "e2", add: ["Shared"] });
+	await ok("label_conversation", { mailboxId: OTHER, emailId: "b1", add: ["Shared"] });
+	const count = async (as) => (await call("list_labels", {}, as)).data.labels.find((l) => l.name === "Shared").conversations;
+	assert.equal(await count(client), 2);
+	assert.equal(await count(narrow), 1);
+	await refusedFor(narrow, "rename_label", { label: "Shared", name: "Common" });
+	await refusedFor(narrow, "delete_label", { label: "Shared" });
+	assert.equal(await count(client), 2, "the label is still there");
+	await ok("delete_label", { label: "Shared" });
+	await ok("delete_label", { label: "Payroll" });
+});
+
+test("a narrowed grant can't send from another address", async () => {
+	const sentBefore = listOf(await ok("list_emails", { mailboxId: OTHER, folder: "sent" })).length;
+	await refusedFor(narrow, "send_email", { mailboxId: OTHER, to: ["carol@example.org"], subject: "No", text: "No.", idempotencyKey: "narrow-send-0001" });
+	await refusedFor(narrow, "reply_to_email", { mailboxId: OTHER, emailId: "b1", expectedRecipients: ["hr@example.org"], text: "No.", idempotencyKey: "narrow-reply-0001" });
+	const draft = await ok("create_draft", { mailboxId: OTHER, to: "hr@example.org", subject: "Held", bodyHtml: "<p>x</p>" });
+	await refusedFor(narrow, "send_draft", { mailboxId: OTHER, draftId: draft.draftId });
+	assert.equal(listOf(await ok("list_emails", { mailboxId: OTHER, folder: "sent" })).length, sentBefore);
+	await ok("delete_email", { mailboxId: OTHER, emailId: draft.draftId });
+});
+
+test("narrowing a grant in Console takes effect on its next call", async () => {
+	const token = await grant({ send: false, name: "mcp-wide" });
+	const wide = await connect("mcp-wide", token);
+	try {
+		assert.equal((await call("list_mailboxes", {}, wide)).data.length, 2);
+		const grantId = token.access_token.split(":")[1];
+		await mf.dispatchFetch(`${ORIGIN}/_sql`, {
+			method: "POST",
+			body: `INSERT INTO mcp_grant_addresses (grant_id, addresses, updated_at) VALUES ('${grantId}', '["${MAILBOX}"]', '2026-11-24T00:00:00Z')`,
+		});
+		assert.deepEqual((await call("list_mailboxes", {}, wide)).data.map((m) => m.id), [MAILBOX]);
+		await refusedFor(wide, "get_email", { mailboxId: OTHER, emailId: "b1" });
+	} finally {
+		await wide.close();
+	}
 });

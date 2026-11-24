@@ -220,7 +220,7 @@ export function ConsolePage(props: {
 					{tab === "home" && <HomePage {...props} />}
 					{tab === "mcp" && (
 						<Page title={CONSOLE_LABELS.mcp}>
-							<McpTab onTab={onTab} />
+							<McpTab onTab={onTab} identities={props.identities} />
 						</Page>
 					)}
 					{tab === "approvals" && (

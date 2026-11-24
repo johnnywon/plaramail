@@ -19,6 +19,7 @@ import { withSecurityHeaders } from "./lib/security-headers";
 import { app as apiApp, receiveEmail } from "./index";
 import { authorize } from "./mcp/authorize";
 import { withMcpOAuth } from "./mcp/oauth";
+import { mailboxIds } from "./store";
 import type { Env } from "./types";
 
 export { EmailAgent } from "./agent";
@@ -110,7 +111,7 @@ app.use("*", async (c, next) => {
 app.on(["GET", "POST"], "/authorize", async (c) => {
 	if (!c.env.OAUTH_PROVIDER) return c.notFound();
 	if (c.req.method === "POST" && foreignOrigin(c.req.raw)) return c.text("Cross-origin request refused", 403);
-	return authorize(c.req.raw, c.env.OAUTH_PROVIDER, c.get("viewer"));
+	return authorize(c.req.raw, c.env.OAUTH_PROVIDER, c.get("viewer"), await mailboxIds(c.env));
 });
 
 // Mount the API routes
