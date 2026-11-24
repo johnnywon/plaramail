@@ -27,7 +27,7 @@ The console replaces the mail with its own rail, opened at `?console=<page>`.
 - **Addresses**: one, several, or all.
 - **Mode**: Watch (shows what it would do), Draft (writes drafts for you), Send (replies on its own, up to a daily limit). Send is off in 0.9 and arrives in 0.10.
 - **Instructions** and an **example reply**.
-- The workbench (0.10, WON-529): Trust across the top, then Setup beside Recent work and Test on past mail. Narrow, they stack with Setup first. Each check under Trust jumps to the record behind it, Setup shows Not tested when the latest Test ran on an older setup, Recent work and Test filter by result, and a draft still waiting opens Draft review.
+- The workbench (0.10, WON-529): Trust across the top, then Setup beside Recent work and Test on past mail. Narrow, they stack with Setup first. Each check under Trust jumps to the record behind it, Setup shows Not tested when the latest Test ran on an older setup, Recent work shows each message's subject and what came of it (Waiting, Sent, Edited, sent, Discarded, Skipped), read from the mail: the draft still in Drafts, a send with its `draft:<id>` key or a reply in the thread, and the promotion record for edits (`workers/lib/agent-work.ts`, `GET /api/v1/agents/:id/work`). Test results show Then, what came of the same message when it arrived, and Differs where the test disagrees. Both filter by result, and a waiting draft opens Draft review.
 
 New agents start in Watch.
 

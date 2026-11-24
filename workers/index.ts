@@ -37,6 +37,7 @@ import { TEST_MAX } from "../shared/agent-test";
 import { gateChecks, gateRefusal } from "../shared/agent-gates";
 import { agentEvidence, deleteAgentEvents } from "./lib/agent-evidence";
 import { mailboxIds, mailStore, storageStatus, recordsSql } from "./store";
+import type { Sql } from "./store/sql";
 import { forgetAddresses, narrowTo, shownAddresses, storeAddresses, storedAddresses } from "./mcp/grants";
 import { MOVE_FOLDERS } from "./lib/mail-bulk-sql";
 import { BULK_MAX_THREADS } from "../shared/bulk";
@@ -57,7 +58,8 @@ import { redraft } from "./lib/redraft";
 import { seedAgents } from "./lib/dev-seed-agents";
 import { listAgentActions, mailOps, undoAgentAction } from "./lib/agent-actions";
 import { REDRAFT_INSTRUCTION_MAX } from "../shared/draft-notes";
-import { setupKey } from "../shared/agent-test";
+import { type AgentTest, setupKey } from "../shared/agent-test";
+import { agentWork, thenFor } from "./lib/agent-work";
 import { claimNext, deleteTests, finishTest, getTest, liveGenerate, pickTestMail, saveResult, startTest, stopTest, testMessage } from "./agent/test-run";
 import { decide, listHolds, listQueue, setHold } from "./lib/approvals";
 import { runQueued } from "./lib/approval-run";
@@ -454,7 +456,17 @@ async function modelPrice(env: Env, id: string | null) {
 }
 
 /** The agent's latest test run, or null. */
-app.get("/api/v1/agents/:id/test", async (c) => c.json(await getTest(recordsSql(c.env), c.req.param("id"))));
+/** A test run with what came of each message when it arrived ("Then"), for this agent. */
+async function withThen(sql: Sql, agentId: string, test: AgentTest | null): Promise<AgentTest | null> {
+	if (!test) return test;
+	const then = await thenFor(sql, agentId, test.results.map((r) => r.emailId));
+	return { ...test, results: test.results.map((r) => ({ ...r, then: then.get(r.emailId) ?? "none" })) };
+}
+
+app.get("/api/v1/agents/:id/test", async (c) => {
+	const sql = recordsSql(c.env);
+	return c.json(await withThen(sql, c.req.param("id"), await getTest(sql, c.req.param("id"))));
+});
 
 /** Start a test: the latest received mail for the agent's addresses, or what `search` finds. Replaces the last run. */
 app.post("/api/v1/agents/:id/test", async (c) => {
@@ -466,7 +478,7 @@ app.post("/api/v1/agents/:id/test", async (c) => {
 	if (!agent) return c.json({ error: "Not found" }, 404);
 	const picked = await pickTestMail(sql, agent, { search: parsed.data.search, limit: parsed.data.limit, mailboxes: await mailboxIds(c.env) });
 	if ("error" in picked) return c.json({ error: picked.error }, 400);
-	return c.json(await startTest(sql, agent.id, parsed.data.search ?? "", picked.mail, Date.now(), setupKey(agent)), 201);
+	return c.json(await withThen(sql, agent.id, await startTest(sql, agent.id, parsed.data.search ?? "", picked.mail, Date.now(), setupKey(agent))), 201);
 });
 
 /** Test the next message of the running test. Returns the run; its state is done once no message is left. */
@@ -491,12 +503,12 @@ app.post("/api/v1/agents/:id/test/next", async (c) => {
 		await saveResult(sql, next.testId, next.position, verdict, modelId);
 	}
 	await finishTest(sql, agent.id, (id) => modelPrice(c.env, id));
-	return c.json(await getTest(sql, agent.id));
+	return c.json(await withThen(sql, agent.id, await getTest(sql, agent.id)));
 });
 
 /** Stop the running test. What was tested stays. */
 app.post("/api/v1/agents/:id/test/stop", async (c) =>
-	c.json(await stopTest(recordsSql(c.env), c.req.param("id"), (id) => modelPrice(c.env, id))));
+	c.json(await withThen(recordsSql(c.env), c.req.param("id"), await stopTest(recordsSql(c.env), c.req.param("id"), (id) => modelPrice(c.env, id)))));
 
 /** One action agent's latest actions. */
 app.get("/api/v1/agents/:id/actions", async (c) =>
@@ -512,6 +524,10 @@ app.post("/api/v1/agent-actions/:id/undo", async (c) => {
 app.get("/api/v1/agents/:id/evidence", async (c) => c.json(await agentEvidence(recordsSql(c.env), c.req.param("id"))));
 
 /** One agent's latest runs. */
+/** A reply agent's runs with each message's subject and what came of it (Recent work). */
+app.get("/api/v1/agents/:id/work", async (c) =>
+	c.json(await agentWork(recordsSql(c.env), c.req.param("id"), Number(c.req.query("limit")) || 100)));
+
 app.get("/api/v1/agents/:id/runs", async (c) =>
 	c.json(await listRuns(recordsSql(c.env), { agentId: c.req.param("id"), limit: Number(c.req.query("limit")) || 50 })));
 

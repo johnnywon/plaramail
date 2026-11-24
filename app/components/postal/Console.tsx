@@ -13,11 +13,12 @@ import { gateChecks } from "shared/agent-gates";
 import type { Unmatched } from "shared/prefs";
 import { afterMove, moveInOrder } from "./agent-order";
 import { confirmReady } from "./confirm-guard";
-import api, { type Agent, type AgentActionRow, type AgentDoes, type AgentDraft, type AgentMode, type AgentRule, type AgentStats, type AutoDraftRun } from "~/services/api";
+import api, { type Agent, type AgentActionRow, type AgentDoes, type AgentDraft, type AgentMode, type AgentRule, type AgentStats, type AutoDraftRun, type WorkRow } from "~/services/api";
 import { RunBadge, UndoAction, when } from "./ActivityTab";
 import { AgentIcon } from "./AgentIcon";
 import { AgentTestSection, useAgentTest } from "./AgentTest";
 import { setupKey } from "shared/agent-test";
+import { WORK_LABELS, type WorkOutcome } from "shared/agent-work";
 import type { AddressInfo } from "./compose";
 import { ConsoleMessageContext, type MessageRef, useOpenMessage } from "./console-message";
 import { CONSOLE_LABELS, CONSOLE_RAIL, type ConsoleTab, isSettingsTab } from "./console-tabs";
@@ -599,6 +600,7 @@ function AgentPage({ agentId, identities, addresses, onTab }: PageProps & { agen
 	const acts = !!agent && agent.does !== "reply";
 	const runs = useQuery({ queryKey: ["agent-runs", agentId], queryFn: () => api.getAgentRuns(agentId, 100), enabled: !!agent && !acts });
 	const actions = useQuery({ queryKey: ["agent-actions", agentId], queryFn: () => api.getAgentActions(agentId, 100), enabled: acts });
+	const work = useQuery({ queryKey: ["agent-work", agentId], queryFn: () => api.getAgentWork(agentId, 100), enabled: !!agent && !acts });
 	const trail = { label: CONSOLE_LABELS.agents, onClick: () => onTab("agents") };
 
 	if (isPending) return <Page title="" trail={trail}><p className="pg-ui-note">Loading</p></Page>;
@@ -626,7 +628,7 @@ function AgentPage({ agentId, identities, addresses, onTab }: PageProps & { agen
 					<AgentDelete key={`d-${agent.id}`} agent={agent} onDeleted={() => { refresh(); onTab("agents"); }} />
 				</div>
 				<div className="pg-ui-wb-col">
-					{acts ? <AgentActions actions={actions} identities={identities} /> : <AgentRuns runs={runs} identities={identities} onReview={() => onTab("review")} />}
+					{acts ? <AgentActions actions={actions} identities={identities} /> : <AgentRuns work={work} identities={identities} onReview={() => onTab("review")} />}
 					<AgentTestSection key={`t-${agent.id}`} agent={agent} identities={identities} />
 				</div>
 			</div>
@@ -773,46 +775,57 @@ function jumpTo(id: string) {
 	document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-type RunFilter = "all" | "waiting" | "sent" | "skipped" | "failed";
-const RUN_FILTERS: { value: RunFilter; label: string; states: AutoDraftRun["state"][] }[] = [
-	{ value: "all", label: "All", states: [] },
-	{ value: "waiting", label: "Waiting", states: ["drafted"] },
-	{ value: "sent", label: "Sent", states: ["sent"] },
-	{ value: "skipped", label: "Skipped", states: ["skipped", "watched"] },
-	{ value: "failed", label: "Failed", states: ["failed"] },
+type RunFilter = "all" | "waiting" | "sent" | "skipped" | "discarded" | "failed";
+const RUN_FILTERS: { value: RunFilter; label: string; outcomes: WorkOutcome[] }[] = [
+	{ value: "all", label: "All", outcomes: [] },
+	{ value: "waiting", label: "Waiting", outcomes: ["waiting"] },
+	{ value: "sent", label: "Sent", outcomes: ["sent", "edited"] },
+	{ value: "skipped", label: "Skipped", outcomes: ["skipped", "watched", "none"] },
+	{ value: "discarded", label: "Discarded", outcomes: ["discarded"] },
+	{ value: "failed", label: "Failed", outcomes: ["failed"] },
 ];
 
+const WORK_TONES: Record<WorkOutcome, "neutral" | "watch" | "draft" | "send" | "ok" | "warn" | "danger"> = {
+	waiting: "draft", sent: "send", edited: "warn", discarded: "neutral", watched: "watch", done: "ok",
+	skipped: "neutral", failed: "danger", running: "draft", none: "neutral",
+};
+
+/** What came of a message an agent took: Waiting, Sent, Edited, sent, Discarded and so on. */
+export function WorkBadge({ outcome }: { outcome: WorkOutcome }) {
+	return <Badge tone={WORK_TONES[outcome]} dot live={outcome === "running"}>{WORK_LABELS[outcome]}</Badge>;
+}
+
 /**
- * What the agent did with each message it matched, newest first, with a filter. A draft still
- * waiting has Review, which opens Draft review. The latest few, then all of them.
+ * What came of each message the agent took, newest first, with a filter: its draft waiting,
+ * sent as written or after edits, discarded, or skipped. A waiting draft opens Draft review.
  */
-function AgentRuns({ runs, identities, onReview }: { runs: UseQueryResult<AutoDraftRun[]>; identities: Identities; onReview: () => void }) {
+function AgentRuns({ work, identities, onReview }: { work: UseQueryResult<WorkRow[]>; identities: Identities; onReview: () => void }) {
 	const openMessage = useOpenMessage();
 	const [all, setAll] = useState(false);
 	const [filter, setFilter] = useState<RunFilter>("all");
-	const list = runs.data ?? [];
-	const of = (f: RunFilter) => { const states = RUN_FILTERS.find((x) => x.value === f)!.states; return states.length ? list.filter((r) => states.includes(r.state)) : list; };
+	const list = work.data ?? [];
+	const of = (f: RunFilter) => { const o = RUN_FILTERS.find((x) => x.value === f)!.outcomes; return o.length ? list.filter((r) => o.includes(r.outcome)) : list; };
 	const shown = of(filter);
 	const total = shown.length;
 	const filters = RUN_FILTERS.filter((f) => f.value === "all" || f.value === filter || of(f.value).length > 0)
 		.map((f) => ({ value: f.value, label: `${f.label} ${of(f.value).length}` }));
 	return (
 		<Section id="agent-work" title="Recent work" actions={list.length > 0 && <Segmented label="Show" value={filter} options={filters} onChange={(f) => { setFilter(f); setAll(false); }} />}>
-			<Async query={runs} empty="No runs yet">
+			<Async query={work} empty="No runs yet">
 				{() => (
 					<>
 					<List label="Runs">
 						{(all ? shown : shown.slice(0, 6)).map((r) => {
 							// A draft still waiting goes to Draft review; anything else opens the message.
-							const waiting = r.state === "drafted" && !!r.draftId;
+							const waiting = r.outcome === "waiting";
 							return (
 								<Item
 									key={r.emailId}
-									badge={<RunBadge state={r.state} />}
-									title={r.sender}
+									badge={<WorkBadge outcome={r.outcome} />}
+									title={r.subject || "(no subject)"}
 									time={when(r.createdAt)}
 									aside={waiting ? <span className="pg-ui-item-go">Review</span> : undefined}
-									meta={<><AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} bold={false} short />{r.reason && <span>{r.reason}</span>}</>}
+									meta={<>{r.sender}<AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} bold={false} short />{r.outcome === "skipped" && r.reason && <span>{r.reason}</span>}</>}
 									onClick={() => (waiting ? onReview() : openMessage?.({ mailboxId: r.mailboxId, emailId: r.emailId }))}
 								/>
 							);
@@ -908,10 +921,15 @@ function AgentSetup({ agent, addresses, identities }: { agent: Agent; addresses:
 		: form.addresses.length === 0 ? "All addresses" : `${form.addresses.length} addresses`;
 
 	return (
-		<Section title="Setup" actions={<TestedBadge agent={agent} setup={setupKey(form)} />}>
+		<Section title="Setup" actions={<>
+			<TestedBadge agent={agent} setup={setupKey(form)} />
+			<Button size="sm" variant={open === "reads" ? "primary" : "default"} aria-expanded={open === "reads"} icon={open === "reads" ? <CheckIcon size={12} weight="bold" /> : <PencilSimpleIcon size={12} />} onClick={() => toggle("reads")}>
+				{open === "reads" ? "Done" : "Edit"}
+			</Button>
+		</>}>
 			<Summary>
 				<SummaryRow
-					label="Reads" open={open === "reads"} onEdit={() => toggle("reads")}
+					label="Reads" open={open === "reads"}
 					editor={<>
 						<AddressPicker
 							addresses={addresses} identities={identities} choosing={choosing} value={form.addresses}

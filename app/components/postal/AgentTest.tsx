@@ -6,6 +6,7 @@ import { ArrowSquareOutIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { TEST_DEFAULT, TEST_MAX, testCounts, type TestOutcome } from "shared/agent-test";
+import { differs, WORK_LABELS } from "shared/agent-work";
 import api, { type Agent, type AgentTest } from "~/services/api";
 import { when } from "./ActivityTab";
 import { useOpenMessage } from "./console-message";
@@ -59,7 +60,7 @@ export function AgentTestSection({ agent, identities }: { agent: Agent; identiti
 	const [busy, setBusy] = useState(false);
 	const [retry, setRetry] = useState(0);
 	const [open, setOpen] = useState<number | null>(null);
-	const [filter, setFilter] = useState<TestOutcome | "all">("all");
+	const [filter, setFilter] = useState<TestOutcome | "all" | "differs">("all");
 	const running = test?.state === "running";
 	const set = (t: AgentTest | null) => queryClient.setQueryData(agentTestKey(agent.id), t);
 
@@ -113,11 +114,12 @@ export function AgentTestSection({ agent, identities }: { agent: Agent; identiti
 		}
 	};
 	const done = (test?.results ?? []).filter((r) => r.outcome !== "pending");
-	const shown = filter === "all" ? done : done.filter((r) => r.outcome === filter);
-	const filters = (["all", "took", "left", "skipped", "failed"] as const)
-		.map((f) => ({ value: f, n: f === "all" ? done.length : done.filter((r) => r.outcome === f).length }))
+	const pick = (f: typeof filter) => (f === "all" ? done : f === "differs" ? done.filter(differs) : done.filter((r) => r.outcome === f));
+	const shown = pick(filter);
+	const filters = (["all", "took", "left", "skipped", "failed", "differs"] as const)
+		.map((f) => ({ value: f, n: pick(f).length }))
 		.filter((f) => f.value === "all" || f.value === filter || f.n > 0)
-		.map((f) => ({ value: f.value, label: `${f.value === "all" ? "All" : OUTCOMES[f.value].label} ${f.n}` }));
+		.map((f) => ({ value: f.value, label: `${f.value === "all" ? "All" : f.value === "differs" ? "Differs" : OUTCOMES[f.value].label} ${f.n}` }));
 
 	return (
 		<Section id="agent-test" title="Test on past mail">
@@ -126,7 +128,7 @@ export function AgentTestSection({ agent, identities }: { agent: Agent; identiti
 					className="pg-input" type="search" value={search} disabled={running} aria-label="Search past mail"
 					placeholder="Search past mail" onChange={(e) => setSearch(e.target.value)}
 				/>
-				<NumberInput label="Messages" value={count} min={1} max={TEST_MAX} unit="messages" invalid={!countOk} disabled={running} onChange={setCount} />
+				<span className="pg-ui-test-count"><span aria-hidden>Last</span><NumberInput label="Last messages" value={count} min={1} max={TEST_MAX} invalid={!countOk} disabled={running} onChange={setCount} /></span>
 				{running
 					? <Button icon={<StopIcon size={12} />} disabled={busy} onClick={() => void stop()}>Stop</Button>
 					: <Button type="submit" icon={<PlayIcon size={12} />} disabled={busy || !countOk}>Run test</Button>}
@@ -155,7 +157,11 @@ export function AgentTestSection({ agent, identities }: { agent: Agent; identiti
 								badge={<Badge tone={o.tone} dot live={r.outcome === "running"}>{o.label}</Badge>}
 								title={r.subject || "(no subject)"}
 								time={when(r.date)}
-								meta={<>{r.sender}<AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} bold={false} short /></>}
+								meta={<>
+									{r.sender}<AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} bold={false} short />
+									{r.then && <span className="pg-ui-then">Then <b>{WORK_LABELS[r.then]}</b></span>}
+									{differs(r) && <Badge tone="warn">Differs</Badge>}
+								</>}
 								quote={open === r.position || r.reply ? undefined : r.reason ?? undefined}
 								bad={r.outcome === "failed"}
 								open={open === r.position}

@@ -2,6 +2,8 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import type { WorkOutcome } from "./agent-work";
+
 /**
  * Test on past mail (WON-530): an agent runs on received mail it already has,
  * and nothing is sent and no draft is saved. The run lives in
@@ -33,6 +35,8 @@ export interface TestResult {
 	reply: string | null;
 	inputTokens: number;
 	outputTokens: number;
+	/** What came of the message when it arrived, for this agent (shared/agent-work.ts). Set by the API. */
+	then?: WorkOutcome;
 }
 
 export interface AgentTest {

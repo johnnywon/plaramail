@@ -6,7 +6,7 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 
 ### Added
 
-- The agent workbench (WON-529). Trust runs across the top; Setup sits beside Recent work and Test on past mail, and they stack with Setup first on a narrow screen. Each Send check jumps to the record behind it. Recent work and Test results filter by result, and a waiting draft opens Draft review.
+- The agent workbench (WON-529). Trust runs across the top; Setup sits beside Recent work and Test on past mail, and they stack with Setup first on a narrow screen. Each Send check jumps to the record behind it. Recent work shows each message's subject and what came of it (Waiting, Sent, Edited, sent, Discarded, Skipped). Test results show Then, what happened to the same message when it arrived, and Differs where the test disagrees. Both filter by result, and a waiting draft opens Draft review. `GET /api/v1/agents/:id/work`.
 
 ### Changed
 

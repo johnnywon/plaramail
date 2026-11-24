@@ -2079,11 +2079,15 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
 .pg-ui-test-bar { width: 100%; height: 4px; display: block; }
 .pg-ui-test-bar rect { fill: var(--pg-line-2); }
 .pg-ui-test-bar rect[data-fill] { fill: var(--pg-con-accent); }
+.pg-ui-then { color: var(--pg-text-6); }
+.pg-ui-then b { font-weight: 500; color: var(--pg-text-3); }
+.pg-ui-test-count { display: inline-flex; align-items: center; gap: 8px; font-size: var(--pg-t-12); color: var(--pg-text-6); }
 .pg-ui-badge-link { display: inline-flex; align-items: center; padding: 0; border: 0; background: none; cursor: pointer; }
 @media (max-width: 760px) {
   .pg-ui-badge-link { min-height: 36px; }
   .pg-ui-section .pg-segmented { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .pg-ui-section .pg-segmented button { min-height: 36px; flex: none; }
+  .pg-ui-wb :is(input, select, textarea, .pg-input, .pg-select) { min-height: 36px; }
 }
 .pg-ui-wiz-count { font: var(--pg-t-11) var(--pg-mono); color: var(--pg-text-8); margin-right: 4px; }
 .pg-ui-compose .pg-modal-foot { padding: 0 20px; }
