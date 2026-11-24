@@ -68,16 +68,14 @@ test("the version Send arrives in is one constant, and the Console shows it from
 	assert.match(console_, /\{SEND_VERSION\}/);
 });
 
-test("Send waits for SEND_VERSION: the API refuses it and a stored Send agent works as Draft", async () => {
-	assert.equal(agents.SEND_ENABLED, false);
-	const refused = agents.AgentBody.partial().safeParse({ mode: "send" });
-	assert.equal(refused.success, false);
-	assert.equal(refused.error.issues[0].message, agents.SEND_LATER);
+test("Send is open from SEND_VERSION: the API takes it and a stored Send agent stays in Send", async () => {
+	assert.equal(agents.SEND_ENABLED, true);
+	assert.equal(agents.AgentBody.partial().safeParse({ mode: "send" }).success, true);
 	assert.equal(agents.AgentBody.partial().safeParse({ mode: "draft" }).success, true);
 	const { sql } = await openD1();
-	const made = await agents.createAgent(sql, { name: "Old sender", job: "Decline pitches." });
+	const made = await agents.createAgent(sql, { name: "Sender", job: "Decline pitches." });
 	await sql.run(`UPDATE agents SET mode = 'send' WHERE id = ?`, made.agent.id);
-	assert.equal((await agents.getAgent(sql, made.agent.id)).mode, "draft");
+	assert.equal((await agents.getAgent(sql, made.agent.id)).mode, "send");
 });
 
 test("a run records which agent took it, and ends watched or sent", async () => {
