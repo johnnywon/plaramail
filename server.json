@@ -3,7 +3,7 @@
   "name": "io.github.johnnywon/plaramail",
   "title": "PlaraMail",
   "description": "Self-hosted email for every address on your Cloudflare domains: read, search, label, draft and send.",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "websiteUrl": "https://github.com/johnnywon/plaramail",
   "repository": {
     "url": "https://github.com/johnnywon/plaramail",

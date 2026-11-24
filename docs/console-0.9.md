@@ -53,6 +53,7 @@ Decline pitches, ask for missing details, acknowledge new senders, answer FAQs.
 - 0.9: console, agents in Watch and Draft, Draft review, MCP page, MCP sign-in with OAuth 2.1 and a separate send grant.
 - 0.9.6: action agents.
 - 0.9.7: Test on past mail, the approval queue, MCP grants limited to chosen addresses.
+- 0.9.8: promotion evidence; the gates block a move up.
 - 0.10: the workbench (setup beside what the agent does), Test on past mail, promotion evidence, then Send.
 
 ## Action agents (0.9.6, WON-453)
@@ -93,7 +94,7 @@ Agent sends and bulk changes can wait for one-click approval.
 
 As built: `workers/lib/approvals.ts` (the queue and the switches), `workers/lib/approval-run.ts` (holding and running calls), migration `0017_approval_queue.sql`. `GET /api/v1/approvals`, `POST /api/v1/approvals/:id/approve`, `POST /api/v1/approvals/:id/drop`, `PUT /api/v1/approvals/holds/:kind/:id`. The cron drops expired items every minute. Send mode stays off until 0.10; an agent's `send_since` is recorded so the 7-day default applies once it opens. The in-app chat agent is not held: a person is present for each of its turns.
 
-## Promotion evidence (0.10, WON-531)
+## Promotion evidence (0.9.8, WON-531)
 
 An agent moves up a rung only when its gate is met. The gate blocks the move: the Console disables it and the API refuses it (409, with the checks). There is no override. Moving down is always allowed, and a new agent starts in Watch.
 
