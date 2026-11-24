@@ -20,6 +20,10 @@ export interface McpProps extends Record<string, unknown> {
 	clientId: string;
 	clientName: string;
 	scopes: string[];
+	/** The addresses chosen on the consent page. Absent on grants made before address limits: every address. */
+	addresses?: string[];
+	/** The OAuth grant this token belongs to, for Console's narrowing (workers/mcp/grants.ts). */
+	grantId?: string;
 }
 
 /** Whether this grant may send: the scope was granted and MCP_SEND_ENABLED isn't "false". */

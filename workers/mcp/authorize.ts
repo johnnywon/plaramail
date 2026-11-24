@@ -4,15 +4,17 @@
 
 import { AuthorizationError, CimdFetchError, type ConsentDescription, type OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { errorResponse } from "../lib/error-page";
+import { chosenAddresses } from "./grants";
 import { type McpProps, SCOPE_MAIL, SCOPE_SEND } from "./scopes";
 
 /**
  * The consent page at /authorize. It sits behind Cloudflare Access like the app,
  * so whoever reaches it is signed in; `userId` is who that is. GET shows the page,
  * POST approves or declines. Mail access is always granted; sending only when
- * the box is ticked.
+ * the box is ticked. The grant reaches only the addresses ticked, at least one,
+ * from `addresses` (the deployment's).
  */
-export async function authorize(request: Request, oauth: OAuthHelpers, userId: string): Promise<Response> {
+export async function authorize(request: Request, oauth: OAuthHelpers, userId: string, addresses: string[]): Promise<Response> {
 	try {
 		if (request.method === "GET") {
 			const authRequest = await oauth.parseAuthRequest(request);
@@ -20,7 +22,7 @@ export async function authorize(request: Request, oauth: OAuthHelpers, userId: s
 			const consent = await oauth.beginConsent(authRequest);
 			consent.headers.set("Content-Type", "text/html; charset=utf-8");
 			consent.headers.set("Cache-Control", "no-store");
-			return new Response(consentHtml(details, consent.handle, userId), { headers: consent.headers });
+			return new Response(consentHtml(details, consent.handle, userId, addresses), { headers: consent.headers });
 		}
 		if (request.method !== "POST") return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, POST" } });
 
@@ -30,15 +32,18 @@ export async function authorize(request: Request, oauth: OAuthHelpers, userId: s
 			const denied = await oauth.denyConsent(request, handle);
 			return new Response(null, { status: 302, headers: denied.headers });
 		}
+		// The handle isn't used up here, so Back returns to a page that still works.
+		const granted = chosenAddresses(form, addresses);
+		if (granted.length === 0) return errorResponse(request, 400, "Choose an address", "Choose at least one address for this app. Go back and tick one.");
 		const scope = form.get("send") === "on" ? [SCOPE_MAIL, SCOPE_SEND] : [SCOPE_MAIL];
 		const approved = await oauth.approveConsent(request, handle, { scope });
 		const client = await oauth.lookupClient(approved.request.clientId);
 		const clientName = client?.clientName || approved.request.clientId;
-		const props: McpProps = { userId, clientId: approved.request.clientId, clientName, scopes: scope };
+		const props: McpProps = { userId, clientId: approved.request.clientId, clientName, scopes: scope, addresses: granted };
 		const { redirectTo } = await oauth.completeAuthorization({
 			request: approved.request,
 			userId: encodeURIComponent(userId),
-			metadata: { clientName },
+			metadata: { clientName, addresses: granted },
 			scope,
 			props,
 		});
@@ -56,8 +61,11 @@ export async function authorize(request: Request, oauth: OAuthHelpers, userId: s
 const escape = (text: string) =>
 	text.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] as string);
 
-/** The consent page: who is asking, where the tokens go, and what it may do. Everything from the client is escaped. */
-export function consentHtml(details: ConsentDescription, handle: string, userId: string): string {
+/**
+ * The consent page: who is asking, where the tokens go, what it may do and on which addresses.
+ * Everything from the client is escaped. No address starts ticked; Connect waits for one.
+ */
+export function consentHtml(details: ConsentDescription, handle: string, userId: string, addresses: string[]): string {
 	const name = escape(details.clientName);
 	const origin = details.clientDomain
 		? `Published by <b>${escape(details.clientDomain)}</b>.`
@@ -84,6 +92,11 @@ fieldset { margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 
 label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; color: var(--t1); }
 label + label { border-top: 1px solid var(--line); }
 label span { display: block; color: var(--t6); }
+fieldset + fieldset { margin-top: 10px; }
+legend { float: left; width: 100%; padding: 10px 12px; color: var(--t6); }
+legend + label { clear: both; border-top: 1px solid var(--line); }
+.address { overflow-wrap: anywhere; }
+button:disabled { opacity: .5; cursor: default; }
 input { margin: 3px 0 0; accent-color: var(--primary); }
 .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 button { height: 30px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--t1); font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -99,14 +112,27 @@ ${details.redirectIsLoopback ? '<p class="warn">This app runs on your computer. 
 <form method="post">
 <input type="hidden" name="handle" value="${escape(handle)}">
 <fieldset>
-<label><input type="checkbox" checked disabled><div>Read and organize mail<span>Search, read, label, move, draft and delete, on every address.</span></div></label>
-<label><input type="checkbox" name="send"><div>Send mail<span>Send drafts, replies and new email from your addresses, within the send limits.</span></div></label>
+<label><input type="checkbox" checked disabled><div>Read and organize mail<span>Search, read, label, move, draft and delete, on the addresses below.</span></div></label>
+<label><input type="checkbox" name="send"><div>Send mail<span>Send drafts, replies and new email from those addresses, within the send limits.</span></div></label>
+</fieldset>
+<fieldset id="addresses">
+<legend>Addresses this app can use. Choose at least one.</legend>
+${addresses.map((a) => `<label><input type="checkbox" name="address" value="${escape(a)}"><div class="address">${escape(a)}</div></label>`).join("\n")}
 </fieldset>
 <div class="actions">
-<button type="submit" name="decision" value="deny">Deny</button>
-<button type="submit" name="decision" value="approve">Connect</button>
+<button type="submit" name="decision" value="deny" formnovalidate>Deny</button>
+<button type="submit" name="decision" value="approve" id="connect">Connect</button>
 </div>
 </form>
+<script>
+(() => {
+	const boxes = document.querySelectorAll('input[name="address"]');
+	const connect = document.getElementById("connect");
+	const update = () => { connect.disabled = ![...boxes].some((b) => b.checked); };
+	boxes.forEach((b) => b.addEventListener("change", update));
+	update();
+})();
+</script>
 </main>
 </body>
 </html>`;

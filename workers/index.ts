@@ -35,6 +35,7 @@ import { parseMailParams } from "./lib/mail-filter-params";
 import { MAX_SEARCH_LENGTH } from "../shared/search-query";
 import { TEST_MAX } from "../shared/agent-test";
 import { mailboxIds, mailStore, storageStatus, recordsSql } from "./store";
+import { forgetAddresses, narrowTo, shownAddresses, storeAddresses, storedAddresses } from "./mcp/grants";
 import { MOVE_FOLDERS } from "./lib/mail-bulk-sql";
 import { BULK_MAX_THREADS } from "../shared/bulk";
 import { automatedMailReason } from "./lib/message-meta";
@@ -550,16 +551,35 @@ app.get("/api/v1/mcp/apps", async (c) => {
 	const oauth = c.env.OAUTH_PROVIDER;
 	if (!oauth) return c.json({ apps: [] });
 	const { items } = await oauth.listUserGrants(encodeURIComponent(c.get("viewer") ?? "local"));
+	const [stored, all] = await Promise.all([storedAddresses(recordsSql(c.env), items.map((g) => g.id)), mailboxIds(c.env)]);
 	const apps = items.map((g) => ({
 		id: g.id, clientId: g.clientId, name: String(g.metadata?.clientName ?? g.clientId), scopes: g.scope,
 		connectedAt: new Date(g.createdAt * 1000).toISOString(),
+		...shownAddresses(g.metadata, stored.get(g.id), all),
 	}));
 	return c.json({ apps });
+});
+/** Narrow a connected app to some of its addresses (workers/mcp/grants.ts). Its next tool call sees only those. */
+app.put("/api/v1/mcp/apps/:id/addresses", async (c) => {
+	const oauth = c.env.OAUTH_PROVIDER;
+	if (!oauth) return c.json({ error: "Not found" }, 404);
+	const id = c.req.param("id");
+	const { items } = await oauth.listUserGrants(encodeURIComponent(c.get("viewer") ?? "local"));
+	const grant = items.find((g) => g.id === id);
+	if (!grant) return c.json({ error: "App not found" }, 404);
+	const sql = recordsSql(c.env);
+	const current = shownAddresses(grant.metadata, (await storedAddresses(sql, [id])).get(id), await mailboxIds(c.env));
+	const body = (await c.req.json().catch(() => null)) as { addresses?: unknown } | null;
+	const narrowed = narrowTo(current.addresses, body?.addresses);
+	if ("error" in narrowed) return c.json(narrowed, 400);
+	await storeAddresses(sql, id, narrowed.addresses);
+	return c.json({ id, ...narrowed, every: false });
 });
 app.delete("/api/v1/mcp/apps/:id", async (c) => {
 	const oauth = c.env.OAUTH_PROVIDER;
 	if (!oauth) return c.json({ error: "Not found" }, 404);
 	await oauth.revokeGrant(c.req.param("id"), encodeURIComponent(c.get("viewer") ?? "local"));
+	await forgetAddresses(recordsSql(c.env), c.req.param("id"));
 	return c.json({ ok: true });
 });
 

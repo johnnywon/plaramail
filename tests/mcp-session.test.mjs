@@ -30,7 +30,19 @@ test("a session opened with Send refuses a token without it", async () => {
 });
 
 test("a token narrowed to mail loses the send scope", () => {
-	assert.deepEqual(narrowProps({ props: grant(["mail", "mail.send"]), requestedScope: ["mail"] }), { accessTokenProps: grant(["mail"]) });
-	assert.equal(narrowProps({ props: grant(["mail", "mail.send"]), requestedScope: ["mail", "mail.send"] }), undefined);
+	assert.deepEqual(narrowProps({ props: grant(["mail", "mail.send"]), requestedScope: ["mail"], grantId: "g1" }), { accessTokenProps: { ...grant(["mail"]), grantId: "g1" } });
+	assert.deepEqual(narrowProps({ props: grant(["mail", "mail.send"]), requestedScope: ["mail", "mail.send"], grantId: "g1" }), { accessTokenProps: { ...grant(["mail", "mail.send"]), grantId: "g1" } });
 	assert.equal(sessionOwner(grant(["mail.send", "mail"])), sessionOwner(grant(["mail", "mail.send"])));
+});
+
+test("a session opened by one grant refuses a token from another grant of the same app (WON-533)", async () => {
+	const env = { OAUTH_KV: kv() };
+	const mcp = bindSessions(inner);
+	const bearer = (grantId, sessionId) => new Request("https://example.com/mcp", {
+		method: "POST", headers: { authorization: `Bearer owner:${grantId}:secret`, ...(sessionId ? { "mcp-session-id": sessionId } : {}) },
+	});
+	const opened = await mcp.fetch(bearer("g1"), env, { props: grant(["mail"]) });
+	const sid = opened.headers.get("mcp-session-id");
+	assert.equal((await mcp.fetch(bearer("g1", sid), env, { props: grant(["mail"]) })).status, 200);
+	assert.equal((await mcp.fetch(bearer("g2", sid), env, { props: grant(["mail"]) })).status, 404);
 });

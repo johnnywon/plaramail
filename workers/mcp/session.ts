@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { grantIdFromAuthorization } from "./grants";
 import type { McpProps } from "./scopes";
 
 /**
@@ -18,9 +19,9 @@ type Handler<E> = { fetch(request: Request, env: E, ctx: ExecutionContext): Resp
 export const SESSION_TTL_S = 30 * 24 * 60 * 60;
 const key = (sessionId: string) => `mcp-session:${sessionId}`;
 
-/** Who a session belongs to: the grant's user and client and the token's scopes. */
+/** Who a session belongs to: the grant, its user and client, and the token's scopes. */
 export function sessionOwner(props: Partial<McpProps> | undefined): string {
-	return [props?.userId ?? "", props?.clientId ?? "", [...(props?.scopes ?? [])].sort().join(" ")].join("|");
+	return [props?.userId ?? "", props?.clientId ?? "", [...(props?.scopes ?? [])].sort().join(" "), props?.grantId ?? ""].join("|");
 }
 
 const sessionNotFound = () => new Response(
@@ -32,7 +33,13 @@ const sessionNotFound = () => new Response(
 export function bindSessions<E extends { OAUTH_KV: Kv }>(inner: Handler<E>): Handler<E> {
 	return {
 		async fetch(request, env, ctx) {
-			const owner = sessionOwner((ctx as ExecutionContext & { props?: McpProps }).props);
+			const withProps = ctx as ExecutionContext & { props?: McpProps };
+			// A token issued before tokens carried their grant id: read it from the token itself.
+			if (withProps.props && !withProps.props.grantId) {
+				const grantId = grantIdFromAuthorization(request.headers.get("authorization"));
+				if (grantId) withProps.props = { ...withProps.props, grantId };
+			}
+			const owner = sessionOwner(withProps.props);
 			const sessionId = request.headers.get("mcp-session-id");
 			if (sessionId && (await env.OAUTH_KV.get(key(sessionId))) !== owner) return sessionNotFound();
 			const response = await inner.fetch(request, env, ctx);
@@ -43,8 +50,11 @@ export function bindSessions<E extends { OAUTH_KV: Kv }>(inner: Handler<E>): Han
 	};
 }
 
-/** A token narrowed at the token endpoint carries only the scopes it was given. */
-export function narrowProps(options: { props: McpProps; requestedScope: string[] }): { accessTokenProps: McpProps } | undefined {
+/**
+ * Each access token carries its grant's id, so the server can read Console's narrowing of
+ * the grant's addresses. A token narrowed at the token endpoint carries only the scopes it was given.
+ */
+export function narrowProps(options: { props: McpProps; requestedScope: string[]; grantId: string }): { accessTokenProps: McpProps } {
 	const scopes = options.props.scopes.filter((s) => options.requestedScope.includes(s));
-	return scopes.length === options.props.scopes.length ? undefined : { accessTokenProps: { ...options.props, scopes } };
+	return { accessTokenProps: { ...options.props, scopes, grantId: options.grantId } };
 }

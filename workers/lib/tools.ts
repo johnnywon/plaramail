@@ -563,6 +563,8 @@ export interface MailSearch {
 	starred?: boolean;
 	hasAttachment?: boolean;
 	date?: string;
+	/** Only these mailboxes: an MCP grant's addresses. Not a tool argument. */
+	mailboxes?: string[];
 }
 
 export const LABEL_MATCHING_MAX = 500;
@@ -607,6 +609,7 @@ export function mailSearchFilter(
 		is,
 		has: search.hasAttachment ? ["attachment"] : [],
 		date: search.date as MailFilter["date"],
+		...(search.mailboxes ? { mailboxes: search.mailboxes } : {}),
 	});
 	try {
 		searchOf(filter);

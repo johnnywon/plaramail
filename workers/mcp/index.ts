@@ -45,6 +45,7 @@ import { MCP_ATTACHMENTS_MAX, MCP_ATTACHMENT_BYTES_MAX, replyTarget, toolReplyTo
 import { canSend, type McpProps } from "./scopes";
 import { holdMcpSend, mcpBulkHold, type McpCaller } from "../lib/approval-run";
 import { BULK_OVER } from "../../shared/approvals";
+import { grantAddresses, labelCounts, labelOutside } from "./grants";
 import type { Env } from "../types";
 import pkg from "../../package.json";
 
@@ -146,12 +147,41 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 		const held = (result: Record<string, unknown> | null) => (result ? mcpResult(result) : null);
 
 		/**
-		 * Verify a mailbox exists before operating on it.
-		 * Returns an MCP error response if the mailbox is not found, or null if valid.
+		 * The addresses this grant reaches, or null for every address. Read on each call,
+		 * so narrowing the grant in Console > MCP applies to its next call.
+		 */
+		const reach = () => grantAddresses(sql, props);
+
+		/**
+		 * Verify a mailbox exists and this grant may use it before operating on it.
+		 * Returns an MCP error response if not, or null if valid. An address outside the
+		 * grant gets the same answer as one that doesn't exist. Tools that take an email or
+		 * thread id look it up in this mailbox only, so the check covers them too.
 		 */
 		const verifyMailbox = async (mailboxId: string) => {
-			if (!(await mailStore(env).mailboxes.exists(mailboxId))) {
-				return mcpError(`Mailbox "${mailboxId}" not found. Use list_mailboxes to see available mailboxes.`);
+			const allowed = await reach();
+			if ((allowed && !allowed.includes(mailboxId.trim().toLowerCase())) || !(await mailStore(env).mailboxes.exists(mailboxId))) {
+				return mcpError(`Mailbox "${mailboxId}" not found. Use list_mailboxes to see the addresses this app can use.`);
+			}
+			return null;
+		};
+
+		/** Search arguments limited to this grant's addresses. */
+		const withinReach = async <T extends object>(search: T): Promise<T & { mailboxes?: string[] }> => {
+			const allowed = await reach();
+			return allowed ? { ...search, mailboxes: allowed } : search;
+		};
+
+		/**
+		 * Labels are shared by every address. A grant limited to some addresses can't rename or
+		 * delete a label that is on mail at another address. Returns an MCP error response, or null.
+		 */
+		const verifyLabelReach = async (ref: string) => {
+			const allowed = await reach();
+			if (!allowed) return null;
+			const label = (await mailStore(env).all().listLabels()).find((l) => l.id === ref || l.name.toLowerCase() === ref.trim().toLowerCase());
+			if (label && (await labelOutside(sql, label.id, allowed))) {
+				return mcpError(`Label "${label.name}" is also on mail at addresses this app can't use, so it can't change it.`);
 			}
 			return null;
 		};
@@ -159,11 +189,12 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 		// ── list_mailboxes ─────────────────────────────────────────
 		tool(
 			"list_mailboxes",
-			"List all available mailboxes",
+			"List the mailboxes this app can use",
 			{},
 			async () => {
+				const allowed = await reach();
 				const result = await toolListMailboxes(env);
-				return mcpText(result);
+				return mcpText(allowed ? result.filter((m) => allowed.includes(m.id.toLowerCase())) : result);
 			},
 		);
 
@@ -420,9 +451,12 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 				attachments: attachmentsSchema,
 				idempotencyKey: idempotencyKeySchema,
 			},
-			async ({ mailboxId, ...input }) =>
-				held(await holdMcpSend(env, sql, caller, "send_email", { mailboxId, ...input }))
-				?? mcpResult(await toolSendEmail(env, mailboxId, caller.clientId, input)),
+			async ({ mailboxId, ...input }) => {
+				const denied = await verifyMailbox(mailboxId);
+				if (denied) return denied;
+				return held(await holdMcpSend(env, sql, caller, "send_email", { mailboxId, ...input }))
+					?? mcpResult(await toolSendEmail(env, mailboxId, caller.clientId, input));
+			},
 		);
 		}
 
@@ -447,7 +481,14 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 			"list_labels",
 			"List labels with their ids, colours and conversation counts. Labels are tags shared by every mailbox.",
 			{},
-			async () => mcpText(await toolListLabels(env)),
+			async () => {
+				const allowed = await reach();
+				const result = await toolListLabels(env);
+				if (!allowed) return mcpText(result);
+				// Counts cover only the mail this app can see.
+				const counts = await labelCounts(sql, allowed);
+				return mcpText({ labels: result.labels.map((l) => ({ ...l, conversations: counts.get(l.id) ?? 0 })) });
+			},
 		);
 
 		// ── Keyboard shortcuts ─────────────────────────────────────
@@ -486,7 +527,11 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 				label: z.string().describe("The label's id or current name"),
 				name: z.string().min(1).max(60).describe("The new name"),
 			},
-			async ({ label, name }) => mcpResult(await toolRenameLabel(env, { label, name })),
+			async ({ label, name }) => {
+				const denied = await verifyLabelReach(label);
+				if (denied) return denied;
+				return mcpResult(await toolRenameLabel(env, { label, name }));
+			},
 		);
 
 		// ── delete_label ───────────────────────────────────────────
@@ -494,7 +539,11 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 			"delete_label",
 			"Delete a label. It is removed from every conversation that carries it; the mail itself stays. This cannot be undone.",
 			{ label: z.string().describe("The label's id or name") },
-			async ({ label }) => mcpResult(await toolDeleteLabel(env, { label })),
+			async ({ label }) => {
+				const denied = await verifyLabelReach(label);
+				if (denied) return denied;
+				return mcpResult(await toolDeleteLabel(env, { label }));
+			},
 		);
 
 		// ── label_conversation ─────────────────────────────────────
@@ -547,21 +596,24 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 		};
 		tool(
 			"search_all_mail",
-			"Search conversations across every address at once. Each result gives its mailboxId and emailId.",
+			"Search conversations across every address this app can use at once. Each result gives its mailboxId and emailId.",
 			{ ...mailSearch, limit: z.number().int().min(1).max(50).optional() },
-			async (search) => mcpResult(await toolSearchAllMail(env, search)),
+			async (search) => mcpResult(await toolSearchAllMail(env, await withinReach(search))),
 		);
 		tool(
 			"label_matching",
-			`Add or remove labels on every conversation that matches a search, across all addresses, in one call. Up to ${LABEL_MATCHING_MAX} conversations.${BULK_HOLD_NOTE}`,
+			`Add or remove labels on every conversation that matches a search, across every address this app can use, in one call. Up to ${LABEL_MATCHING_MAX} conversations.${BULK_HOLD_NOTE}`,
 			{
 				...mailSearch,
 				add: z.array(z.string()).optional().describe("Label ids or names to add"),
 				remove: z.array(z.string()).optional().describe("Label ids or names to remove"),
 				archive: z.boolean().optional().describe("Also move the matching Inbox mail to Archive"),
 			},
-			async ({ add, remove, archive, ...search }) => mcpResult(await toolLabelMatching(env, search, { add, remove, archive },
-				mcpBulkHold(sql, caller, "label_matching", { ...search, add, remove, archive }))),
+			async ({ add, remove, archive, ...search }) => {
+				const scoped = await withinReach(search);
+				return mcpResult(await toolLabelMatching(env, scoped, { add, remove, archive },
+					mcpBulkHold(sql, caller, "label_matching", { ...scoped, add, remove, archive })));
+			},
 		);
 
 		// ── mark_email_read ────────────────────────────────────────

@@ -3,13 +3,13 @@
 export { EmailMCP } from "../../workers/mcp";
 import { authorize } from "../../workers/mcp/authorize";
 import { withMcpOAuth } from "../../workers/mcp/oauth";
-import { mailStore } from "../../workers/store";
+import { mailboxIds, mailStore } from "../../workers/store";
 import type { Env } from "../../workers/types";
 
 const web = {
 	async fetch(request: Request, env: Env) {
 		const url = new URL(request.url);
-		if (url.pathname === "/authorize") return authorize(request, env.OAUTH_PROVIDER!, "owner@example.com");
+		if (url.pathname === "/authorize") return authorize(request, env.OAUTH_PROVIDER!, "owner@example.com", await mailboxIds(env));
 		if (url.pathname === "/_sql") {
 			await env.DB.prepare(await request.text()).run();
 			return Response.json({ ok: true });

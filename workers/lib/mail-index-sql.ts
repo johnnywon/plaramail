@@ -42,6 +42,11 @@ export interface MailFilter {
 	 * the messages that contain them as a substring (messages_trigram).
 	 */
 	substrings?: Record<string, number[]>;
+	/**
+	 * Set by the server, never by a search: only these mailboxes, whatever the rest says.
+	 * An MCP grant limited to chosen addresses searches with it (workers/mcp/grants.ts).
+	 */
+	mailboxes?: string[];
 }
 
 export function emptyFilter(overrides: Partial<MailFilter> = {}): MailFilter {
@@ -136,6 +141,7 @@ function clausesWithMatch(filter: MailFilter, now: number, omit?: Dimension, cap
 	const out: Clause[] = [{ sql: `m.deleted = 0`, params: [] }];
 	const search = searchOf(filter, now, cap);
 	if (omit !== "view") out.push(search.scope ?? viewClause(filter.view));
+	if (filter.mailboxes) out.push({ sql: `m.mailbox_id IN (SELECT value FROM json_each(?))`, params: [JSON.stringify(filter.mailboxes)] });
 	if (omit !== "address" && filter.address.length > 0) out.push(anyOf(filter.address.map(addressClause)));
 	if (omit !== "from" && filter.from.length > 0) out.push(anyOf(filter.from.map(fromClause)));
 	if (omit !== "label") {
