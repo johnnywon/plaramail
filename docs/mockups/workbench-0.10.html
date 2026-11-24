@@ -228,6 +228,15 @@ svg.i20 { width: 20px; height: 20px; }
 .bar { width: 100%; height: 4px; display: block; border-radius: 0; }
 .bar rect { fill: var(--pg-line-3); }
 .bar rect[data-fill] { fill: var(--pg-con-accent); }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid var(--pg-line-3); }
+.seg button { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; font: 11px var(--pg-mono); color: var(--pg-text-5); }
+.seg button[aria-pressed="true"] { background: var(--pg-segment); color: var(--pg-text-1); }
+.seg b { font-weight: 600; color: var(--pg-text-2); }
+.seg [data-k="diff"] b { color: var(--pg-yellow-text); }
+.gate-list a, a.badge { color: inherit; text-decoration: none; }
+a.badge { color: var(--pg-con-accent-text); }
+.test-progress .seg { align-self: flex-start; width: fit-content; }
+.gate-list a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .tallies { display: flex; flex-wrap: wrap; gap: 4px 18px; font: 11px var(--pg-mono); color: var(--pg-text-6); }
 .tallies b { color: var(--pg-text-2); font-weight: 600; }
 .tallies [data-k="diff"] b { color: var(--pg-yellow-text); }
@@ -276,6 +285,10 @@ svg.i20 { width: 20px; height: 20px; }
   .trail { display: none; }
   .btn { height: 44px; }
   .btn-sm { height: 36px; }
+  .seg { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .seg button { height: 36px; padding: 0 12px; flex: none; }
+  .gate-list a { display: inline-flex; align-items: center; min-height: 36px; }
+  a.badge.sum-tag { height: 36px; padding: 0 12px; }
   .trust { grid-template-columns: minmax(0, 1fr); }
   .rungs { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--pg-line); }
   .rung { flex: 1; grid-template-columns: 22px auto; gap: 8px; padding: 10px; justify-content: center; }
@@ -426,19 +439,19 @@ svg.i20 { width: 20px; height: 20px; }
             <ul class="gate-list">
               <li>
                 <span class="gate-mark"></span>
-                <span>Test on 20, none failed</span>
+                <span><a href="#test">Test on 20, none failed</a></span>
                 <span class="gate-val">Running 14/25</span>
                 <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="56" height="4"/></svg>
               </li>
               <li data-met>
                 <span class="gate-mark"><svg class="i12"><use href="#check"/></svg></span>
-                <span>8 of 10 sent unedited</span>
+                <span><a href="#recent">8 of 10 sent unedited</a></span>
                 <span class="gate-val">9/10</span>
                 <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="100" height="4"/></svg>
               </li>
               <li data-met>
                 <span class="gate-mark"><svg class="i12"><use href="#check"/></svg></span>
-                <span>No safety failures, 7 days</span>
+                <span><a href="#recent">No safety failures, 7 days</a></span>
                 <span class="gate-val">0</span>
                 <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="100" height="4"/></svg>
               </li>
@@ -489,7 +502,7 @@ svg.i20 { width: 20px; height: 20px; }
               <div class="sum-row" data-changed>
                 <dt>Instructions</dt>
                 <dd><span class="inline" data-focus>Thank them by name and say we don't take guest posts, paid links or sponsored articles. Two sentences at most. Don't offer a media kit or a call. If they write a second time, don't reply.</span></dd>
-                <span class="badge sum-tag" data-tone="warn">Not tested</span>
+                <a class="badge sum-tag" data-tone="draft" data-dot data-live href="#test">Testing</a>
               </div>
               <div class="sum-row">
                 <dt>Example reply</dt>
@@ -508,14 +521,14 @@ Alex</span></dd>
 
         <!-- Right: what the agent did, and Test on past mail -->
         <div class="wb-col">
-          <section class="section" aria-label="Recent work">
-            <div class="section-head"><h2>Recent work</h2><button class="btn btn-sm btn-quiet" type="button">All 63</button></div>
+          <section class="section" id="recent" aria-label="Recent work">
+            <div class="section-head"><h2>Recent work</h2><span class="seg" role="group" aria-label="Show"><button type="button" aria-pressed="true">All <b>63</b></button><button type="button" aria-pressed="false">Waiting <b>1</b></button><button type="button" aria-pressed="false">Sent <b>41</b></button><button type="button" aria-pressed="false">Skipped <b>21</b></button></span></div>
             <div class="panel">
               <ul class="list">
                 <li class="item"><button class="item-btn" type="button">
                   <span class="item-when">Today 9:42</span>
                   <span class="item-main"><b>Guest post for your blog?</b><span class="item-meta">dana@outreach.example.net <span class="dot">·</span> <span class="addr"><b>editor</b><i>@</i><span class="d2">example.org</span></span></span></span>
-                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Waiting</span></span>
+                  <span class="item-side"><span class="badge" data-tone="draft" data-dot>Waiting</span><span class="btn btn-sm">Review</span></span>
                 </button></li>
                 <li class="item"><button class="item-btn" type="button">
                   <span class="item-when">Today 8:15</span>
@@ -546,18 +559,18 @@ Alex</span></dd>
             </div>
           </section>
 
-          <section class="section" aria-label="Test on past mail">
+          <section class="section" id="test" aria-label="Test on past mail">
             <div class="section-head"><h2>Test on past mail</h2></div>
             <div class="test-box">
               <div class="test-controls">
                 <div class="field"><svg class="i"><use href="#search"/></svg><span>Search</span></div>
-                <span class="count"><b>25</b></span>
+                <span class="count">Last<b>25</b></span>
                 <button class="btn run" type="button"><svg class="i12"><use href="#stop"/></svg>Stop</button>
               </div>
               <div class="test-progress">
                 <div class="test-progress-top"><span class="badge" data-tone="draft" data-dot data-live>Testing</span><b>14 of 25</b></div>
                 <svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="56" height="4"/></svg>
-                <div class="tallies"><span>Take <b>6</b></span><span>Skip <b>8</b></span><span data-k="diff">Differs <b>2</b></span><span>Failed <b>0</b></span></div>
+                <span class="seg" role="group" aria-label="Show"><button type="button" aria-pressed="true">All <b>14</b></button><button type="button" aria-pressed="false">Take <b>6</b></button><button type="button" aria-pressed="false">Skip <b>8</b></button><button type="button" aria-pressed="false" data-k="diff">Differs <b>2</b></button><button type="button" aria-pressed="false">Failed <b>0</b></button></span>
               </div>
               <ul class="list">
                 <li class="item t-item" data-open><button class="item-btn" type="button">
