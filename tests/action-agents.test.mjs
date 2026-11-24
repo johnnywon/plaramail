@@ -215,7 +215,8 @@ test("migration 0013 keeps every existing agent a reply agent in its mode", asyn
 	const files = (await import("node:fs")).readdirSync("migrations").filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
 	await sql.schema(files.filter((f) => f < "0013").map((f) => readFileSync(`migrations/${f}`, "utf8")).join("\n"));
 	await sql.run(`INSERT INTO agents (id, name, job, mode, created_at, updated_at) VALUES ('a1', 'Old', 'Decline pitches', 'draft', 'x', 'x')`);
-	await sql.schema(readFileSync("migrations/0013_action_agents.sql", "utf8"));
+	// 0013, then the migrations after it, so the agent reads with today's columns.
+	await sql.schema(files.filter((f) => f >= "0013").map((f) => readFileSync(`migrations/${f}`, "utf8")).join("\n"));
 	const [old] = await agents.listAgents(sql);
 	assert.deepEqual([old.does, old.mode, old.labelId], ["reply", "draft", null]);
 });

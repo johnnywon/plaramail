@@ -6,6 +6,8 @@ import type { BulkAction } from "~/lib/bulk-optimistic";
 import type { Email, Mailbox } from "~/types";
 import type { Prefs } from "shared/prefs";
 import type { DraftNotes } from "shared/draft-notes";
+import type { HoldKind, QueueItem } from "shared/approvals";
+export type { HoldKind, QueueItem };
 import type { AgentLimits } from "shared/send-limits";
 import type { CatalogModel, KeyedProvider, ModelRef, ProviderId } from "shared/models";
 import type { AgentTest } from "shared/agent-test";
@@ -107,7 +109,7 @@ export interface ActivityEntry {
 	mailboxId: string | null;
 	actor: ActivityActor;
 	client: string | null;
-	action: "read" | "draft" | "send" | "delete" | "label" | "move" | "settings";
+	action: "read" | "draft" | "send" | "delete" | "label" | "move" | "settings" | "approval";
 	tool: string;
 	target: string | null;
 	summary: string | null;
@@ -204,9 +206,19 @@ export interface Agent {
 	perSenderLimit: number;
 	createdAt: string;
 	updatedAt: string;
+	/** When it last moved into Send, or null. */
+	sendSince: string | null;
 }
 
-export type AgentInput = Pick<Agent, "name" | "job"> & Partial<Omit<Agent, "id" | "name" | "job" | "position" | "createdAt" | "updatedAt">>;
+export type AgentInput = Pick<Agent, "name" | "job"> & Partial<Omit<Agent, "id" | "name" | "job" | "position" | "createdAt" | "updatedAt" | "sendSince">>;
+
+/** Console > Approvals: held sends and bulk changes, and each agent's and MCP client's Hold for approval. */
+export interface Approvals {
+	waiting: QueueItem[];
+	recent: QueueItem[];
+	/** Agents by id (the switch, or its default) and MCP clients by client id (only those someone set; the rest are off). */
+	holds: Record<HoldKind, Record<string, boolean>>;
+}
 
 export interface AgentStats {
 	agentId: string;
@@ -560,6 +572,12 @@ const api = {
 	getAgentActions: (id: string, limit = 50) => get<AgentActionRow[]>(`/api/v1/agents/${encodeURIComponent(id)}/actions?limit=${limit}`),
 	undoAgentAction: (id: string) => post<AgentActionRow>(`/api/v1/agent-actions/${encodeURIComponent(id)}/undo`, {}),
 	getAgentDrafts: () => get<AgentDraft[]>("/api/v1/agents/review"),
+
+	// Approval queue (Console > Approvals)
+	getApprovals: () => get<Approvals>("/api/v1/approvals"),
+	decideApproval: (id: string, decision: "approve" | "drop") => post<QueueItem>(`/api/v1/approvals/${encodeURIComponent(id)}/${decision}`, {}),
+	setHold: (kind: HoldKind, id: string, hold: boolean) =>
+		put<{ kind: HoldKind; id: string; hold: boolean }>(`/api/v1/approvals/holds/${kind}/${encodeURIComponent(id)}`, { hold }),
 
 	// Redraft an agent draft with an instruction. The draft is replaced; the reply carries its new id.
 	redraft: (mailboxId: string, draftId: string, instruction: string) =>

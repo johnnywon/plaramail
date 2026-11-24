@@ -74,6 +74,8 @@ export interface Agent {
 	perSenderLimit: number;
 	createdAt: string;
 	updatedAt: string;
+	/** When it last moved into Send, for Hold for approval's 7-day default (workers/lib/approvals.ts). Null outside Send. */
+	sendSince: string | null;
 }
 
 export const MAX_AGENTS = 50;
@@ -100,7 +102,7 @@ export const AgentBody = z.object({
 });
 export type AgentInput = z.infer<typeof AgentBody>;
 
-const COLUMNS = "id, name, job, addresses, rules, instructions, example_reply, mode, does, label_id, enabled, position, daily_limit, per_sender_limit, created_at, updated_at";
+const COLUMNS = "id, name, job, addresses, rules, instructions, example_reply, mode, does, label_id, enabled, position, daily_limit, per_sender_limit, created_at, updated_at, send_since";
 
 function parseJson<T>(raw: unknown, fallback: T): T {
 	try {
@@ -142,6 +144,7 @@ const toAgent = (r: Record<string, unknown>): Agent => ({
 	perSenderLimit: Number(r.per_sender_limit ?? 2),
 	createdAt: String(r.created_at),
 	updatedAt: String(r.updated_at),
+	sendSince: r.send_since == null ? null : String(r.send_since),
 });
 
 export async function listAgents(sql: Sql): Promise<Agent[]> {
@@ -172,8 +175,8 @@ export async function createAgent(sql: Sql, input: AgentInput): Promise<{ agent:
 	if (await nameTaken(sql, input.name, null)) return { error: "An agent with that name exists" };
 	const now = new Date().toISOString();
 	const rows = await sql.all(
-		`INSERT INTO agents (id, name, job, addresses, rules, instructions, example_reply, mode, enabled, position, daily_limit, per_sender_limit, created_at, updated_at, does, label_id)
-		SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, (SELECT COALESCE(MAX(position) + 1, 0) FROM agents), ?10, ?11, ?12, ?12, ?14, ?15
+		`INSERT INTO agents (id, name, job, addresses, rules, instructions, example_reply, mode, enabled, position, daily_limit, per_sender_limit, created_at, updated_at, does, label_id, send_since)
+		SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, (SELECT COALESCE(MAX(position) + 1, 0) FROM agents), ?10, ?11, ?12, ?12, ?14, ?15, CASE WHEN ?8 = 'send' THEN ?12 END
 		WHERE (SELECT COUNT(*) FROM agents) < ?13
 		RETURNING ${COLUMNS}`,
 		crypto.randomUUID(), input.name.trim(), input.job.trim(), JSON.stringify(input.addresses ?? []), JSON.stringify(input.rules ?? []),
@@ -205,7 +208,8 @@ export async function updateAgent(sql: Sql, id: string, input: Partial<AgentInpu
 		`UPDATE agents SET name = COALESCE(?, name), job = COALESCE(?, job), addresses = COALESCE(?, addresses), rules = COALESCE(?, rules),
 			instructions = COALESCE(?, instructions), example_reply = COALESCE(?, example_reply), mode = COALESCE(?, mode),
 			enabled = COALESCE(?, enabled), daily_limit = COALESCE(?, daily_limit), per_sender_limit = COALESCE(?, per_sender_limit), updated_at = ?,
-			does = COALESCE(?, does), label_id = CASE WHEN ? THEN ? ELSE label_id END
+			does = COALESCE(?, does), label_id = CASE WHEN ? THEN ? ELSE label_id END,
+			send_since = CASE WHEN ?7 IS NULL THEN send_since WHEN ?7 = 'send' THEN COALESCE(CASE WHEN mode = 'send' THEN send_since END, ?11) ELSE NULL END
 		WHERE id = ? RETURNING ${COLUMNS}`,
 		input.name?.trim() ?? null, input.job?.trim() ?? null, json(input.addresses), json(input.rules),
 		input.instructions ?? null, input.exampleReply ?? null, input.mode ?? null,

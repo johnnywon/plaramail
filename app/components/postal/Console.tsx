@@ -3,7 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
-	ArrowDownIcon, ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, AtIcon, CheckIcon, EyeIcon, LockSimpleIcon, ClockCounterClockwiseIcon, CpuIcon, DatabaseIcon, HouseIcon, KeyboardIcon, PaperPlaneRightIcon, PencilSimpleIcon, PlugsConnectedIcon, PlusIcon,
+	ArrowDownIcon, ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, AtIcon, CheckIcon, EyeIcon, LockSimpleIcon, ClockCounterClockwiseIcon, CpuIcon, DatabaseIcon, HouseIcon, KeyboardIcon, PaperPlaneRightIcon, PencilSimpleIcon, PlugsConnectedIcon, PlusIcon, SealCheckIcon,
 	SignatureIcon, SlidersHorizontalIcon, TagIcon, TrayIcon, WarningIcon, XIcon,
 } from "@phosphor-icons/react";
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -30,6 +30,7 @@ import { AddressText, type Identities, Swatch } from "./identity";
 import { ConsoleSettings } from "./Modals";
 import { useDemo } from "~/lib/demo";
 import { McpTab } from "./McpTab";
+import { ApprovalsTab } from "./ApprovalsTab";
 import { dayKey, dayLabel, timeLabel } from "./model";
 import { OverviewTab } from "./OverviewTab";
 import type { Prefs } from "./prefs";
@@ -62,7 +63,7 @@ const UNDO_MS = 30 * 86_400_000;
 /** One icon per page, at rail size and search size. */
 const ICONS: Record<ConsoleTab, (size: number) => React.ReactNode> = {
 	home: (s) => <HouseIcon size={s} />, agents: (s) => <AgentIcon size={s} />, mailroom: (s) => <AgentIcon size={s} />,
-	review: (s) => <TrayIcon size={s} />, logs: (s) => <ClockCounterClockwiseIcon size={s} />,
+	review: (s) => <TrayIcon size={s} />, approvals: (s) => <SealCheckIcon size={s} />, logs: (s) => <ClockCounterClockwiseIcon size={s} />,
 	models: (s) => <CpuIcon size={s} />, mcp: (s) => <PlugsConnectedIcon size={s} />,
 	addresses: (s) => <AtIcon size={s} />, signatures: (s) => <SignatureIcon size={s} />, labels: (s) => <TagIcon size={s} />,
 	general: (s) => <SlidersHorizontalIcon size={s} />, shortcuts: (s) => <KeyboardIcon size={s} />, storage: (s) => <DatabaseIcon size={s} />,
@@ -71,7 +72,7 @@ const ICONS: Record<ConsoleTab, (size: number) => React.ReactNode> = {
 /** Words that find a page in console search besides its name. */
 const SEARCH_WORDS: Record<ConsoleTab, string> = {
 	home: "today counts home", agents: "hire create watch draft send", mailroom: "auto-draft limits fallback prompt sends a day per sender recipients",
-	review: "drafts waiting approve", logs: "activity runs history audit", models: "provider key openrouter cloudflare default model",
+	review: "drafts waiting approve", approvals: "approve drop hold queue held sends bulk changes waiting", logs: "activity runs history audit", models: "provider key openrouter cloudflare default model",
 	mcp: "tools tool key api key claude desktop claude code cursor connections server url",
 	addresses: "mailbox domain inbox from display name", signatures: "signature sign-off footer", labels: "tags folders",
 	general: "theme dark light remote images key hints mark read reply from general settings", shortcuts: "keys keyboard bindings hotkeys",
@@ -145,6 +146,7 @@ export function ConsolePage(props: {
 	const { agentId, onTab, onClose } = props;
 	const agents = useAgents();
 	const review = useQuery({ queryKey: ["agent-drafts"], queryFn: () => api.getAgentDrafts() });
+	const approvals = useQuery({ queryKey: ["approvals"], queryFn: () => api.getApprovals(), enabled: !demo, refetchInterval: 60_000 });
 	const [navOpen, setNavOpen] = useState(false);
 	const [message, setMessage] = useState<MessageRef | null>(null);
 	const go = (t: ConsoleTab) => { setNavOpen(false); onTab(t); };
@@ -162,7 +164,7 @@ export function ConsolePage(props: {
 	// Your agents is a list beside the picked agent, like mail's list and reader.
 	const split = tab === "agents" || tab === "mailroom" || tab === "review";
 	const current = (id: ConsoleTab) => tab === id || (id === "agents" && tab === "mailroom");
-	const counts: Partial<Record<ConsoleTab, number | undefined>> = { agents: (agents.data?.agents.length ?? 0) + 1, review: review.data?.length };
+	const counts: Partial<Record<ConsoleTab, number | undefined>> = { agents: (agents.data?.agents.length ?? 0) + 1, review: review.data?.length, approvals: approvals.data?.waiting.length };
 	const hits: ConsoleHit[] = [
 		...(Object.keys(CONSOLE_LABELS) as ConsoleTab[]).filter((id) => !demo || isSettingsTab(id)).map((id): ConsoleHit => ({
 			id: `p-${id}`, section: "Pages", label: CONSOLE_LABELS[id], icon: ICONS[id](14), words: SEARCH_WORDS[id], run: () => go(id),
@@ -219,6 +221,11 @@ export function ConsolePage(props: {
 					{tab === "mcp" && (
 						<Page title={CONSOLE_LABELS.mcp}>
 							<McpTab onTab={onTab} />
+						</Page>
+					)}
+					{tab === "approvals" && (
+						<Page title={CONSOLE_LABELS.approvals}>
+							<ApprovalsTab identities={props.identities} />
 						</Page>
 					)}
 					{tab === "logs" && <Page title={CONSOLE_LABELS.logs}>{settings}</Page>}

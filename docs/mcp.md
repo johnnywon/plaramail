@@ -102,6 +102,14 @@ The reply is refused, and nothing is sent, when:
 
 **Limits.** Sends from MCP count against the agent limits in Console > Limits: by default 20 sends a day per address, shared with the in-app agent, and 10 recipients per message. Every address also has a fixed 20 an hour and 100 a day. Over a limit the result has `code: "send_limit"`; wait, don't retry in a loop.
 
+**Hold for approval.** Console > Approvals has a Hold for approval switch for each connected app, off by default. While it is on, the app's sends wait for a person to approve them, and so does any one call that labels, archives or unstars more than 25 messages (`label_matching`, `label_conversation`, `star_conversation`). The call returns at once with nothing done yet:
+
+```json
+{ "status": "queued", "approvalId": "…", "expiresAt": "…", "message": "Held for approval in Console > Approvals. …" }
+```
+
+Don't call again to retry it: a retry with the same `idempotencyKey`, or of the same draft, returns the same item. Approve runs the call then, with the same checks, so a reply is still refused if a newer email arrived. A held send counts toward the daily limit when it is approved. An item not approved within 24 hours is dropped. Both outcomes are in the Activity log.
+
 **Errors.** A tool that fails returns `isError: true` with `{ "error": "...", "code": "...", "retryable": false }` for the send tools, and `{ "error": "..." }` for the rest. `retryable` is false for every send error: fix the input, read again, or wait for the limit.
 
 ## Tools

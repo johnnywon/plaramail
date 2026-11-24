@@ -478,6 +478,13 @@ export async function toolDeleteLabel(env: Env, params: { label: string }) {
 	return { status: "deleted", label: label.name, conversations: label.count };
 }
 
+/**
+ * Called with the conversations a change covers, before it is made. A result
+ * stops the change and is returned instead: the call was held for approval
+ * (workers/lib/approval-run.ts). Null lets it go ahead.
+ */
+export type BulkHold = (threadKeys: string[]) => Promise<Record<string, unknown> | null>;
+
 // ── label_conversation ─────────────────────────────────────────────
 
 /**
@@ -489,6 +496,7 @@ export async function toolLabelConversation(
 	mailboxId: string,
 	emailId: string,
 	params: { add?: string[]; remove?: string[]; archive?: boolean },
+	hold?: BulkHold,
 ) {
 	const index = mailStore(env).all();
 	const labels = await index.listLabels();
@@ -500,6 +508,8 @@ export async function toolLabelConversation(
 	}
 	const threadKey = await index.threadKeyOf(mailboxId, emailId);
 	if (!threadKey) return { error: "Email not found", emailId };
+	const held = await hold?.([threadKey]);
+	if (held) return held;
 
 	const target = { threadKeys: [threadKey], view: "all" };
 	const done: string[] = [];
@@ -527,10 +537,13 @@ export async function toolLabelConversation(
  * Star or unstar the conversation that holds an email, the way the app's star
  * does: starring marks its latest message, unstarring clears every message.
  */
-export async function toolStarConversation(env: Env, mailboxId: string, emailId: string, starred: boolean) {
+export async function toolStarConversation(env: Env, mailboxId: string, emailId: string, starred: boolean, hold?: BulkHold) {
 	const index = mailStore(env).all();
 	const threadKey = await index.threadKeyOf(mailboxId, emailId);
 	if (!threadKey) return { error: "Email not found", emailId };
+	// Starring marks one message; unstarring clears every message, so only it can be a bulk change.
+	const held = starred ? null : await hold?.([threadKey]);
+	if (held) return held;
 	const result = await index.bulk({ threadKeys: [threadKey], view: "all" }, { type: starred ? "star" : "unstar" });
 	const failure = "failed" in result ? result.failed?.[0] : undefined;
 	if (failure) return { error: failure.error };
@@ -641,6 +654,7 @@ export async function toolLabelMatching(
 	env: Env,
 	search: MailSearch,
 	params: { add?: string[]; remove?: string[]; archive?: boolean },
+	hold?: BulkHold,
 ) {
 	const index = mailStore(env).all();
 	const labels = await index.listLabels();
@@ -656,6 +670,8 @@ export async function toolLabelMatching(
 	if (threadKeys.length > LABEL_MATCHING_MAX) {
 		return { error: `More than ${LABEL_MATCHING_MAX} conversations match. Narrow the search (sender, address, date or folder) and run it in parts.` };
 	}
+	const held = await hold?.(threadKeys);
+	if (held) return held;
 	const done: string[] = [];
 	for (const [refs, type] of [[params.add ?? [], "label_add"], [params.remove ?? [], "label_remove"]] as const) {
 		for (const ref of refs) {

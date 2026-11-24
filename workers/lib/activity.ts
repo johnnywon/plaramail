@@ -12,7 +12,8 @@ import type { Sql } from "../store/sql";
 
 /** `person` is a person in the app asking a model for something, such as a redraft. */
 export type ActivityActor = "chat" | "auto-draft" | "mcp" | "person";
-export type ActivityAction = "read" | "draft" | "send" | "delete" | "label" | "move" | "settings";
+/** `approval`: a call held for approval, or a held call dropped (workers/lib/approvals.ts). */
+export type ActivityAction = "read" | "draft" | "send" | "delete" | "label" | "move" | "settings" | "approval";
 
 export const ACTIVITY_ACTORS: readonly ActivityActor[] = ["chat", "auto-draft", "mcp", "person"];
 export const ACTIVITY_PAGE = 50;
@@ -57,6 +58,8 @@ export const TOOL_ACTIONS: Record<string, ActivityAction> = {
 	archive_email: "move",
 	mark_read: "move",
 	undo_action: "move",
+	// The approval queue (WON-532): a held call dropped by a person or after 24 hours.
+	drop_queued: "approval",
 };
 
 export interface ActivityEntry {
@@ -69,6 +72,8 @@ export interface ActivityEntry {
 	ok: boolean;
 	/** The action agent's action this entry records (workers/lib/agent-actions.ts). */
 	actionId?: string | null;
+	/** What it did, when not the tool's own action: a send held for approval is `approval`. */
+	action?: ActivityAction;
 }
 
 export interface ActivityRow {
@@ -136,7 +141,7 @@ export async function logActivity(sql: Sql, entry: ActivityEntry, now = Date.now
 		await sql.run(
 			`INSERT INTO agent_activity (at, mailbox_id, actor, client, action, tool, target, summary, ok, action_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			new Date(now).toISOString(), entry.mailboxId ?? null, entry.actor, clip(entry.client ?? null, 100),
-			TOOL_ACTIONS[entry.tool] ?? "read", entry.tool, entry.target ?? null, entry.summary ?? null, entry.ok ? 1 : 0, entry.actionId ?? null,
+			entry.action ?? TOOL_ACTIONS[entry.tool] ?? "read", entry.tool, entry.target ?? null, entry.summary ?? null, entry.ok ? 1 : 0, entry.actionId ?? null,
 		);
 	} catch (e) {
 		console.error("activity log failed:", (e as Error).message);
@@ -159,7 +164,10 @@ export async function logged<T>(
 		await logActivity(sql, { ...who, tool, ...describeCall(tool, args, { error: (e as Error).message }, who.bound ?? null), ok: false });
 		throw e;
 	}
-	await logActivity(sql, { ...who, tool, ...describeCall(tool, args, view(result), who.bound ?? null) });
+	const shown = view(result);
+	// A call held for approval did nothing yet: it is logged as held, not as a send or a label change.
+	const held = !!shown && typeof shown === "object" && (shown as { status?: unknown }).status === "queued";
+	await logActivity(sql, { ...who, tool, ...describeCall(tool, args, shown, who.bound ?? null), ...(held ? { action: "approval" as const } : {}) });
 	return result;
 }
 

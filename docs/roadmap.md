@@ -12,7 +12,7 @@ Shipped: one list for every address, one search language with ranked results, th
 - [x] **Action agents.** Hired agents that star, label, archive or mark read instead of replying, starting in Watch. Shipped in 0.9.6.
 - [ ] **Test on past mail.** Run an agent against mail you already have and see what it would have done, without sending anything.
 - [ ] **Evidence before promotion.** What an agent did in Watch or Draft, shown before you move it to Draft or Send.
-- [ ] **Approval queue.** Agent sends and bulk changes can wait for one-click approval.
+- [x] **Approval queue.** Agent sends and bulk changes can wait for one-click approval. Each agent and MCP client has a Hold for approval switch; Console > Approvals lists what waits, with Approve and Drop.
 - [ ] **Scoped agent access.** MCP grants limited to chosen addresses, so a support agent never sees billing mail. Grants already separate reading from sending.
 - [ ] **Send mode.** Hired agents that reply on their own, up to a daily limit, once the steps above are in place.
 

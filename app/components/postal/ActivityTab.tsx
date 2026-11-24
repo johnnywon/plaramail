@@ -28,6 +28,7 @@ const ACTION_LABELS: Record<ActivityEntry["action"], string> = {
 	label: "Labels",
 	move: "Moved",
 	settings: "Settings",
+	approval: "Held",
 };
 
 export const RUN_LABELS: Record<AutoDraftRun["state"], string> = {

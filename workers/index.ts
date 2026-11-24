@@ -55,6 +55,9 @@ import { seedAgents } from "./lib/dev-seed-agents";
 import { listAgentActions, mailOps, undoAgentAction } from "./lib/agent-actions";
 import { REDRAFT_INSTRUCTION_MAX } from "../shared/draft-notes";
 import { claimNext, deleteTests, finishTest, getTest, liveGenerate, pickTestMail, saveResult, startTest, stopTest, testMessage } from "./agent/test-run";
+import { decide, listHolds, listQueue, setHold } from "./lib/approvals";
+import { runQueued } from "./lib/approval-run";
+import { agentHoldDefault } from "../shared/approvals";
 
 type AppContext = Context<MailboxContext>;
 
@@ -507,6 +510,36 @@ app.get("/api/v1/activity", async (c) => {
 		before: Number.isInteger(before) && before > 0 ? before : null,
 		limit: Number(c.req.query("limit")) || undefined,
 	}));
+});
+
+// -- Approvals (Console > Approvals, WON-532) -------------------------
+
+/** Waiting sends and bulk changes, the latest decided, and each agent's and MCP client's Hold for approval. */
+app.get("/api/v1/approvals", async (c) => {
+	const sql = recordsSql(c.env);
+	const [queue, set, agents] = await Promise.all([listQueue(sql), listHolds(sql), listAgents(sql)]);
+	const now = Date.now();
+	const agent = Object.fromEntries(agents.map((a) => [a.id, set.agent[a.id] ?? agentHoldDefault(a, now)]));
+	return c.json({ ...queue, holds: { agent, mcp: set.mcp } });
+});
+
+/** One click: approve runs the held call now, drop discards it. */
+const decideRoute = (decision: "approve" | "drop") => async (c: Context<MailboxContext>) => {
+	const result = await decide(recordsSql(c.env), c.req.param("id") ?? "", decision, runQueued(c.env));
+	return "error" in result ? c.json({ error: result.error }, result.status) : c.json(result.item);
+};
+app.post("/api/v1/approvals/:id/approve", decideRoute("approve"));
+app.post("/api/v1/approvals/:id/drop", decideRoute("drop"));
+
+/** Turn an agent's or MCP client's Hold for approval on or off. Only people can; no tool sets it. */
+app.put("/api/v1/approvals/holds/:kind/:id", async (c) => {
+	const kind = c.req.param("kind");
+	const parsed = z.object({ hold: z.boolean() }).safeParse(await c.req.json().catch(() => null));
+	if ((kind !== "agent" && kind !== "mcp") || !parsed.success) return c.json({ error: "Send { hold: true } or { hold: false }" }, 400);
+	const id = c.req.param("id");
+	if (!id || id.length > 500) return c.json({ error: "Invalid id" }, 400);
+	await setHold(recordsSql(c.env), kind, id, parsed.data.hold);
+	return c.json({ kind, id, hold: parsed.data.hold });
 });
 
 /** MCP clients that have called, and calls per tool, for Console > MCP. */
