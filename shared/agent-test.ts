@@ -47,7 +47,42 @@ export interface AgentTest {
 	cost: number | null;
 	startedAt: string;
 	finishedAt: string | null;
+	/** setupKey of the agent when the run started. Null for runs from before 0.10. */
+	setup: string | null;
 	results: TestResult[];
+}
+
+/** The parts of an agent that change what it does with mail. Name and limits don't. */
+export interface AgentSetupFields {
+	job: string;
+	addresses: readonly string[];
+	rules: readonly { field: string; op: string; value: string }[];
+	instructions: string;
+	exampleReply: string;
+	does: string;
+	labelId: string | null;
+}
+
+/**
+ * A short fingerprint of an agent's setup, kept with each Test run. When it no
+ * longer matches, the run tested a setup the agent doesn't have any more.
+ */
+export function setupKey(a: AgentSetupFields): string {
+	const text = JSON.stringify([
+		a.job.trim(), [...a.addresses].map((x) => x.toLowerCase()).sort(),
+		a.rules.map((r) => [r.field, r.op, r.value.trim().toLowerCase()]),
+		a.instructions.trim(), a.exampleReply.trim(), a.does, a.labelId ?? null,
+	]);
+	// FNV-1a, twice with different seeds, for 64 bits without async crypto.
+	const fnv = (seed: number) => {
+		let h = seed >>> 0;
+		for (let i = 0; i < text.length; i++) {
+			h ^= text.charCodeAt(i);
+			h = Math.imul(h, 0x01000193) >>> 0;
+		}
+		return h.toString(16).padStart(8, "0");
+	};
+	return fnv(0x811c9dc5) + fnv(0x01000193);
 }
 
 export interface TestCounts {

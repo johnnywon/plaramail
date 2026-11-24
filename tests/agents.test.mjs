@@ -132,7 +132,7 @@ test("agent routes", async () => {
 	// The move to Draft waits for its gate: 10 matched messages and none failed this week (shared/agent-gates.ts).
 	const early = await call(`/${id}`, "PUT", { mode: "draft" });
 	assert.equal(early.status, 409);
-	assert.match((await early.json()).error, /10 messages matched in 7 days/);
+	assert.match((await early.json()).error, /10 matched in 7 days/);
 	assert.equal((await call("", "POST", { name: "Eager", job: "x", mode: "draft" })).status, 400);
 	const now = new Date().toISOString();
 	for (let i = 0; i < 10; i++) {

@@ -16,7 +16,8 @@ import { confirmReady } from "./confirm-guard";
 import api, { type Agent, type AgentActionRow, type AgentDoes, type AgentDraft, type AgentMode, type AgentRule, type AgentStats, type AutoDraftRun } from "~/services/api";
 import { RunBadge, UndoAction, when } from "./ActivityTab";
 import { AgentIcon } from "./AgentIcon";
-import { AgentTestSection } from "./AgentTest";
+import { AgentTestSection, useAgentTest } from "./AgentTest";
+import { setupKey } from "shared/agent-test";
 import type { AddressInfo } from "./compose";
 import { ConsoleMessageContext, type MessageRef, useOpenMessage } from "./console-message";
 import { CONSOLE_LABELS, CONSOLE_RAIL, type ConsoleTab, isSettingsTab } from "./console-tabs";
@@ -25,7 +26,7 @@ import { ConsoleColophon } from "./ConsoleColophon";
 import { FoldMark } from "./NavIcons";
 import { type ConsoleHit, ConsoleSearch, type ConsoleSearchHandle } from "./ConsoleSearch";
 import {
-	Async, Badge, Button, Choices, DialogHead, InlineText, Picker, Summary, SummaryRow, Track, Section, Field, Fields, Modal, Name, Note, NumberInput, Page, Row, SaveBar, Segmented, Split, Table,
+	Async, Badge, Button, Choices, DialogHead, InlineText, Item, List, Picker, Summary, SummaryRow, Track, Section, Field, Fields, Modal, Name, Note, NumberInput, Page, Row, SaveBar, Segmented, Split, Table,
 } from "./ConsoleUI";
 import { AddressText, type Identities, Swatch } from "./identity";
 import { ConsoleSettings } from "./Modals";
@@ -584,8 +585,9 @@ const RULE_OPS: { value: AgentRule["op"]; label: string }[] = [
 ];
 
 /**
- * One agent, in the order you decide things: what it's trusted to do and the week behind that,
- * what it has done, then how it works, as the same rows New agent ends on. Each row edits in place.
+ * The workbench (WON-529): what the agent is trusted to do across the top, then its setup beside
+ * what it has done and Test on past mail, so a setup change can be checked against its work.
+ * Narrow, the two columns stack with setup first.
  */
 function AgentPage({ agentId, identities, addresses, onTab }: PageProps & { agentId: string }) {
 	const queryClient = useQueryClient();
@@ -605,24 +607,29 @@ function AgentPage({ agentId, identities, addresses, onTab }: PageProps & { agen
 		<Page
 			title={agent.name}
 			icon={<AgentIcon size={20} />}
-			sub={agent.job}
 			trail={trail}
 			actions={<>
 				{agent.enabled ? <WorkingBadge stats={stats} /> : <Badge>Paused</Badge>}
 				<Button
 					variant={agent.enabled ? "default" : "primary"} icon={<AgentIcon size={14} />} disabled={update.isPending}
-					onClick={() => update.mutate({ enabled: !agent.enabled })}
+					aria-label={`${agent.enabled ? "Pause" : "Turn on"} Agent ${agent.name}`} onClick={() => update.mutate({ enabled: !agent.enabled })}
 				>
-					{agent.enabled ? "Pause" : "Turn on"} Agent {agent.name}
+					{agent.enabled ? "Pause" : "Turn on"}
 				</Button>
 			</>}
 		>
 			{update.error && <Note tone="error">{update.error.message}</Note>}
 			<AgentTrust agent={agent} stats={stats} runs={acts ? actions.data ?? [] : runs.data ?? []} onMode={(mode) => update.mutate({ mode })} />
-			<AgentTestSection key={`t-${agent.id}`} agent={agent} identities={identities} />
-			{acts ? <AgentActions actions={actions} identities={identities} /> : <AgentRuns runs={runs} identities={identities} />}
-			<AgentSetup key={agent.id} agent={agent} addresses={addresses} identities={identities} />
-			<AgentDelete key={`d-${agent.id}`} agent={agent} onDeleted={() => { refresh(); onTab("agents"); }} />
+			<div className="pg-ui-wb">
+				<div className="pg-ui-wb-col">
+					<AgentSetup key={agent.id} agent={agent} addresses={addresses} identities={identities} />
+					<AgentDelete key={`d-${agent.id}`} agent={agent} onDeleted={() => { refresh(); onTab("agents"); }} />
+				</div>
+				<div className="pg-ui-wb-col">
+					{acts ? <AgentActions actions={actions} identities={identities} /> : <AgentRuns runs={runs} identities={identities} onReview={() => onTab("review")} />}
+					<AgentTestSection key={`t-${agent.id}`} agent={agent} identities={identities} />
+				</div>
+			</div>
 		</Page>
 	);
 }
@@ -678,7 +685,7 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 	const ready = !!next && canMove(next.value);
 	const safety = evidence.data?.safety;
 	return (
-		<Section title="Trust" actions={<span className="pg-ui-quiet">{weekText(stats, agent.mode, agent.does)} in 7 days</span>}>
+		<Section title="Trust">
 			<div className="pg-ui-trust">
 				<ol className="pg-ui-rungs" aria-label="Trust">
 					{modes.map((m, i) => {
@@ -697,10 +704,6 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 										{state === "locked" && <span className="pg-ui-rung-later"><LockSimpleIcon size={12} />{SEND_VERSION}</span>}
 										<span className="pg-ui-rung-icon" aria-hidden>{rung.icon(16)}</span>
 									</span>
-									<ul>
-										{rung.does.map((d) => <li key={d}><CheckIcon size={12} weight="bold" aria-hidden />{d}</li>)}
-										{rung.never && <li data-never><XIcon size={12} weight="bold" aria-hidden />{rung.never}</li>}
-									</ul>
 								</button>
 							</li>
 						);
@@ -714,7 +717,8 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 							{gate.map((g) => (
 								<li key={g.id} data-met={g.met || undefined}>
 									<span className="pg-ui-gate-mark" aria-hidden>{g.met ? <CheckIcon size={12} weight="bold" /> : null}</span>
-									<span className="pg-ui-gate-label">{g.label}<span className="pg-ui-gate-record">{g.record}</span></span>
+									<button type="button" className="pg-ui-gate-label" title="Show the record" onClick={() => jumpTo(g.id === "test" ? "agent-test" : "agent-work")}>{g.label}</button>
+									<span className="pg-ui-gate-record">{g.record}</span>
 									<svg className="pg-ui-meter" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden><rect width="100" height="4" /><rect data-fill width={Math.round(Math.min(1, g.value) * 100)} height="4" /></svg>
 								</li>
 							))}
@@ -731,7 +735,6 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 								</Button>
 							)}
 							{next?.disabled && <Button disabled title={next.title} icon={<LockSimpleIcon size={12} />}>Move to {next.label}</Button>}
-							{at > 0 && <Button variant="quiet" icon={<ArrowLeftIcon size={12} />} onClick={() => onMode(modes[at - 1].value)}>Back to {modes[at - 1].label}</Button>}
 						</div>
 					</div>
 					<figure className="pg-ui-week" aria-label={`Last 7 days, ${bars.map((d) => d.handled).join(", ")} handled`}>
@@ -765,28 +768,58 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 	);
 }
 
-/** What the agent did with each message it matched, newest first. The latest few, then all of them. */
-function AgentRuns({ runs, identities }: { runs: UseQueryResult<AutoDraftRun[]>; identities: Identities }) {
+/** Scroll to a part of the agent page, such as the record behind a gate. */
+function jumpTo(id: string) {
+	document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+type RunFilter = "all" | "waiting" | "sent" | "skipped" | "failed";
+const RUN_FILTERS: { value: RunFilter; label: string; states: AutoDraftRun["state"][] }[] = [
+	{ value: "all", label: "All", states: [] },
+	{ value: "waiting", label: "Waiting", states: ["drafted"] },
+	{ value: "sent", label: "Sent", states: ["sent"] },
+	{ value: "skipped", label: "Skipped", states: ["skipped", "watched"] },
+	{ value: "failed", label: "Failed", states: ["failed"] },
+];
+
+/**
+ * What the agent did with each message it matched, newest first, with a filter. A draft still
+ * waiting has Review, which opens Draft review. The latest few, then all of them.
+ */
+function AgentRuns({ runs, identities, onReview }: { runs: UseQueryResult<AutoDraftRun[]>; identities: Identities; onReview: () => void }) {
 	const openMessage = useOpenMessage();
 	const [all, setAll] = useState(false);
-	const total = runs.data?.length ?? 0;
+	const [filter, setFilter] = useState<RunFilter>("all");
+	const list = runs.data ?? [];
+	const of = (f: RunFilter) => { const states = RUN_FILTERS.find((x) => x.value === f)!.states; return states.length ? list.filter((r) => states.includes(r.state)) : list; };
+	const shown = of(filter);
+	const total = shown.length;
+	const filters = RUN_FILTERS.filter((f) => f.value === "all" || f.value === filter || of(f.value).length > 0)
+		.map((f) => ({ value: f.value, label: `${f.label} ${of(f.value).length}` }));
 	return (
-		<Section title="Activity" actions={total > 6 && <Button size="sm" variant="quiet" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${total}`}</Button>}>
+		<Section id="agent-work" title="Recent work" actions={list.length > 0 && <Segmented label="Show" value={filter} options={filters} onChange={(f) => { setFilter(f); setAll(false); }} />}>
 			<Async query={runs} empty="No runs yet">
-				{(rows) => (
-					<Table
-						label="Runs"
-						rows={all ? rows : rows.slice(0, 6)}
-						rowKey={(r) => r.emailId}
-						onRow={(r) => openMessage?.({ mailboxId: r.mailboxId, emailId: r.emailId })}
-						columns={[
-							{ key: "at", label: "Received", cell: (r) => <span className="pg-mono">{when(r.createdAt)}</span> },
-							{ key: "from", label: "From", cell: (r) => r.sender },
-							{ key: "to", label: "To", wide: true, cell: (r) => <AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} bold={false} short /> },
-							{ key: "state", label: "Result", cell: (r) => <RunBadge state={r.state} /> },
-							{ key: "why", label: "Why", wide: true, clip: (r) => r.reason, cell: (r) => r.reason ?? "" },
-						]}
-					/>
+				{() => (
+					<>
+					<List label="Runs">
+						{(all ? shown : shown.slice(0, 6)).map((r) => {
+							// A draft still waiting goes to Draft review; anything else opens the message.
+							const waiting = r.state === "drafted" && !!r.draftId;
+							return (
+								<Item
+									key={r.emailId}
+									badge={<RunBadge state={r.state} />}
+									title={r.sender}
+									time={when(r.createdAt)}
+									aside={waiting ? <span className="pg-ui-item-go">Review</span> : undefined}
+									meta={<><AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} bold={false} short />{r.reason && <span>{r.reason}</span>}</>}
+									onClick={() => (waiting ? onReview() : openMessage?.({ mailboxId: r.mailboxId, emailId: r.emailId }))}
+								/>
+							);
+						})}
+					</List>
+					{total > 6 && <div className="pg-ui-toolbar"><Button size="sm" variant="quiet" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${total}`}</Button></div>}
+					</>
 				)}
 			</Async>
 		</Section>
@@ -807,7 +840,7 @@ function AgentActions({ actions, identities }: { actions: UseQueryResult<AgentAc
 	const [all, setAll] = useState(false);
 	const total = actions.data?.length ?? 0;
 	return (
-		<Section title="Activity" actions={total > 6 && <Button size="sm" variant="quiet" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${total}`}</Button>}>
+		<Section id="agent-work" title="Recent work" actions={total > 6 && <Button size="sm" variant="quiet" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${total}`}</Button>}>
 			<Async query={actions} empty="No actions yet">
 				{(rows) => (
 					<Table
@@ -875,7 +908,7 @@ function AgentSetup({ agent, addresses, identities }: { agent: Agent; addresses:
 		: form.addresses.length === 0 ? "All addresses" : `${form.addresses.length} addresses`;
 
 	return (
-		<Section title="How it works">
+		<Section title="Setup" actions={<TestedBadge agent={agent} setup={setupKey(form)} />}>
 			<Summary>
 				<SummaryRow
 					label="Reads" open={open === "reads"} onEdit={() => toggle("reads")}
@@ -925,10 +958,7 @@ function AgentSetup({ agent, addresses, identities }: { agent: Agent; addresses:
 							</select>
 						)}
 					</span>
-					<span className="pg-ui-sum-sub">
-						{form.does !== agent.does ? "Saving starts it again in Watch"
-							: acts ? (rules.length ? "Acts when its rules pass, with no model call" : "No rules: the model reads each message to decide") : "Writes a reply"}
-					</span>
+					{form.does !== agent.does && <span className="pg-ui-sum-sub">Saving starts it again in Watch</span>}
 				</SummaryRow>
 				{!acts && (
 					<SummaryRow label="Reply">
@@ -952,6 +982,21 @@ function AgentSetup({ agent, addresses, identities }: { agent: Agent; addresses:
 }
 
 /**
+ * Whether the latest Test ran on the setup as it is now: Testing while a run on it goes,
+ * Not tested when there is no run or the setup changed since. Nothing when it is current.
+ */
+function TestedBadge({ agent, setup }: { agent: Agent; setup: string }) {
+	const test = useAgentTest(agent.id).data;
+	const current = !!test && test.setup === setup;
+	if (current && test.state !== "running") return null;
+	return (
+		<button type="button" className="pg-ui-badge-link" onClick={() => jumpTo("agent-test")}>
+			{current ? <Badge tone="draft" live>Testing</Badge> : <Badge tone="warn">Not tested</Badge>}
+		</button>
+	);
+}
+
+/**
  * The last thing on an agent's page, apart from the rest: Delete, then a second click to confirm.
  * The confirm says something else, takes focus to Keep, and ignores clicks for a moment, so a double-click can't delete.
  */
@@ -968,7 +1013,7 @@ function AgentDelete({ agent, onDeleted }: { agent: Agent; onDeleted: () => void
 					<span className="pg-ui-quiet">Its activity stays in the log.</span>
 					{remove.error && <Note tone="error">{remove.error.message}</Note>}
 				</>
-				: <Button variant="danger" icon={<AgentIcon size={14} />} onClick={() => setConfirming(Date.now())}>Delete Agent {agent.name}</Button>}
+				: <Button variant="danger" icon={<AgentIcon size={14} />} aria-label={`Delete Agent ${agent.name}`} onClick={() => setConfirming(Date.now())}>Delete agent</Button>}
 		</div>
 	);
 }

@@ -16,7 +16,7 @@ const record = (fields = {}) => ({
 });
 const ready = record({
 	week: { matched: 12, failed: 0 },
-	test: { id: "t", state: "done", tested: 20, failed: 0, startedAt: "x", finishedAt: "y" },
+	test: { id: "t", state: "done", tested: 20, failed: 0, startedAt: "x", finishedAt: "y", current: true },
 	drafts: { sent: 10, unedited: 8 },
 });
 const unmet = (checks) => checks.filter((c) => !c.met).map((c) => c.id);
@@ -27,7 +27,7 @@ test("Watch to Draft keeps today's gate: 10 matched and none failed this week", 
 	assert.deepEqual(unmet(gates.gateChecks("watch", "draft", false, record({ week: { matched: 10, failed: 0 } }))), []);
 	// An action agent's move to On uses the same gate.
 	assert.deepEqual(gates.gateChecks("watch", "on", true, record()).map((c) => c.id), ["matched", "week-failed"]);
-	assert.match(gates.gateRefusal(gates.gateChecks("watch", "draft", false, record())), /^Not yet\. Still needed: 10 messages matched in 7 days\.$/);
+	assert.match(gates.gateRefusal(gates.gateChecks("watch", "draft", false, record())), /^Not yet\. Still needed: 10 matched in 7 days\.$/);
 });
 
 test("Draft to Send needs a 20-message Test with no failures, 10 drafts sent with 8 in 10 unedited, and no safety failures", () => {
@@ -39,6 +39,9 @@ test("Draft to Send needs a 20-message Test with no failures, 10 drafts sent wit
 	assert.deepEqual(withTest({ failed: 1 }), ["test"]);
 	assert.deepEqual(withTest({ state: "running" }), ["test"]);
 	assert.deepEqual(withTest({ state: "stopped", tested: 25 }), []);
+	// A run on a setup the agent no longer has doesn't count (WON-529).
+	assert.deepEqual(withTest({ current: false }), ["test"]);
+	assert.equal(gates.gateChecks("draft", "send", false, { ...ready, test: { ...ready.test, current: false } })[0].record, "Setup changed");
 	assert.deepEqual(unmet(gates.gateChecks("draft", "send", false, { ...ready, drafts: { sent: 9, unedited: 9 } })), ["drafts-sent"]);
 	assert.deepEqual(unmet(gates.gateChecks("draft", "send", false, { ...ready, drafts: { sent: 20, unedited: 15 } })), ["unedited"]);
 	assert.deepEqual(unmet(gates.gateChecks("draft", "send", false, { ...ready, safety: { count: 1, latest: [{ at: "x", reason: "prompt injection detected" }] } })), ["safety"]);
@@ -122,6 +125,15 @@ test("the record reads the week's runs, the latest Test and safety checks from t
 	assert.deepEqual(e.week, { matched: 2, failed: 1 });
 	assert.equal(e.test.tested, 3);
 	assert.equal(e.test.failed, 1);
+	assert.equal(e.test.current, false, "a run from before 0.10 has no setup to match");
+	const shared = await loadTs("shared/agent-test.ts");
+	await sql.run(`UPDATE agent_tests SET setup = ? WHERE id = 't1'`, shared.setupKey(agent));
+	assert.equal((await evidence.agentEvidence(sql, agent.id, now)).test.current, true);
+	// A setup change makes it stale; a name or limit change doesn't.
+	await agents.updateAgent(sql, agent.id, { name: "Renamed", dailyLimit: 10 });
+	assert.equal((await evidence.agentEvidence(sql, agent.id, now)).test.current, true);
+	await agents.updateAgent(sql, agent.id, { instructions: "Shorter." });
+	assert.equal((await evidence.agentEvidence(sql, agent.id, now)).test.current, false);
 	assert.equal(e.safety.count, 2);
 	assert.equal(e.safety.latest[0].reason, "the reply failed the draft check");
 	assert.ok(evidence.isSafetyReason("prompt injection detected in part 2 of 3"));

@@ -2031,10 +2031,12 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
 .pg-ui-gate-main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .pg-ui-gate h3 { margin: 0; font: 600 var(--pg-t-11) var(--pg-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--pg-text-6); }
 .pg-ui-gate-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
-.pg-ui-gate-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) 120px; align-items: center; gap: 10px; font-size: var(--pg-t-13); color: var(--pg-text-2); }
+.pg-ui-gate-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto 120px; align-items: center; gap: 10px; font-size: var(--pg-t-13); color: var(--pg-text-2); }
 .pg-ui-gate-mark { width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid var(--pg-line-4); color: var(--pg-text-7); }
 .pg-ui-gate-list [data-met] .pg-ui-gate-mark { border-color: var(--pg-green); background: var(--pg-green); color: var(--pg-con-base); }
-.pg-ui-gate-record { display: block; margin-top: 2px; font: var(--pg-t-11) var(--pg-mono); color: var(--pg-text-6); }
+.pg-ui-gate-label { min-width: 0; padding: 0; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.pg-ui-gate-label:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pg-ui-gate-record { font: var(--pg-t-11) var(--pg-mono); color: var(--pg-text-5); white-space: nowrap; text-align: right; }
 .pg-ui-meter { width: 120px; height: 4px; display: block; }
 .pg-ui-meter rect { fill: var(--pg-line-2); }
 .pg-ui-meter rect[data-fill] { fill: var(--pg-con-accent); }
@@ -2042,8 +2044,10 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
 /* A narrow agent column (the list and the agent panel open beside it) stacks the gate over its week. */
 @container pg-trust (max-width: 640px) {
   .pg-ui-gate { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 16px; }
-  .pg-ui-gate-list li { grid-template-columns: 18px minmax(0, 1fr) 72px; }
-  .pg-ui-meter { width: 72px; }
+  .pg-ui-gate-list li { grid-template-columns: 18px minmax(0, 1fr) auto; }
+  .pg-ui-gate-list .pg-ui-meter { display: none; }
+  .pg-ui-rung { padding: 14px; }
+  .pg-ui-rung-icon, .pg-ui-rung-later { display: none; }
 }
 .pg-ui-week { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .pg-ui-week-bars { width: 100%; height: 72px; display: block; }
@@ -2063,9 +2067,16 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
   .pg-ui-rung { padding: 14px 16px; gap: 10px; }
   .pg-ui-rungs > li:not([data-state="now"]) .pg-ui-rung ul { display: none; }
   .pg-ui-gate { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 16px; }
-  .pg-ui-gate-list li { grid-template-columns: 18px minmax(0, 1fr) 72px; }
-  .pg-ui-meter { width: 72px; }
+  .pg-ui-gate-list li { grid-template-columns: 18px minmax(0, 1fr) auto; }
+  .pg-ui-gate-list .pg-ui-meter { display: none; }
+  .pg-ui-gate-label { min-height: 36px; }
 }
+/* The workbench (WON-529): setup beside recent work and Test. Narrow, they stack with setup first. */
+.pg-ui-wb { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 20px 28px; align-items: start; }
+.pg-ui-wb-col { min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.pg-ui-item-go { margin-left: auto; padding: 2px 8px; border: 1px solid var(--pg-line-3); font-size: var(--pg-t-12); color: var(--pg-text-2); }
+.pg-ui-badge-link { display: inline-flex; align-items: center; padding: 0; border: 0; background: none; cursor: pointer; }
+@media (max-width: 760px) { .pg-ui-badge-link { min-height: 36px; } }
 .pg-ui-wiz-count { font: var(--pg-t-11) var(--pg-mono); color: var(--pg-text-8); margin-right: 4px; }
 .pg-ui-compose .pg-modal-foot { padding: 0 20px; }
 .pg-ui-starts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }

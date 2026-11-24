@@ -57,6 +57,7 @@ import { redraft } from "./lib/redraft";
 import { seedAgents } from "./lib/dev-seed-agents";
 import { listAgentActions, mailOps, undoAgentAction } from "./lib/agent-actions";
 import { REDRAFT_INSTRUCTION_MAX } from "../shared/draft-notes";
+import { setupKey } from "../shared/agent-test";
 import { claimNext, deleteTests, finishTest, getTest, liveGenerate, pickTestMail, saveResult, startTest, stopTest, testMessage } from "./agent/test-run";
 import { decide, listHolds, listQueue, setHold } from "./lib/approvals";
 import { runQueued } from "./lib/approval-run";
@@ -465,7 +466,7 @@ app.post("/api/v1/agents/:id/test", async (c) => {
 	if (!agent) return c.json({ error: "Not found" }, 404);
 	const picked = await pickTestMail(sql, agent, { search: parsed.data.search, limit: parsed.data.limit, mailboxes: await mailboxIds(c.env) });
 	if ("error" in picked) return c.json({ error: picked.error }, 400);
-	return c.json(await startTest(sql, agent.id, parsed.data.search ?? "", picked.mail), 201);
+	return c.json(await startTest(sql, agent.id, parsed.data.search ?? "", picked.mail, Date.now(), setupKey(agent)), 201);
 });
 
 /** Test the next message of the running test. Returns the run; its state is done once no message is left. */
