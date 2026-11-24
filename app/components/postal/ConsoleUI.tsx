@@ -44,9 +44,9 @@ export function Page({ title, icon, sub, trail, actions, children }: {
 }
 
 /** A titled group on a page. The title is the only heading level below the page's. */
-export function Section({ title, sub, actions, children }: { title?: ReactNode; sub?: ReactNode; actions?: ReactNode; children: ReactNode }) {
+export function Section({ id, title, sub, actions, children }: { id?: string; title?: ReactNode; sub?: ReactNode; actions?: ReactNode; children: ReactNode }) {
 	return (
-		<section className="pg-ui-section">
+		<section className="pg-ui-section" id={id}>
 			{(title || actions) && (
 				<div className="pg-ui-section-head">
 					{title && <h2>{title}</h2>}

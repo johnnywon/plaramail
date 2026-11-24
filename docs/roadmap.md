@@ -14,6 +14,7 @@ Shipped: one list for every address, one search language with ranked results, th
 - [x] **Evidence before promotion.** What an agent did in Watch or Draft, shown before you move it to Draft or Send. Shipped in 0.9.8.
 - [x] **Approval queue.** Agent sends and bulk changes can wait for one-click approval. Each agent and MCP client has a Hold for approval switch; Console > Approvals lists what waits, with Approve and Drop.
 - [x] **Scoped agent access.** MCP grants limited to chosen addresses, so a support agent never sees billing mail. The consent page picks them, Console > MCP narrows them. Grants already separate reading from sending.
+- [x] **Workbench.** An agent's setup beside what it did and Test on past mail, so a change can be checked against its work. A setup change needs a new Test before Send. Shipped in 0.9.9.
 - [ ] **Send mode.** Hired agents that reply on their own, up to a daily limit, once the steps above are in place.
 
 ## Next: teams, a faster start, and rules

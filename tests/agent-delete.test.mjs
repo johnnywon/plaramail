@@ -20,5 +20,6 @@ test("the confirming button says Yes, delete, and focus moves to Keep", () => {
 	assert.match(confirm, />Yes, delete \{agent\.name\}</);
 	assert.match(confirm, /<Button autoFocus onClick=\{\(\) => setConfirming\(null\)\}>Keep<\/Button>/);
 	assert.match(confirm, /confirmReady\(confirming, Date\.now\(\)\)/);
-	assert.equal((confirm.match(/>Delete Agent \{agent\.name\}</g) ?? []).length, 1, "only the first button says Delete Agent");
+	assert.equal((confirm.match(/>Delete agent</g) ?? []).length, 1, "only the first button says Delete agent");
+	assert.match(confirm, /aria-label=\{`Delete Agent \$\{agent\.name\}`\}/, "its accessible name says which agent");
 });

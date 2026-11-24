@@ -132,3 +132,24 @@ test("label_matching over more than 25 messages is held; 25 or fewer goes ahead"
 	assert.equal(approved.item.state, "approved");
 	assert.equal(labelled("shop"), 30);
 });
+
+test("get_approval: a client sees its own held call, waiting then decided, and no one else's", async () => {
+	const h = await harness();
+	await q.setHold(h.sql, "mcp", CALLER.clientId, true);
+	const held = await run.holdMcpSend(h.env, h.sql, CALLER, "send_email", { ...sendArgs, idempotencyKey: "status-0001" });
+	const waiting = await q.queueItemFor(h.sql, held.approvalId, "mcp", CALLER.clientId);
+	assert.equal(waiting.state, "waiting");
+	assert.equal(waiting.summary, "to bob@example.org · Friday");
+	assert.equal(await q.queueItemFor(h.sql, held.approvalId, "mcp", "client-2"), null, "another client's item is not found");
+	assert.equal(await q.queueItemFor(h.sql, "nope", "mcp", CALLER.clientId), null);
+	await q.decide(h.sql, held.approvalId, "approve", run.runQueued(h.env));
+	const decided = await q.queueItemFor(h.sql, held.approvalId, "mcp", CALLER.clientId);
+	assert.equal(decided.state, "approved");
+	assert.equal(decided.result, "sent");
+	assert.ok(decided.decidedAt);
+	// An item past its 24 hours reads as dropped.
+	const late = await run.holdMcpSend(h.env, h.sql, CALLER, "send_email", { ...sendArgs, idempotencyKey: "status-0002" });
+	const expired = await q.queueItemFor(h.sql, late.approvalId, "mcp", CALLER.clientId, Date.now() + 25 * 3_600_000);
+	assert.equal(expired.state, "dropped");
+	assert.equal(expired.result, "Expired after 24 hours");
+});

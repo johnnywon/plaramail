@@ -9,7 +9,8 @@
  *
  * - Watch to Draft (and Watch to On for an action agent): 10 messages matched
  *   and none failed in the last 7 days.
- * - Draft to Send: a Test run of 20 or more messages with no failures, at least
+ * - Draft to Send: a Test run of 20 or more messages with no failures, on the
+ *   agent's setup as it is now (a setup change needs a new run), at least
  *   10 agent drafts sent with 8 of every 10 sent without edits, and no safety
  *   check failures in the last 7 days.
  */
@@ -30,7 +31,7 @@ export interface AgentEvidence {
 	/** The last 7 days of live runs. */
 	week: { matched: number; failed: number };
 	/** The agent's latest Test run, or null when it has none. */
-	test: { id: string; state: "running" | "done" | "stopped"; tested: number; failed: number; startedAt: string; finishedAt: string | null } | null;
+	test: { id: string; state: "running" | "done" | "stopped"; tested: number; failed: number; startedAt: string; finishedAt: string | null; current: boolean } | null;
 	/** Agent drafts a person sent, and how many went without edits. */
 	drafts: { sent: number; unedited: number };
 	/** Safety checks that stopped this agent's mail or replies in the last 7 days, newest first. */
@@ -50,15 +51,15 @@ export interface GateCheck {
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 const ratio = (n: number, of: number) => (of > 0 ? Math.min(1, Math.max(0, n / of)) : 0);
 
-/** Watch to Draft, and Watch to On. */
+/** Watch to Draft, and Watch to On. Labels and records stay short: the Console shows them side by side. */
 function watchGate(e: AgentEvidence): GateCheck[] {
 	return [
 		{
-			id: "matched", label: `${GATES.matched} messages matched in 7 days`, record: `${plural(e.week.matched, "message")} matched`,
+			id: "matched", label: `${GATES.matched} matched in 7 days`, record: `${e.week.matched.toLocaleString()} of ${GATES.matched}`,
 			met: e.week.matched >= GATES.matched, value: ratio(e.week.matched, GATES.matched),
 		},
 		{
-			id: "week-failed", label: "None failed in 7 days", record: e.week.failed ? `${plural(e.week.failed, "run")} failed` : "None failed",
+			id: "week-failed", label: "None failed in 7 days", record: e.week.failed ? `${plural(e.week.failed, "run")} failed` : "0 failed",
 			met: e.week.failed === 0, value: e.week.failed === 0 ? 1 : 0,
 		},
 	];
@@ -68,26 +69,27 @@ function watchGate(e: AgentEvidence): GateCheck[] {
 function sendGate(e: AgentEvidence): GateCheck[] {
 	const t = e.test;
 	const testDone = !!t && t.state !== "running";
-	const testMet = testDone && t.tested >= GATES.tested && t.failed === 0;
+	// A run on a setup the agent no longer has doesn't count: run Test again (WON-529).
+	const testMet = testDone && t.current && t.tested >= GATES.tested && t.failed === 0;
 	const share = e.drafts.sent ? e.drafts.unedited / e.drafts.sent : 0;
 	return [
 		{
-			id: "test", label: `A Test on ${GATES.tested} or more messages with none failed`,
-			record: !t ? "No Test run yet" : t.state === "running" ? "Test running" : `Latest Test ran on ${plural(t.tested, "message")}, ${t.failed ? `${t.failed} failed` : "none failed"}`,
-			met: testMet, value: testMet ? 1 : t && t.failed === 0 ? ratio(t.tested, GATES.tested) : 0,
+			id: "test", label: `Test on ${GATES.tested}, none failed`,
+			record: !t ? "No run yet" : !t.current ? "Setup changed" : t.state === "running" ? `Running, ${t.tested} done` : `${t.tested} tested, ${t.failed ? `${t.failed} failed` : "0 failed"}`,
+			met: testMet, value: testMet ? 1 : t && t.current && t.failed === 0 ? ratio(t.tested, GATES.tested) : 0,
 		},
 		{
-			id: "drafts-sent", label: `${GATES.sent} agent drafts sent`, record: `${plural(e.drafts.sent, "draft")} sent`,
+			id: "drafts-sent", label: `${GATES.sent} drafts sent`, record: `${e.drafts.sent.toLocaleString()} of ${GATES.sent}`,
 			met: e.drafts.sent >= GATES.sent, value: ratio(e.drafts.sent, GATES.sent),
 		},
 		{
-			id: "unedited", label: `${Math.round(GATES.unedited * 10)} of every 10 sent without edits`,
-			record: e.drafts.sent ? `${e.drafts.unedited} of ${e.drafts.sent} sent without edits` : "None sent yet",
+			id: "unedited", label: `${Math.round(GATES.unedited * 10)} of 10 sent unedited`,
+			record: e.drafts.sent ? `${e.drafts.unedited} of ${e.drafts.sent}` : "None sent",
 			met: e.drafts.sent > 0 && share >= GATES.unedited, value: ratio(share, GATES.unedited),
 		},
 		{
-			id: "safety", label: "No safety check failures in 7 days",
-			record: e.safety.count ? `${plural(e.safety.count, "safety check failure")}` : "No safety check failures",
+			id: "safety", label: "No safety failures in 7 days",
+			record: e.safety.count ? `${e.safety.count} failed` : "0 failed",
 			met: e.safety.count === 0, value: e.safety.count === 0 ? 1 : 0,
 		},
 	];
