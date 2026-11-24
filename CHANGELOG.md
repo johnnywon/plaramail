@@ -4,6 +4,10 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 
 ## Unreleased
 
+### Added
+
+- Test on past mail. An agent's page has Test: it runs the agent on the latest 25 received messages for its addresses, or what a search finds, 50 at most, and lists for each whether it took the message and the reply it would have written. Nothing is sent and no draft is saved. The run shows its tokens and cost when it finishes. Each agent keeps its latest run. `GET` and `POST /api/v1/agents/:id/test`, `POST /api/v1/agents/:id/test/next` and `/stop`. New D1 migration: `0016_agent_tests.sql`.
+
 ### Changed
 
 - Mail to `name+tag@example.com` goes to the `name@example.com` mailbox when only the base address is in `EMAIL_ADDRESSES`. The To header keeps the tag. An address configured with a plus still gets its own mailbox. Email Routing must also send the tagged address to the Worker: turn on subaddressing for the zone.

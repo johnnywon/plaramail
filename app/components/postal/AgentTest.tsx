@@ -1,0 +1,164 @@
+// Copyright (c) 2026 Cloudflare, Inc.
+// Licensed under the Apache 2.0 license found in the LICENSE file or at:
+//     https://opensource.org/licenses/Apache-2.0
+
+import { ArrowSquareOutIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { TEST_DEFAULT, TEST_MAX, testCounts, type TestOutcome } from "shared/agent-test";
+import api, { type Agent, type AgentTest } from "~/services/api";
+import { when } from "./ActivityTab";
+import { useOpenMessage } from "./console-message";
+import { Badge, Button, Item, List, Note, NumberInput, Section } from "./ConsoleUI";
+import { AddressText, type Identities } from "./identity";
+
+const OUTCOMES: Record<TestOutcome, { label: string; tone: "neutral" | "watch" | "ok" | "warn" | "danger" }> = {
+	pending: { label: "Waiting", tone: "neutral" },
+	running: { label: "Testing", tone: "watch" },
+	took: { label: "Took it", tone: "ok" },
+	left: { label: "Left it", tone: "neutral" },
+	skipped: { label: "Skipped", tone: "warn" },
+	failed: { label: "Failed", tone: "danger" },
+};
+
+export const agentTestKey = (agentId: string) => ["agent-test", agentId] as const;
+
+/** The agent's latest test run, shared by Test and the Trust gate. */
+export function useAgentTest(agentId: string) {
+	return useQuery({ queryKey: agentTestKey(agentId), queryFn: () => api.getAgentTest(agentId) });
+}
+
+const dollars = (cost: number) => `$${cost < 0.01 && cost > 0 ? cost.toFixed(4) : cost.toFixed(2)}`;
+
+/** One line under the form: how far a run is, or what it found and what it cost. */
+function testLine(test: AgentTest): string {
+	const c = testCounts(test.results);
+	const tested = c.total - c.waiting;
+	if (test.state === "running") return `Testing ${Math.min(tested + 1, c.total)} of ${c.total}`;
+	const parts = [`${c.took} took it`, `${c.left} left`];
+	if (c.skipped) parts.push(`${c.skipped} skipped`);
+	if (c.failed) parts.push(`${c.failed} failed`);
+	const tokens = `${(test.inputTokens + test.outputTokens).toLocaleString()} tokens`;
+	const cost = test.cost == null ? "no listed price" : dollars(test.cost);
+	const head = test.state === "stopped" ? `Stopped after ${tested} ${tested === 1 ? "message" : "messages"}` : `${tested} ${tested === 1 ? "message" : "messages"}`;
+	return `${head}: ${parts.join(", ")}. ${tokens}, ${cost}.`;
+}
+
+/**
+ * Test on past mail: the agent runs on received mail it already has, and nothing is sent or saved.
+ * The browser asks for one message at a time, so a run picks up again when the page comes back.
+ */
+export function AgentTestSection({ agent, identities }: { agent: Agent; identities: Identities }) {
+	const queryClient = useQueryClient();
+	const openMessage = useOpenMessage();
+	const query = useAgentTest(agent.id);
+	const test = query.data ?? null;
+	const [search, setSearch] = useState(() => test?.search ?? "");
+	const [count, setCount] = useState(String(TEST_DEFAULT));
+	const [error, setError] = useState<string | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [retry, setRetry] = useState(0);
+	const [open, setOpen] = useState<number | null>(null);
+	const running = test?.state === "running";
+	const set = (t: AgentTest | null) => queryClient.setQueryData(agentTestKey(agent.id), t);
+
+	// While a run is going, ask for the next message until none is left.
+	useEffect(() => {
+		if (!running || !test) return;
+		let cancelled = false;
+		(async () => {
+			while (!cancelled) {
+				let next: AgentTest | null;
+				try {
+					next = await api.nextAgentTest(agent.id);
+				} catch (e) {
+					if (!cancelled) setError((e as Error).message || "The test stopped");
+					return;
+				}
+				if (cancelled) return;
+				set(next);
+				if (next?.state !== "running") {
+					queryClient.invalidateQueries({ queryKey: ["agents"] });
+					return;
+				}
+			}
+		})();
+		return () => { cancelled = true; };
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [agent.id, test?.id, running, retry]);
+
+	const n = Number(count);
+	const countOk = Number.isInteger(n) && n >= 1 && n <= TEST_MAX;
+	const start = async () => {
+		setError(null);
+		setBusy(true);
+		try {
+			set(await api.startAgentTest(agent.id, { search: search.trim() || undefined, limit: n }));
+			setOpen(null);
+		} catch (e) {
+			setError((e as Error).message);
+		} finally {
+			setBusy(false);
+		}
+	};
+	const stop = async () => {
+		setBusy(true);
+		try {
+			set(await api.stopAgentTest(agent.id));
+		} catch (e) {
+			setError((e as Error).message);
+		} finally {
+			setBusy(false);
+		}
+	};
+	const shown = (test?.results ?? []).filter((r) => r.outcome !== "pending");
+
+	return (
+		<Section title="Test" sub={`Runs the agent on past mail as if it had just arrived, up to ${TEST_MAX} messages. Nothing is sent and no draft is saved.`}>
+			<form className="pg-ui-toolbar pg-ui-test-form" onSubmit={(e) => { e.preventDefault(); if (!running && countOk) void start(); }}>
+				<input
+					className="pg-input" type="search" value={search} disabled={running} aria-label="Search past mail"
+					placeholder="Latest received mail, or a search such as from:example.net" onChange={(e) => setSearch(e.target.value)}
+				/>
+				<NumberInput label="Messages" value={count} min={1} max={TEST_MAX} unit="messages" invalid={!countOk} disabled={running} onChange={setCount} />
+				{running
+					? <Button icon={<StopIcon size={12} />} disabled={busy} onClick={() => void stop()}>Stop</Button>
+					: <Button type="submit" icon={<PlayIcon size={12} />} disabled={busy || !countOk}>Run test</Button>}
+			</form>
+			{error && (
+				<Note tone="error">
+					{error}
+					{running && <> <Button size="sm" variant="quiet" onClick={() => { setError(null); setRetry((r) => r + 1); }}>Continue</Button></>}
+				</Note>
+			)}
+			{query.isPending && <Note>Loading</Note>}
+			{test && <Note tone={test.state === "running" ? "muted" : testCounts(test.results).failed ? "warn" : "muted"}>{testLine(test)}{test.search ? ` Search: ${test.search}` : ""}</Note>}
+			{test && shown.length > 0 && (
+				<List label="Test results">
+					{shown.map((r) => {
+						const o = OUTCOMES[r.outcome];
+						return (
+							<Item
+								key={r.position}
+								badge={<Badge tone={o.tone} dot live={r.outcome === "running"}>{o.label}</Badge>}
+								title={r.subject || "(no subject)"}
+								time={when(r.date)}
+								meta={<>{r.sender}<AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} bold={false} short /></>}
+								quote={open === r.position ? undefined : r.reply ?? r.reason ?? undefined}
+								bad={r.outcome === "failed"}
+								open={open === r.position}
+								onClick={r.outcome === "running" ? undefined : () => setOpen(open === r.position ? null : r.position)}
+							>
+								{r.reply && <p className="pg-ui-test-reply">{r.reply}</p>}
+								{r.reason && <Note tone={r.outcome === "failed" ? "error" : "muted"}>{r.reason}</Note>}
+								<div className="pg-ui-toolbar">
+									<Button size="sm" icon={<ArrowSquareOutIcon size={12} />} onClick={() => openMessage?.({ mailboxId: r.mailboxId, emailId: r.emailId })}>Open message</Button>
+								</div>
+							</Item>
+						);
+					})}
+				</List>
+			)}
+		</Section>
+	);
+}
