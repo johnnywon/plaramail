@@ -25,6 +25,7 @@ export const MCP_TOOLS = [
 	{ name: "search_emails", group: "read", summary: "Search one address" },
 	{ name: "search_all_mail", group: "read", summary: "Search every address at once" },
 	{ name: "list_labels", group: "read", summary: "List labels with counts" },
+	{ name: "get_approval", group: "read", summary: "Check a call held for approval" },
 	{ name: "draft_reply", group: "write", summary: "Draft a reply to an email" },
 	{ name: "create_draft", group: "write", summary: "Create a new draft" },
 	{ name: "update_draft", group: "write", summary: "Edit a saved draft" },

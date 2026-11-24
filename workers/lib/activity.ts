@@ -28,6 +28,7 @@ export const TOOL_ACTIONS: Record<string, ActivityAction> = {
 	search_all_mail: "read",
 	list_labels: "read",
 	list_shortcuts: "read",
+	get_approval: "read",
 	draft_reply: "draft",
 	draft_email: "draft",
 	create_draft: "draft",
