@@ -44,7 +44,8 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { MCP_ATTACHMENTS_MAX, MCP_ATTACHMENT_BYTES_MAX, replyTarget, toolReplyToEmail, toolSendEmail } from "../lib/mcp-send";
 import { canSend, type McpProps } from "./scopes";
 import { holdMcpSend, mcpBulkHold, type McpCaller } from "../lib/approval-run";
-import { BULK_OVER } from "../../shared/approvals";
+import { BULK_OVER, QUEUE_TTL_MS } from "../../shared/approvals";
+import { queueItemFor } from "../lib/approvals";
 import { grantAddresses, labelCounts, labelOutside } from "./grants";
 import type { Env } from "../types";
 import pkg from "../../package.json";
@@ -102,8 +103,8 @@ const idempotencyKeySchema = z.string().regex(/^[A-Za-z0-9._:-]{8,80}$/)
 	.describe("A key you make up for this send, 8 to 80 letters, digits, or . _ : -. Retrying with the same key never sends twice.");
 
 /** Added to the description of every tool whose call can be held for approval. */
-const HOLD_NOTE = ` If this app's calls are held for approval, the result is status "queued" with an approvalId: nothing happened yet, and a person approves or drops it in the app within 24 hours. Don't call again to retry it.`;
-const BULK_HOLD_NOTE = ` A change to more than ${BULK_OVER} messages can be held for approval: the result is then status "queued" and nothing changed yet. Don't call again to retry it.`;
+const HOLD_NOTE = ` If this app's calls are held for approval, the result is status "queued" with an approvalId: nothing happened yet, and a person approves or drops it in the app within 24 hours. Don't call again to retry it; use get_approval to see what happened.`;
+const BULK_HOLD_NOTE = ` A change to more than ${BULK_OVER} messages can be held for approval: the result is then status "queued" and nothing changed yet. Don't call again to retry it; use get_approval to see what happened.`;
 
 /** The result object inside an MCP response, for the activity log. */
 function mcpView(response: { content?: { type: string; text?: string }[]; isError?: boolean }): unknown {
@@ -398,6 +399,22 @@ export class EmailMCP extends McpAgent<Env, unknown, McpProps> {
 					return mcpResult(result);
 				}
 				return mcpText(result);
+			},
+		);
+
+		// ── get_approval: what happened to a call held for approval ───
+		tool(
+			"get_approval",
+			`What happened to a call this app made that was held for approval: pass the approvalId it returned. state is "waiting" (no one has decided), "approved" (it ran; result says how), "failed" (it was approved but refused; result says why), or "dropped" (a person dropped it, or it waited ${QUEUE_TTL_MS / 3_600_000} hours). Only this app's own calls are found.`,
+			{ approvalId: z.string().min(1).max(100).describe("The approvalId from the queued result") },
+			async ({ approvalId }) => {
+				const item = await queueItemFor(sql, approvalId, "mcp", caller.clientId);
+				if (!item) return mcpError(`Approval "${approvalId}" not found for this app.`);
+				const state = item.state === "running" ? "waiting" : item.state;
+				return mcpText({
+					approvalId: item.id, state, kind: item.kind, tool: item.tool, mailboxId: item.mailboxId, summary: item.summary,
+					result: item.result, createdAt: item.createdAt, expiresAt: item.expiresAt, decidedAt: item.decidedAt,
+				});
 			},
 		);
 

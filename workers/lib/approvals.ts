@@ -210,6 +210,16 @@ export async function decide(
 	return { item: toItem(row) };
 }
 
+/**
+ * One item, for the agent or client that queued it (MCP get_approval). Items past
+ * their 24 hours are dropped first. Null when there is no such item or it is someone else's.
+ */
+export async function queueItemFor(sql: Sql, id: string, actor: HoldKind, sourceId: string, now = Date.now()): Promise<QueueItem | null> {
+	await expireQueue(sql, now);
+	const row = await sql.first(`SELECT ${ITEM_COLUMNS} FROM approval_queue WHERE id = ? AND actor = ? AND source_id = ?`, id, actor, sourceId);
+	return row ? toItem(row) : null;
+}
+
 async function refusal(sql: Sql, id: string): Promise<{ error: string; status: 404 | 409 }> {
 	const row = await sql.first(`SELECT state, result FROM approval_queue WHERE id = ?`, id);
 	if (!row) return { error: "Not found", status: 404 };

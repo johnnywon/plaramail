@@ -119,7 +119,7 @@ The reply is refused, and nothing is sent, when:
 { "status": "queued", "approvalId": "…", "expiresAt": "…", "message": "Held for approval in Console > Approvals. …" }
 ```
 
-Don't call again to retry it: a retry with the same `idempotencyKey`, or of the same draft, returns the same item. Approve runs the call then, with the same checks, so a reply is still refused if a newer email arrived. A held send counts toward the daily limit when it is approved. An item not approved within 24 hours is dropped. Both outcomes are in the Activity log.
+Don't call again to retry it: a retry with the same `idempotencyKey`, or of the same draft, returns the same item. Approve runs the call then, with the same checks, so a reply is still refused if a newer email arrived. A held send counts toward the daily limit when it is approved. An item not approved within 24 hours is dropped. Both outcomes are in the Activity log. To see what happened, call `get_approval` with the `approvalId`: `state` is `waiting`, `approved`, `failed` or `dropped`, and `result` says how it went.
 
 **Errors.** A tool that fails returns `isError: true` with `{ "error": "...", "code": "...", "retryable": false }` for the send tools, and `{ "error": "..." }` for the rest. `retryable` is false for every send error: fix the input, read again, or wait for the limit.
 
@@ -133,6 +133,7 @@ Don't call again to retry it: a retry with the same `idempotencyKey`, or of the 
 | `list_emails` | `mailboxId`, `folder` (default `inbox`), `limit` (20), `page` (1) | Message metadata |
 | `get_email` | `mailboxId`, `emailId` | The message with its body, attachments and, if received, `replyTarget` |
 | `get_thread` | `mailboxId`, `threadId` | Every message in the conversation, oldest first |
+| `get_approval` | `approvalId` | A call of this app's held for approval: `state` (`waiting`, `approved`, `failed`, `dropped`), `summary`, `result`, and when it was queued, expires and was decided. Other apps' items are not found. |
 | `search_emails` | `mailboxId`, `query`, `folder`? | Conversations on one address |
 | `search_all_mail` | `query`?, `from`?, `to`?, `label`?, `folder`?, `unread`?, `starred`?, `hasAttachment`?, `date`? (`today`, `yesterday`, `7d`, `30d`, `older`), `limit`? (1 to 50) | Conversations across this app's addresses |
 | `list_labels` | | Labels with ids, colors and conversation counts on this app's addresses |

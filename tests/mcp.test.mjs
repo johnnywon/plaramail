@@ -162,7 +162,7 @@ test("the server lists every tool", async () => {
 	assert.equal(client.getServerVersion().name, "plaramail");
 	const { tools } = await client.listTools();
 	assert.deepEqual(tools.map((t) => t.name).sort(), [
-		"create_draft", "create_label", "delete_email", "delete_label", "draft_reply", "get_email", "get_thread",
+		"create_draft", "create_label", "delete_email", "delete_label", "draft_reply", "get_approval", "get_email", "get_thread",
 		"label_conversation", "label_matching", "list_emails", "list_labels", "list_mailboxes", "list_shortcuts", "mark_email_read",
 		"move_email", "rename_label", "reply_to_email", "reset_shortcuts", "search_all_mail", "search_emails", "send_draft", "send_email",
 		"set_shortcut", "star_conversation", "update_draft",
@@ -173,7 +173,7 @@ test("a grant without the send scope gets no tool that sends", async () => {
 	const names = (await reader.listTools()).tools.map((t) => t.name);
 	for (const sending of ["send_draft", "reply_to_email", "send_email"]) assert.ok(!names.includes(sending), sending);
 	assert.ok(names.includes("draft_reply") && names.includes("get_email"));
-	assert.equal(names.length, 22);
+	assert.equal(names.length, 23);
 });
 
 test("tools say whether they only read, and which ones send", async () => {
