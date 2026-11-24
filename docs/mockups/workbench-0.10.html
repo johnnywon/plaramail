@@ -426,11 +426,11 @@ svg.i20 { width: 20px; height: 20px; }
           <div class="gate">
             <h3>To move to Send</h3>
             <ul class="gate-list">
-              <li data-met>
-                <span class="gate-mark"><svg class="i12"><use href="#check"/></svg></span>
-                <span>Test on past mail, 20 or more, none failed<small>Nov 21, before the instructions changed</small></span>
-                <span class="gate-val">25 · 0 failed</span>
-                <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="100" height="4"/></svg>
+              <li>
+                <span class="gate-mark"></span>
+                <span>Test on past mail, 20 or more, none failed<small>Instructions changed after the Nov 21 run. A new run is testing.</small></span>
+                <span class="gate-val">14 of 25</span>
+                <svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none"><rect width="100" height="4"/><rect data-fill width="56" height="4"/></svg>
               </li>
               <li data-met>
                 <span class="gate-mark"><svg class="i12"><use href="#check"/></svg></span>
@@ -446,7 +446,7 @@ svg.i20 { width: 20px; height: 20px; }
               </li>
             </ul>
             <div class="toolbar">
-              <button class="btn btn-primary" type="button"><svg class="i12"><use href="#arrow-r"/></svg>Move to Send</button>
+              <button class="btn btn-primary" type="button" disabled><svg class="i12"><use href="#lock"/></svg>Move to Send</button>
               <button class="btn btn-quiet" type="button"><svg class="i12"><use href="#arrow-l"/></svg>Back to Watch</button>
             </div>
           </div>
