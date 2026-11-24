@@ -34,6 +34,8 @@ import { decodeCursor, InvalidFilterError } from "./lib/mail-index-sql";
 import { parseMailParams } from "./lib/mail-filter-params";
 import { MAX_SEARCH_LENGTH } from "../shared/search-query";
 import { TEST_MAX } from "../shared/agent-test";
+import { gateChecks, gateRefusal } from "../shared/agent-gates";
+import { agentEvidence, deleteAgentEvents } from "./lib/agent-evidence";
 import { mailboxIds, mailStore, storageStatus, recordsSql } from "./store";
 import { forgetAddresses, narrowTo, shownAddresses, storeAddresses, storedAddresses } from "./mcp/grants";
 import { MOVE_FOLDERS } from "./lib/mail-bulk-sql";
@@ -400,6 +402,8 @@ app.get("/api/v1/agents/review", async (c) => c.json(await listAgentDrafts(recor
 app.post("/api/v1/agents", async (c) => {
 	const parsed = AgentBody.safeParse(await c.req.json().catch(() => null));
 	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid agent" }, 400);
+	// Every agent earns its rungs from Watch (shared/agent-gates.ts).
+	if (parsed.data.mode && parsed.data.mode !== "watch") return c.json({ error: "A new agent starts in Watch" }, 400);
 	const result = await createAgent(recordsSql(c.env), parsed.data);
 	return "error" in result ? c.json({ error: result.error }, 400) : c.json(result.agent, 201);
 });
@@ -415,14 +419,26 @@ app.put("/api/v1/agents/order", async (c) => {
 app.put("/api/v1/agents/:id", async (c) => {
 	const parsed = AgentBody.partial().safeParse(await c.req.json().catch(() => null));
 	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid agent" }, 400);
-	const result = await updateAgent(recordsSql(c.env), c.req.param("id"), parsed.data);
+	const sql = recordsSql(c.env);
+	// A move up a rung needs its gate met; there is no override (shared/agent-gates.ts). Down is always allowed.
+	if (parsed.data.mode) {
+		const current = await getAgent(sql, c.req.param("id"));
+		if (!current) return c.json({ error: "Not found" }, 404);
+		// A new Does starts again in Watch, so a mode sent with it moves up from there.
+		const does = parsed.data.does ?? current.does;
+		const from = does === current.does ? current.mode : "watch";
+		const checks = gateChecks(from, parsed.data.mode, does !== "reply", await agentEvidence(sql, current.id));
+		const refusal = gateRefusal(checks);
+		if (refusal) return c.json({ error: refusal, checks }, 409);
+	}
+	const result = await updateAgent(sql, c.req.param("id"), parsed.data);
 	if ("error" in result) return c.json({ error: result.error }, 400);
 	return result.agent ? c.json(result.agent) : c.json({ error: "Not found" }, 404);
 });
 
 app.delete("/api/v1/agents/:id", async (c) => {
 	const deleted = await deleteAgent(recordsSql(c.env), c.req.param("id"));
-	if (deleted) await deleteTests(recordsSql(c.env), c.req.param("id"));
+	if (deleted) await Promise.all([deleteTests(recordsSql(c.env), c.req.param("id")), deleteAgentEvents(recordsSql(c.env), c.req.param("id"))]);
 	return deleted ? c.json({ deleted: true }) : c.json({ error: "Not found" }, 404);
 });
 
@@ -490,6 +506,9 @@ app.post("/api/v1/agent-actions/:id/undo", async (c) => {
 	const result = await undoAgentAction({ sql: recordsSql(c.env), ops: mailOps(c.env) }, c.req.param("id"));
 	return "error" in result ? c.json({ error: result.error }, result.status) : c.json(result.action);
 });
+
+/** The record an agent's move up a rung reads (shared/agent-gates.ts). */
+app.get("/api/v1/agents/:id/evidence", async (c) => c.json(await agentEvidence(recordsSql(c.env), c.req.param("id"))));
 
 /** One agent's latest runs. */
 app.get("/api/v1/agents/:id/runs", async (c) =>

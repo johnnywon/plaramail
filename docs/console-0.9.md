@@ -61,7 +61,7 @@ An agent can do something to mail instead of replying: "favorite emails from hig
 
 - **Does.** Each agent has a Does field: Reply, Star, Label (one label, picked when the agent is set up), Archive, or Mark read. Reply is the 0.9 behaviour. An agent does one of these, never several.
 - **Rules-only fast path.** An action agent whose rules say exactly which mail it takes runs without a model: when the rules pass, the action happens. No model call, no cost, no delay. The setup offers a rule from the job ("from higgsfield" suggests From domain). An action agent with no rules asks the model only whether the job fits, and gets no reply tools.
-- **Watch, then On.** The ladder for action agents has two steps. Watch logs what it would do ("Would star"). On does it. Draft and Send stay for reply agents. The move to On uses the same evidence as Watch to Draft.
+- **Watch, then On.** The ladder for action agents has two steps. Watch logs what it would do ("Would star"). On does it. Draft and Send stay for reply agents. The move to On uses the same gate as Watch to Draft.
 - **Undo from the Activity log.** Every action shows in the Activity log with Undo: unstar, remove the label, move back to the inbox, mark unread. Undo is offered for 30 days.
 - **No competition with reply agents.** Every action agent whose rules and job fit acts. One reply agent at most replies, chosen by list order as in 0.9. Starring a message never stops it getting a reply.
 - **Limits.** An action agent has a daily limit (100 by default), so a loose rule can't archive a whole inbox in one run.
@@ -92,6 +92,23 @@ Agent sends and bulk changes can wait for one-click approval.
 - **Limits.** A queued send counts toward the daily limit when it is approved, not when it is queued. An approved send over the limit fails and says so.
 
 As built: `workers/lib/approvals.ts` (the queue and the switches), `workers/lib/approval-run.ts` (holding and running calls), migration `0017_approval_queue.sql`. `GET /api/v1/approvals`, `POST /api/v1/approvals/:id/approve`, `POST /api/v1/approvals/:id/drop`, `PUT /api/v1/approvals/holds/:kind/:id`. The cron drops expired items every minute. Send mode stays off until 0.10; an agent's `send_since` is recorded so the 7-day default applies once it opens. The in-app chat agent is not held: a person is present for each of its turns.
+
+## Promotion evidence (0.10, WON-531)
+
+An agent moves up a rung only when its gate is met. The gate blocks the move: the Console disables it and the API refuses it (409, with the checks). There is no override. Moving down is always allowed, and a new agent starts in Watch.
+
+| Move | Needs |
+|---|---|
+| Watch to Draft, Watch to On | 10 messages matched and none failed in the last 7 days |
+| Draft to Send | A Test run of 20 or more messages with no failures; at least 10 agent drafts sent, 8 of every 10 without edits; no safety check failures in the last 7 days |
+
+The move shows the record it is based on: each check has its count beside it ("Latest Test ran on 22 messages, none failed", "7 of 10 sent without edits", "1 safety check failure"), and the latest safety check failures are listed. Send itself stays locked until `SEND_VERSION`.
+
+- **Sent without edits.** An agent draft keeps a fingerprint of the reply it wrote in its notes (`draft_notes.written`), through edits and redrafts. When a person sends the draft (the send carries the `draft:<id>` key), the reply part of what was sent is fingerprinted the same way: the signature and the quoted original are left out, and markup and spacing don't count. A redraft counts as an edit. Drafts written before this version, and drafts sent by an MCP client's `send_draft`, are not counted.
+- **Safety check failures.** The injection scan stopping mail the agent's rules took, and the draft check failing a reply the agent wrote.
+- **Test.** The agent's latest run (see above). A stopped run counts what it tested.
+
+As built: `shared/agent-gates.ts` (the gates), `workers/lib/agent-evidence.ts` (the record, `GET /api/v1/agents/:id/evidence`), migration `0019_agent_evidence.sql` (`agent_events`, `draft_notes.written`).
 
 ## Build order
 

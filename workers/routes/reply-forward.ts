@@ -7,6 +7,8 @@ import { SendEmailRequestSchema } from "../lib/schemas";
 import { sendMail, type SendMode } from "../lib/send";
 import { checkSendKey } from "../lib/send-keys";
 import type { MailboxContext } from "../lib/mailbox";
+import { recordDraftSent } from "../lib/agent-evidence";
+import { recordsSql } from "../store";
 
 type AppContext = Context<MailboxContext>;
 
@@ -25,6 +27,13 @@ async function handleSend(c: AppContext, kind: SendMode["kind"]) {
 		idempotencyKey,
 	});
 	if (!result.ok) return c.json({ error: result.error, ...(result.attempt ? { attempt: result.attempt } : {}) }, result.status);
+	// Sending a draft carries its id in the key. An agent's draft counts toward its record: sent as written, or edited.
+	const draftId = /^draft:(.+)$/.exec(idempotencyKey ?? "")?.[1];
+	if (draftId) {
+		await c.var.mailbox.getDraftNotes(draftId)
+			.then((notes) => recordDraftSent(recordsSql(c.env), notes, body.html ?? "", result.id))
+			.catch((e: Error) => console.warn(`Agent draft send not recorded: ${e.message}`));
+	}
 	return c.json({ id: result.id, status: "sent" }, 202);
 }
 

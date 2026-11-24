@@ -1999,7 +1999,7 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
 .pg-ui-sum-editor .pg-ui-ask-input.pg-textarea { min-height: 72px; font-size: 13px; }
 
 /* An agent's trust: the Watch, Draft, Send track, what the current rung does, and the next rung. */
-.pg-ui-trust { border: 1px solid var(--pg-line-2); background: var(--pg-input); }
+.pg-ui-trust { border: 1px solid var(--pg-line-2); background: var(--pg-input); container: pg-trust / inline-size; }
 .pg-ui-trust:not(:has(.pg-ui-rungs)) { display: flex; align-items: center; gap: 16px; padding: 16px 18px; }
 
 /* The rungs: three columns, Watch, Draft, Send. The current one is ringed and lifted; done ones are
@@ -2034,13 +2034,17 @@ button.pg-ui-stat:hover { border-color: var(--pg-line-3); }
 .pg-ui-gate-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) 120px; align-items: center; gap: 10px; font-size: var(--pg-t-13); color: var(--pg-text-2); }
 .pg-ui-gate-mark { width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid var(--pg-line-4); color: var(--pg-text-7); }
 .pg-ui-gate-list [data-met] .pg-ui-gate-mark { border-color: var(--pg-green); background: var(--pg-green); color: var(--pg-con-base); }
-.pg-ui-gate-list [data-later] { color: var(--pg-text-6); }
-.pg-ui-gate-list [data-later] .pg-ui-gate-mark { border-style: dashed; }
-.pg-ui-gate-later { justify-self: end; font: var(--pg-t-11) var(--pg-mono); color: var(--pg-text-7); }
+.pg-ui-gate-record { display: block; margin-top: 2px; font: var(--pg-t-11) var(--pg-mono); color: var(--pg-text-6); }
 .pg-ui-meter { width: 120px; height: 4px; display: block; }
 .pg-ui-meter rect { fill: var(--pg-line-2); }
 .pg-ui-meter rect[data-fill] { fill: var(--pg-con-accent); }
 .pg-ui-gate-list [data-met] .pg-ui-meter rect[data-fill] { fill: var(--pg-green); }
+/* A narrow agent column (the list and the agent panel open beside it) stacks the gate over its week. */
+@container pg-trust (max-width: 640px) {
+  .pg-ui-gate { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 16px; }
+  .pg-ui-gate-list li { grid-template-columns: 18px minmax(0, 1fr) 72px; }
+  .pg-ui-meter { width: 72px; }
+}
 .pg-ui-week { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .pg-ui-week-bars { width: 100%; height: 72px; display: block; }
 .pg-ui-week-bars rect[data-k="track"] { fill: var(--pg-line-soft); }

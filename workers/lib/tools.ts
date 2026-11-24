@@ -15,6 +15,7 @@
  */
 
 import { mailStore } from "../store";
+import { replyFingerprint } from "./agent-evidence";
 import { DATE_TOKENS, emptyFilter, InvalidFilterError, type MailFilter, searchOf, VIEWS } from "./mail-index-sql";
 import { MOVE_FOLDERS } from "./mail-bulk-sql";
 import type { EmailFull } from "./schemas";
@@ -183,7 +184,8 @@ export async function toolDraftReply(
 		},
 		[],
 	);
-	if (params.notes) await stub.setDraftNotes(draftId, params.notes);
+	// An agent's draft keeps a fingerprint of what it wrote, so a send can tell whether it was edited (agent-evidence.ts).
+	if (params.notes) await stub.setDraftNotes(draftId, params.notes.agent ? { ...params.notes, written: await replyFingerprint(bodyHtml) } : params.notes);
 
 	return {
 		status: "draft_saved",

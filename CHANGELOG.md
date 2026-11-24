@@ -2,6 +2,16 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## Unreleased
+
+### Added
+
+- Promotion evidence. Each move up a rung shows the record it is based on, one line per check. Draft to Send needs a Test run of 20 or more messages with no failures, at least 10 agent drafts sent with 8 of every 10 sent without edits, and no safety check failures in the last 7 days. Send stays locked until its release. An agent draft keeps a fingerprint of the reply it wrote, so a send can tell whether it was edited. `GET /api/v1/agents/:id/evidence`. New D1 migration: `0019_agent_evidence.sql`.
+
+### Changed
+
+- The gates now block a move up: Watch to Draft (and to On) needs 10 matched messages and none failed this week, with no "anyway". The API refuses a move whose gate isn't met (409), and a new agent can only start in Watch.
+
 ## 0.9.7
 
 ### Added
