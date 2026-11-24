@@ -52,6 +52,7 @@ Decline pitches, ask for missing details, acknowledge new senders, answer FAQs.
 
 - 0.9: console, agents in Watch and Draft, Draft review, MCP page, MCP sign-in with OAuth 2.1 and a separate send grant.
 - 0.9.6: action agents.
+- 0.9.7: Test on past mail, the approval queue, MCP grants limited to chosen addresses.
 - 0.10: the workbench (setup beside what the agent does), Test on past mail, promotion evidence, then Send.
 
 ## Action agents (0.9.6, WON-453)
@@ -68,7 +69,7 @@ An agent can do something to mail instead of replying: "favorite emails from hig
 
 As built: `workers/lib/agent-actions.ts`, migration `0013_action_agents.sql`. Star, Label and Archive act on the conversation, as the app's own buttons do; Mark read acts on the new message. Undo is `POST /api/v1/agent-actions/:id/undo`. A rule-only action runs before the injection scan, since no model reads the mail. An action agent with no rules waits for the scan like a reply. Changing an agent's Does starts it again in Watch.
 
-## Test on past mail (0.10, WON-530)
+## Test on past mail (0.9.7, WON-530)
 
 An agent's Test runs it on mail it already has, as if each message had just arrived, and lists for each one whether it took the message and the reply it would have written.
 
@@ -80,7 +81,7 @@ An agent's Test runs it on mail it already has, as if each message had just arri
 
 As built: `workers/agent/test-run.ts`, `shared/agent-test.ts`, migration `0016_agent_tests.sql`, and Test on the agent's page (`AgentTest.tsx`). The browser tests one message per request, `POST /api/v1/agents/:id/test` to start (`search`, `limit`), then `POST .../test/next` until the run is done, so no request runs long and a run left half done picks up again when the page is opened. `POST .../test/stop` stops it and keeps what was tested; `GET .../test` returns the latest run. A demo build refuses all three.
 
-## Approval queue (0.10, WON-532)
+## Approval queue (0.9.7, WON-532)
 
 Agent sends and bulk changes can wait for one-click approval.
 
