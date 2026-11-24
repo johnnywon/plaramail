@@ -1013,7 +1013,7 @@ function AgentDelete({ agent, onDeleted }: { agent: Agent; onDeleted: () => void
 					<span className="pg-ui-quiet">Its activity stays in the log.</span>
 					{remove.error && <Note tone="error">{remove.error.message}</Note>}
 				</>
-				: <Button variant="danger" icon={<AgentIcon size={14} />} aria-label={`Delete Agent ${agent.name}`} onClick={() => setConfirming(Date.now())}>Delete agent</Button>}
+				: <Button className="pg-ui-danger-text" icon={<AgentIcon size={14} />} aria-label={`Delete Agent ${agent.name}`} onClick={() => setConfirming(Date.now())}>Delete agent</Button>}
 		</div>
 	);
 }

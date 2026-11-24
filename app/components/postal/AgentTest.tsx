@@ -139,6 +139,11 @@ export function AgentTestSection({ agent, identities }: { agent: Agent; identiti
 			)}
 			{query.isPending && <Note>Loading</Note>}
 			{test && <Note tone={test.state === "running" ? "muted" : testCounts(test.results).failed ? "warn" : "muted"}>{testLine(test)}{test.search ? ` Search ${test.search}` : ""}</Note>}
+			{test && running && (() => {
+				const c = testCounts(test.results);
+				const pct = c.total ? Math.round(((c.total - c.waiting) / c.total) * 100) : 0;
+				return <svg className="pg-ui-test-bar" viewBox="0 0 100 4" preserveAspectRatio="none" role="progressbar" aria-label="Test progress" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><rect width="100" height="4" /><rect data-fill width={pct} height="4" /></svg>;
+			})()}
 			{done.length > 0 && <Segmented label="Show" value={filter} options={filters} onChange={(f) => { setFilter(f); setOpen(null); }} />}
 			{test && shown.length > 0 && (
 				<List label="Test results">
@@ -151,7 +156,7 @@ export function AgentTestSection({ agent, identities }: { agent: Agent; identiti
 								title={r.subject || "(no subject)"}
 								time={when(r.date)}
 								meta={<>{r.sender}<AddressText address={r.mailboxId} identity={identities.of(r.mailboxId)} bold={false} short /></>}
-								quote={open === r.position ? undefined : r.reply ?? r.reason ?? undefined}
+								quote={open === r.position || r.reply ? undefined : r.reason ?? undefined}
 								bad={r.outcome === "failed"}
 								open={open === r.position}
 								onClick={r.outcome === "running" ? undefined : () => setOpen(open === r.position ? null : r.position)}
