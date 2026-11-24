@@ -1,6 +1,6 @@
 # Console 0.9
 
-Built in 0.9.0, apart from Test on past mail and Send, which arrive in 0.10. WON-231 and WON-209.
+Built in 0.9.0, apart from Test on past mail (0.9.7) and Send (0.10.0). WON-231 and WON-209.
 
 ## In one line
 
@@ -25,7 +25,7 @@ The console replaces the mail with its own rail, opened at `?console=<page>`.
 
 - **Job**: one sentence, in your words.
 - **Addresses**: one, several, or all.
-- **Mode**: Watch (shows what it would do), Draft (writes drafts for you), Send (replies on its own, up to a daily limit). Send is off in 0.9 and arrives in 0.10.
+- **Mode**: Watch (shows what it would do), Draft (writes drafts for you), Send (replies on its own, up to a daily limit). Send opened in 0.10.0.
 - **Instructions** and an **example reply**.
 - The workbench (0.10, WON-529): Trust across the top, then Setup beside Recent work and Test on past mail. Narrow, they stack with Setup first. Each check under Trust jumps to the record behind it, Setup shows Not tested when the latest Test ran on an older setup, Recent work shows each message's subject and what came of it (Waiting, Sent, Edited, sent, Discarded, Skipped), read from the mail: the draft still in Drafts, a send with its `draft:<id>` key or a reply in the thread, and the promotion record for edits (`workers/lib/agent-work.ts`, `GET /api/v1/agents/:id/work`). Test results show Then, what came of the same message when it arrived, and Differs where the test disagrees. Both filter by result, and a waiting draft opens Draft review.
 
@@ -55,6 +55,7 @@ Decline pitches, ask for missing details, acknowledge new senders, answer FAQs.
 - 0.9.7: Test on past mail, the approval queue, MCP grants limited to chosen addresses.
 - 0.9.8: promotion evidence; the gates block a move up.
 - 0.9.9: the workbench; a setup change needs a new Test; MCP `get_approval`.
+- 0.10.0: Send mode opens.
 - 0.10: the workbench (setup beside what the agent does), Test on past mail, promotion evidence, then Send.
 
 ## Action agents (0.9.6, WON-453)
@@ -93,7 +94,7 @@ Agent sends and bulk changes can wait for one-click approval.
 - **24 hours.** A queued item waits 24 hours, then expires and is logged as dropped.
 - **Limits.** A queued send counts toward the daily limit when it is approved, not when it is queued. An approved send over the limit fails and says so.
 
-As built: `workers/lib/approvals.ts` (the queue and the switches), `workers/lib/approval-run.ts` (holding and running calls), migration `0017_approval_queue.sql`. `GET /api/v1/approvals`, `POST /api/v1/approvals/:id/approve`, `POST /api/v1/approvals/:id/drop`, `PUT /api/v1/approvals/holds/:kind/:id`. The cron drops expired items every minute. Send mode stays off until 0.10; an agent's `send_since` is recorded so the 7-day default applies once it opens. The in-app chat agent is not held: a person is present for each of its turns.
+As built: `workers/lib/approvals.ts` (the queue and the switches), `workers/lib/approval-run.ts` (holding and running calls), migration `0017_approval_queue.sql`. `GET /api/v1/approvals`, `POST /api/v1/approvals/:id/approve`, `POST /api/v1/approvals/:id/drop`, `PUT /api/v1/approvals/holds/:kind/:id`. The cron drops expired items every minute. An agent's `send_since` is recorded when it moves into Send, for the 7-day default. The in-app chat agent is not held: a person is present for each of its turns.
 
 ## Promotion evidence (0.9.8, WON-531)
 
@@ -104,13 +105,13 @@ An agent moves up a rung only when its gate is met. The gate blocks the move: th
 | Watch to Draft, Watch to On | 10 messages matched and none failed in the last 7 days |
 | Draft to Send | A Test run of 20 or more messages with no failures, on the agent's setup as it is now; at least 10 agent drafts sent, 8 of every 10 without edits; no safety check failures in the last 7 days |
 
-The move shows the record it is based on: each check has its record beside it ("22 tested, 0 failed", "7 of 10", "1 failed"), and links to the part of the page behind it, and the latest safety check failures are listed. Send itself stays locked until `SEND_VERSION`.
+The move shows the record it is based on: each check has its record beside it ("22 tested, 0 failed", "7 of 10", "1 failed"), and links to the part of the page behind it, and the latest safety check failures are listed. Send itself opened in 0.10.0 (`SEND_VERSION`).
 
 - **A setup change needs a new Test.** Each Test run keeps a fingerprint of the setup it ran on (`agent_tests.setup`, migration `0020_agent_test_setup.sql`): job, addresses, rules, instructions, example reply and what it does. Name and limits don't count. When the agent's setup no longer matches, the Test check reads "Setup changed" and isn't met until a new run finishes. Runs from before this version have no fingerprint and don't count.
 
 ### Send (WON-534)
 
-Built in `workers/lib/agent-send.ts` and locked until the release: `SEND_OPEN` in `shared/agent.ts` is true once `package.json` reaches `SEND_VERSION`. Below it the API refuses Send, the Console's Send rung is locked, and an agent stored in Send works as Draft.
+Built in `workers/lib/agent-send.ts`, open from 0.10.0: `SEND_OPEN` in `shared/agent.ts` is true once `package.json` reaches `SEND_VERSION`. Below it the API refuses Send, the Console's Send rung is locked, and an agent stored in Send works as Draft.
 
 - A reply goes out only when it is addressed to the sender alone, with no Cc or Bcc. Otherwise it stays a draft and its run says why.
 - The daily limit and two a day to one sender count sent replies only. A reply over either stays a draft.
