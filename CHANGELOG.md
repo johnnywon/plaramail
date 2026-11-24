@@ -2,7 +2,7 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
-## Unreleased
+## 0.9.9
 
 ### Added
 
@@ -13,6 +13,8 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 
 - A setup change needs a new Test before Send. Each run keeps a fingerprint of the setup it ran on (job, addresses, rules, instructions, example reply, what it does); when it no longer matches, the Test check reads "Setup changed" and Setup shows Not tested. Runs from before this version don't count. New D1 migration: `0020_agent_test_setup.sql`.
 - Shorter labels and records on the gates, and less text on the agent page.
+
+D1 migration: `0020_agent_test_setup.sql`. `npm run deploy` applies it.
 
 ## 0.9.8
 
