@@ -2,6 +2,12 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## Unreleased
+
+### Added
+
+- MCP `get_approval`: an app passes the `approvalId` from a held call and gets its state (`waiting`, `approved`, `failed`, `dropped`) and result. Only the app's own items are found. No new migration.
+
 ## 0.9.8
 
 ### Added
