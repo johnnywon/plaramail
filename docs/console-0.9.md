@@ -54,6 +54,7 @@ Decline pitches, ask for missing details, acknowledge new senders, answer FAQs.
 - 0.9.6: action agents.
 - 0.9.7: Test on past mail, the approval queue, MCP grants limited to chosen addresses.
 - 0.9.8: promotion evidence; the gates block a move up.
+- 0.9.9: the workbench; a setup change needs a new Test; MCP `get_approval`.
 - 0.10: the workbench (setup beside what the agent does), Test on past mail, promotion evidence, then Send.
 
 ## Action agents (0.9.6, WON-453)
