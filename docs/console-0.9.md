@@ -27,7 +27,7 @@ The console replaces the mail with its own rail, opened at `?console=<page>`.
 - **Addresses**: one, several, or all.
 - **Mode**: Watch (shows what it would do), Draft (writes drafts for you), Send (replies on its own, up to a daily limit). Send is off in 0.9 and arrives in 0.10.
 - **Instructions** and an **example reply**.
-- One column: Trust, Test (run on past mail; nothing is sent), Activity, How it works.
+- The workbench (0.10, WON-529): Trust across the top, then Setup beside Recent work and Test on past mail. Narrow, they stack with Setup first. Each check under Trust jumps to the record behind it, Setup shows Not tested when the latest Test ran on an older setup, Recent work shows each message's subject and what came of it (Waiting, Sent, Edited, sent, Discarded, Skipped), read from the mail: the draft still in Drafts, a send with its `draft:<id>` key or a reply in the thread, and the promotion record for edits (`workers/lib/agent-work.ts`, `GET /api/v1/agents/:id/work`). Test results show Then, what came of the same message when it arrived, and Differs where the test disagrees. Both filter by result, and a waiting draft opens Draft review.
 
 New agents start in Watch.
 
@@ -101,9 +101,11 @@ An agent moves up a rung only when its gate is met. The gate blocks the move: th
 | Move | Needs |
 |---|---|
 | Watch to Draft, Watch to On | 10 messages matched and none failed in the last 7 days |
-| Draft to Send | A Test run of 20 or more messages with no failures; at least 10 agent drafts sent, 8 of every 10 without edits; no safety check failures in the last 7 days |
+| Draft to Send | A Test run of 20 or more messages with no failures, on the agent's setup as it is now; at least 10 agent drafts sent, 8 of every 10 without edits; no safety check failures in the last 7 days |
 
-The move shows the record it is based on: each check has its count beside it ("Latest Test ran on 22 messages, none failed", "7 of 10 sent without edits", "1 safety check failure"), and the latest safety check failures are listed. Send itself stays locked until `SEND_VERSION`.
+The move shows the record it is based on: each check has its record beside it ("22 tested, 0 failed", "7 of 10", "1 failed"), and links to the part of the page behind it, and the latest safety check failures are listed. Send itself stays locked until `SEND_VERSION`.
+
+- **A setup change needs a new Test.** Each Test run keeps a fingerprint of the setup it ran on (`agent_tests.setup`, migration `0020_agent_test_setup.sql`): job, addresses, rules, instructions, example reply and what it does. Name and limits don't count. When the agent's setup no longer matches, the Test check reads "Setup changed" and isn't met until a new run finishes. Runs from before this version have no fingerprint and don't count.
 
 - **Sent without edits.** An agent draft keeps a fingerprint of the reply it wrote in its notes (`draft_notes.written`), through edits and redrafts. When a person sends the draft (the send carries the `draft:<id>` key), the reply part of what was sent is fingerprinted the same way: the signature and the quoted original are left out, and markup and spacing don't count. A redraft counts as an edit. Drafts written before this version, and drafts sent by an MCP client's `send_draft`, are not counted.
 - **Safety check failures.** The injection scan stopping mail the agent's rules took, and the draft check failing a reply the agent wrote.

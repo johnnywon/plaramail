@@ -83,13 +83,13 @@ export async function pickTestMail(
 }
 
 /** Start a run on `mail`, replacing the agent's last one. */
-export async function startTest(sql: Sql, agentId: string, search: string, mail: readonly TestMail[], now = Date.now()): Promise<AgentTest> {
+export async function startTest(sql: Sql, agentId: string, search: string, mail: readonly TestMail[], now = Date.now(), setup: string | null = null): Promise<AgentTest> {
 	const id = crypto.randomUUID();
 	const at = new Date(now).toISOString();
 	await sql.batch([
 		{ sql: `DELETE FROM agent_test_results WHERE test_id IN (SELECT id FROM agent_tests WHERE agent_id = ?)`, params: [agentId] },
 		{ sql: `DELETE FROM agent_tests WHERE agent_id = ?`, params: [agentId] },
-		{ sql: `INSERT INTO agent_tests (agent_id, id, search, state, started_at) VALUES (?, ?, ?, 'running', ?)`, params: [agentId, id, search.trim(), at] },
+		{ sql: `INSERT INTO agent_tests (agent_id, id, search, state, started_at, setup) VALUES (?, ?, ?, 'running', ?, ?)`, params: [agentId, id, search.trim(), at, setup] },
 		...mail.slice(0, TEST_MAX).map((m, position) => ({
 			sql: `INSERT INTO agent_test_results (test_id, position, email_id, mailbox_id, thread_id, sender, subject, date, outcome) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
 			params: [id, position, m.emailId, m.mailboxId, m.threadId, m.sender, m.subject, m.date],
@@ -114,6 +114,7 @@ export async function getTest(sql: Sql, agentId: string): Promise<AgentTest | nu
 		id: String(row.id), agentId, search: String(row.search ?? ""), state: String(row.state) as AgentTest["state"],
 		model: row.model == null ? null : String(row.model), inputTokens: Number(row.input_tokens ?? 0), outputTokens: Number(row.output_tokens ?? 0),
 		cost: row.cost == null ? null : Number(row.cost), startedAt: String(row.started_at), finishedAt: row.finished_at == null ? null : String(row.finished_at),
+		setup: row.setup == null ? null : String(row.setup),
 		results: results.map(toResult),
 	};
 }

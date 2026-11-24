@@ -6,7 +6,13 @@ Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor v
 
 ### Added
 
+- The agent workbench (WON-529). Trust runs across the top; Setup sits beside Recent work and Test on past mail, and they stack with Setup first on a narrow screen. Each Send check jumps to the record behind it. Recent work shows each message's subject and what came of it (Waiting, Sent, Edited, sent, Discarded, Skipped). Test results show Then, what happened to the same message when it arrived, and Differs where the test disagrees. Both filter by result, and a waiting draft opens Draft review. `GET /api/v1/agents/:id/work`.
 - MCP `get_approval`: an app passes the `approvalId` from a held call and gets its state (`waiting`, `approved`, `failed`, `dropped`) and result. Only the app's own items are found. No new migration.
+
+### Changed
+
+- A setup change needs a new Test before Send. Each run keeps a fingerprint of the setup it ran on (job, addresses, rules, instructions, example reply, what it does); when it no longer matches, the Test check reads "Setup changed" and Setup shows Not tested. Runs from before this version don't count. New D1 migration: `0020_agent_test_setup.sql`.
+- Shorter labels and records on the gates, and less text on the agent page.
 
 ## 0.9.8
 

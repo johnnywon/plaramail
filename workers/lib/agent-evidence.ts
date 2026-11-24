@@ -6,7 +6,8 @@
  * The record behind an agent's move up a rung (WON-531, shared/agent-gates.ts):
  *
  * - Its live runs in the last 7 days (auto_draft_runs, agent_actions).
- * - Its latest Test run (agent_tests, workers/agent/test-run.ts).
+ * - Its latest Test run (agent_tests, workers/agent/test-run.ts), and whether it
+ *   ran on the agent's setup as it is now (setupKey).
  * - The agent drafts a person sent, and whether each went as the agent wrote
  *   it. An agent draft keeps a fingerprint of its reply text in its notes
  *   (`written`), through edits and redrafts. When a person sends it (the send
@@ -19,6 +20,8 @@
  *   mail its rules matched, and the draft check on a reply it wrote.
  */
 import type { AgentEvidence } from "../../shared/agent-gates";
+import { setupKey } from "../../shared/agent-test";
+import { getAgent } from "./agents";
 import type { DraftNotes } from "../../shared/draft-notes";
 import type { Sql } from "../store/sql";
 import { htmlToText } from "./message-meta";
@@ -94,7 +97,7 @@ export async function agentEvidence(sql: Sql, agentId: string, now = Date.now())
 		sql.all(`SELECT state, COUNT(*) AS n FROM auto_draft_runs WHERE agent_id = ? AND created_at >= ? GROUP BY state`, agentId, weekAgo),
 		sql.all(`SELECT state, COUNT(*) AS n FROM agent_actions WHERE agent_id = ? AND created_at >= ? GROUP BY state`, agentId, weekAgo),
 		sql.first(
-			`SELECT t.id, t.state, t.started_at, t.finished_at,
+			`SELECT t.id, t.state, t.started_at, t.finished_at, t.setup,
 				(SELECT COUNT(*) FROM agent_test_results r WHERE r.test_id = t.id AND r.outcome NOT IN ('pending', 'running')) AS tested,
 				(SELECT COUNT(*) FROM agent_test_results r WHERE r.test_id = t.id AND r.outcome = 'failed') AS failed
 			FROM agent_tests t WHERE t.agent_id = ?`,
@@ -103,6 +106,7 @@ export async function agentEvidence(sql: Sql, agentId: string, now = Date.now())
 		sql.first(`SELECT COUNT(*) AS sent, SUM(CASE WHEN edited = 0 THEN 1 ELSE 0 END) AS unedited FROM agent_events WHERE agent_id = ? AND kind = 'sent'`, agentId),
 		sql.all(`SELECT at, reason FROM agent_events WHERE agent_id = ? AND kind = 'safety' AND at >= ? ORDER BY at DESC`, agentId, weekAgo),
 	]);
+	const agent = test ? await getAgent(sql, agentId) : null;
 	const count = (rows: Record<string, unknown>[], states: string[]) => rows.filter((r) => states.includes(String(r.state))).reduce((n, r) => n + Number(r.n), 0);
 	return {
 		week: {
@@ -112,6 +116,7 @@ export async function agentEvidence(sql: Sql, agentId: string, now = Date.now())
 		test: test ? {
 			id: String(test.id), state: String(test.state) as "running" | "done" | "stopped", tested: Number(test.tested ?? 0), failed: Number(test.failed ?? 0),
 			startedAt: String(test.started_at), finishedAt: test.finished_at == null ? null : String(test.finished_at),
+			current: !!agent && test.setup != null && String(test.setup) === setupKey(agent),
 		} : null,
 		drafts: { sent: Number(sent?.sent ?? 0), unedited: Number(sent?.unedited ?? 0) },
 		safety: { count: safety.length, latest: safety.slice(0, 5).map((r) => ({ at: String(r.at), reason: String(r.reason ?? "") })) },
