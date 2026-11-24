@@ -15,6 +15,8 @@ import { mailStore, recordsSql } from "../store";
 import type { Sql } from "../store/sql";
 import type { Env } from "../types";
 import { logged } from "./activity";
+import { runHeldReply } from "./agent-send";
+import { agentSendDeps } from "./agent-send-env";
 import { enqueue, holdsMcp, messagesIn, type RunQueued } from "./approvals";
 import { decodeAttachments, fail, type McpAttachment, MCP_SEND_KEY_PATTERN, toolReplyToEmail, toolSendEmail } from "./mcp-send";
 import type { EmailFull } from "./schemas";
@@ -129,6 +131,8 @@ export function runQueued(env: Env): RunQueued {
 		const call = async (): Promise<Record<string, unknown>> => {
 			switch (item.tool) {
 				case "send_draft":
+					// An agent's held reply is checked against the agent and its limits again (workers/lib/agent-send.ts).
+					if (item.actor === "agent") return runHeldReply(agentSendDeps(env), item, args);
 					return toolSendDraft(env, mailboxId, String(args.draftId ?? ""), actor);
 				case "reply_to_email":
 					return toolReplyToEmail(env, mailboxId, item.sourceId, {

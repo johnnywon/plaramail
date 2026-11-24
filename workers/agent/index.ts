@@ -54,7 +54,8 @@ import { defineTool, logTools } from "./tool-def";
 import { getSystemPrompt } from "./prompt";
 import { autoDraftMessage, autoDraftPrompt, createActionTools, createAutoDraftTools, prepareAutoDraft, saveTextDraft } from "./auto-draft";
 import { type AutoDraftTarget, type DraftOutcome, discardRunDrafts, outcomeAfterError, settleDrafts, watchedReason } from "./runs";
-import { type Agent, agentSendsToday, listAgents } from "../lib/agents";
+import { type Agent, listAgents } from "../lib/agents";
+import { agentSendDeps, sendAsAgent } from "../lib/agent-send-env";
 import { type ActionResult, actedText, actFirst, envActionDeps, type FirstPass } from "../lib/agent-actions";
 import type { EmailFull } from "../lib/schemas";
 import { readPrefs } from "../lib/prefs";
@@ -609,11 +610,7 @@ export class EmailAgent extends AIChatAgent<any> {
 			return { status: "watched", agentId: agent.id, reason: watchedReason(String(draft?.body ?? "")) };
 		}
 		if (agent.mode === "draft") return { status: "drafted", draftId, agentId: agent.id };
-		const sends = await agentSendsToday(recordsSql(env), agent.id, target.sender);
-		if (sends.total >= agent.dailyLimit) return { status: "drafted", draftId, agentId: agent.id, reason: `daily limit of ${agent.dailyLimit} reached; kept as a draft` };
-		if (sends.toSender >= agent.perSenderLimit) return { status: "drafted", draftId, agentId: agent.id, reason: `replied to this sender ${sends.toSender} times today; kept as a draft` };
-		const result = await toolSendDraft(env, target.mailboxId, draftId, "agent");
-		if ("error" in result) return { status: "drafted", draftId, agentId: agent.id, reason: `not sent: ${result.error}` };
-		return { status: "sent", draftId: null, agentId: agent.id };
+		// Send: only to the sender, within the limits, held for approval while its switch is on (workers/lib/agent-send.ts).
+		return sendAsAgent(agentSendDeps(env), agent, draftId, target);
 	}
 }

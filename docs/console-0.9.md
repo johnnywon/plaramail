@@ -105,6 +105,14 @@ An agent moves up a rung only when its gate is met. The gate blocks the move: th
 
 The move shows the record it is based on: each check has its count beside it ("Latest Test ran on 22 messages, none failed", "7 of 10 sent without edits", "1 safety check failure"), and the latest safety check failures are listed. Send itself stays locked until `SEND_VERSION`.
 
+### Send (WON-534)
+
+Built in `workers/lib/agent-send.ts` and locked until the release: `SEND_OPEN` in `shared/agent.ts` is true once `package.json` reaches `SEND_VERSION`. Below it the API refuses Send, the Console's Send rung is locked, and an agent stored in Send works as Draft.
+
+- A reply goes out only when it is addressed to the sender alone, with no Cc or Bcc. Otherwise it stays a draft and its run says why.
+- The daily limit and two a day to one sender count sent replies only. A reply over either stays a draft.
+- While the agent's Hold for approval is on (by default its first 7 days in Send), the reply waits in Console > Approvals as a draft. Approving checks again that Send is open, the agent is still in Send and enabled, and it is within its limits, then sends the reply and marks its run sent.
+
 - **Sent without edits.** An agent draft keeps a fingerprint of the reply it wrote in its notes (`draft_notes.written`), through edits and redrafts. When a person sends the draft (the send carries the `draft:<id>` key), the reply part of what was sent is fingerprinted the same way: the signature and the quoted original are left out, and markup and spacing don't count. A redraft counts as an edit. Drafts written before this version, and drafts sent by an MCP client's `send_draft`, are not counted.
 - **Safety check failures.** The injection scan stopping mail the agent's rules took, and the draft check failing a reply the agent wrote.
 - **Test.** The agent's latest run (see above). A stopped run counts what it tested.

@@ -2,6 +2,12 @@
 
 Versions follow [semantic versioning](https://semver.org). Before 1.0, a minor version can break things. Each entry names any new D1 migration. `npm run deploy` applies it; if you deploy another way, run `wrangler d1 migrations apply DB --remote` before you deploy that version.
 
+## Unreleased
+
+### Added
+
+- Send mode, built and still locked. It opens when `package.json` reaches `SEND_VERSION` (0.10), and nothing else turns it on. In Send, an agent's reply goes out only when it is addressed to the sender alone, with no Cc or Bcc, and within the daily limit and two a day to one sender; otherwise it stays a draft with the reason on its run. While the agent's Hold for approval is on (by default its first 7 days in Send), each reply waits in Console > Approvals. Approving checks again that Send is open, the agent is still in Send, and it is within its limits, then sends and marks the run sent. No new migration.
+
 ## 0.9.8
 
 ### Added

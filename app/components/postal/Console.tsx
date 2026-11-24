@@ -8,7 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, type ReactNode, type Ref, useEffect, useRef, useState } from "react";
-import { SEND_VERSION, suggestRule } from "shared/agent";
+import { SEND_OPEN, SEND_VERSION, suggestRule } from "shared/agent";
 import { gateChecks } from "shared/agent-gates";
 import type { Unmatched } from "shared/prefs";
 import { afterMove, moveInOrder } from "./agent-order";
@@ -40,8 +40,8 @@ import { Keys } from "./shortcuts";
 const MODES: { value: AgentMode; label: string; disabled?: boolean; title?: string }[] = [
 	{ value: "watch", label: "Watch" },
 	{ value: "draft", label: "Draft" },
-	// Send arrives in SEND_VERSION, after Test on past mail (workers/lib/agents.ts, SEND_ENABLED).
-	{ value: "send", label: "Send", disabled: true, title: `Arrives in ${SEND_VERSION}` },
+	// Send opens when the release reaches SEND_VERSION (shared/agent.ts, SEND_OPEN). Until then the rung is locked.
+	SEND_OPEN ? { value: "send", label: "Send" } : { value: "send", label: "Send", disabled: true, title: `Arrives in ${SEND_VERSION}` },
 ];
 
 /** An action agent's ladder: Watch logs what it would do, On does it. */
