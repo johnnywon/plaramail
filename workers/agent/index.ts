@@ -58,6 +58,7 @@ import { type Agent, agentSendsToday, listAgents } from "../lib/agents";
 import { type ActionResult, actedText, actFirst, envActionDeps, type FirstPass } from "../lib/agent-actions";
 import type { EmailFull } from "../lib/schemas";
 import { readPrefs } from "../lib/prefs";
+import { isSafetyReason, recordSafety, recordSafetyNamed } from "../lib/agent-evidence";
 import type { Unmatched } from "../../shared/prefs";
 
 
@@ -489,6 +490,11 @@ export class EmailAgent extends AIChatAgent<any> {
 		const prepared = await prepareAutoDraft(env.AI, stub, target);
 		if (!prepared.ok) {
 			console.warn(`Auto-draft skipped for ${target.emailId}: ${prepared.reason}`);
+			// A safety check stopped mail these agents' rules took: it goes on each one's record (agent-evidence.ts).
+			if (isSafetyReason(prepared.reason)) {
+				await recordSafety(sql, [...matched, ...first.plan.ask].map((a) => a.id), target.emailId, prepared.reason)
+					.catch((e: Error) => console.warn(`Safety check not recorded: ${e.message}`));
+			}
 			// The subject is left out: it may be what failed the scan, and chat history reaches the chat agent.
 			await this.persistMessages([
 				...this.messages,
@@ -505,6 +511,15 @@ export class EmailAgent extends AIChatAgent<any> {
 		try {
 			const model = await agentModel(env, { reasoning: false });
 			const systemPrompt = await getSystemPrompt(env, target.mailboxId);
+			// A reply that fails the draft check goes on its agent's record.
+			const checkedDraftReply: typeof toolDraftReply = async (e, mailboxId, params) => {
+				const result = await toolDraftReply(e, mailboxId, params);
+				if ("error" in result && /verification failed/i.test(result.error) && params.notes?.agent) {
+					await recordSafetyNamed(sql, params.notes.agent, target.emailId, "the reply failed the draft check")
+						.catch((err: Error) => console.warn(`Safety check not recorded: ${err.message}`));
+				}
+				return result;
+			};
 			// The model reads the jobs of the agents that passed and drafts for one, or none. The last draft's agent is the one chosen.
 			// Action agents with no rules get their tool; it logs itself, so it stays out of logTools.
 			const tools = {
@@ -513,7 +528,7 @@ export class EmailAgent extends AIChatAgent<any> {
 					emailId: target.emailId,
 					threadId: target.threadId,
 					to: replyTo,
-				}, context, toolDraftReply, { agents: matched, reply, model: modelIdOf(model), onDraft: (id, agent) => { draftIds.push(id); chosen = agent; } }), sql, { actor: "auto-draft", bound: target.mailboxId }),
+				}, context, checkedDraftReply, { agents: matched, reply, model: modelIdOf(model), onDraft: (id, agent) => { draftIds.push(id); chosen = agent; } }), sql, { actor: "auto-draft", bound: target.mailboxId }),
 				...createActionTools(target, first.plan.ask, envActionDeps(env), (r) => acted.push(r)),
 			};
 			const autoPrompt = autoDraftPrompt(target.mailboxId, target.threadId, context, matched, { actions: first.plan.ask, reply })

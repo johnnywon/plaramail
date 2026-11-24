@@ -9,6 +9,7 @@ import {
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 import { SEND_VERSION, suggestRule } from "shared/agent";
+import { gateChecks } from "shared/agent-gates";
 import type { Unmatched } from "shared/prefs";
 import { afterMove, moveInOrder } from "./agent-order";
 import { confirmReady } from "./confirm-guard";
@@ -626,9 +627,6 @@ function AgentPage({ agentId, identities, addresses, onTab }: PageProps & { agen
 	);
 }
 
-/** What moves an agent up a rung. Advisory: you can move it sooner, and the button says so. */
-const TRUST_GATE = { matched: 10 };
-
 /** The rungs, left to right: what each lets the agent do, and what it never does. */
 const RUNGS: Record<AgentMode, { icon: (s: number) => ReactNode; does: string[]; never?: string }> = {
 	watch: { icon: (s) => <EyeIcon size={s} />, does: ["Reads matched mail", "Logs the reply it would write"], never: "Sends nothing" },
@@ -667,21 +665,18 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 	const acts = agent.does !== "reply";
 	const at = Math.max(0, modes.findIndex((m) => m.value === agent.mode));
 	const next = modes[at + 1];
-	const counts = stats?.runs ?? {};
-	const matched = (counts.watched ?? 0) + (counts.drafted ?? 0) + (counts.sent ?? 0) + (counts.done ?? 0);
-	const failed = counts.failed ?? 0;
 	const bars = weekBars(runs);
 	const peak = Math.max(1, ...bars.map((d) => d.handled + d.skipped + d.failed));
-	const gate: { label: string; met?: boolean; value?: number; later?: boolean }[] = !next ? [] : agent.mode === "watch"
-		? [
-			{ label: `${Math.min(matched, TRUST_GATE.matched)} of ${TRUST_GATE.matched} messages matched`, value: matched / TRUST_GATE.matched, met: matched >= TRUST_GATE.matched },
-			{ label: failed ? `${failed} failed this week` : "None failed this week", met: !failed, value: failed ? 0 : 1 },
-		]
-		: [
-			{ label: "Test on past mail", later: true },
-			{ label: "Drafts you send without edits", later: true },
-		];
-	const ready = gate.every((g) => g.met);
+	// The gates block a move up (shared/agent-gates.ts); the API refuses it too. Each check shows the record it reads.
+	const evidence = useQuery({ queryKey: ["agents", agent.id, "evidence"], queryFn: () => api.getAgentEvidence(agent.id) });
+	const checksFor = (to: AgentMode) => (evidence.data ? gateChecks(agent.mode, to, acts, evidence.data) : null);
+	const gate = next ? checksFor(next.value) ?? [] : [];
+	const canMove = (to: AgentMode) => {
+		const checks = checksFor(to);
+		return !!checks && checks.every((c) => c.met);
+	};
+	const ready = !!next && canMove(next.value);
+	const safety = evidence.data?.safety;
 	return (
 		<Section title="Trust" actions={<span className="pg-ui-quiet">{weekText(stats, agent.mode, agent.does)} in 7 days</span>}>
 			<div className="pg-ui-trust">
@@ -691,7 +686,10 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 						const state = i === at ? "now" : i < at ? "done" : m.disabled ? "locked" : "next";
 						return (
 							<li key={m.value} data-state={state}>
-								<button type="button" className="pg-ui-rung" disabled={m.disabled} aria-current={i === at ? "step" : undefined} title={m.title} onClick={() => { if (i !== at) onMode(m.value); }}>
+								<button
+									type="button" className="pg-ui-rung" disabled={m.disabled || (i > at && !canMove(m.value))} aria-current={i === at ? "step" : undefined}
+									title={m.title ?? (i > at && !canMove(m.value) ? "Its gate is not met yet" : undefined)} onClick={() => { if (i !== at) onMode(m.value); }}
+								>
 									<span className="pg-ui-rung-head">
 										<span className="pg-ui-rung-n" aria-hidden>{i < at ? <CheckIcon size={12} weight="bold" /> : i + 1}</span>
 										<b>{m.label}</b>
@@ -714,19 +712,22 @@ function AgentTrust({ agent, stats, runs, onMode }: { agent: Agent; stats: Agent
 						{!next && <p className="pg-ui-quiet">Each action is in Activity with Undo for 30 days.</p>}
 						<ul className="pg-ui-gate-list">
 							{gate.map((g) => (
-								<li key={g.label} data-met={g.met || undefined} data-later={g.later || undefined}>
-									<span className="pg-ui-gate-mark" aria-hidden>{g.later ? <LockSimpleIcon size={12} /> : g.met ? <CheckIcon size={12} weight="bold" /> : null}</span>
-									<span className="pg-ui-gate-label">{g.label}</span>
-									{g.later ? <span className="pg-ui-gate-later">{SEND_VERSION}</span> : (
-										<svg className="pg-ui-meter" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden><rect width="100" height="4" /><rect data-fill width={Math.round(Math.min(1, g.value ?? 0) * 100)} height="4" /></svg>
-									)}
+								<li key={g.id} data-met={g.met || undefined}>
+									<span className="pg-ui-gate-mark" aria-hidden>{g.met ? <CheckIcon size={12} weight="bold" /> : null}</span>
+									<span className="pg-ui-gate-label">{g.label}<span className="pg-ui-gate-record">{g.record}</span></span>
+									<svg className="pg-ui-meter" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden><rect width="100" height="4" /><rect data-fill width={Math.round(Math.min(1, g.value) * 100)} height="4" /></svg>
 								</li>
 							))}
 						</ul>
+						{next && evidence.isPending && <Note>Loading the record</Note>}
+						{next && evidence.error && <Note tone="error">{evidence.error.message}</Note>}
+						{next && !!safety?.count && gate.some((g) => g.id === "safety") && (
+							<Note tone="warn">{safety.latest.map((x) => `${when(x.at)}, ${x.reason}`).join(". ")}</Note>
+						)}
 						<div className="pg-ui-toolbar">
 							{next && !next.disabled && (
-								<Button variant={ready ? "primary" : "default"} icon={<ArrowRightIcon size={12} />} onClick={() => onMode(next.value)}>
-									{ready ? `Move to ${next.label}` : `Move to ${next.label} anyway`}
+								<Button variant={ready ? "primary" : "default"} icon={<ArrowRightIcon size={12} />} disabled={!ready} title={ready ? undefined : "Its gate is not met yet"} onClick={() => onMode(next.value)}>
+									Move to {next.label}
 								</Button>
 							)}
 							{next?.disabled && <Button disabled title={next.title} icon={<LockSimpleIcon size={12} />}>Move to {next.label}</Button>}

@@ -129,12 +129,22 @@ test("agent routes", async () => {
 	assert.equal(mode, "watch");
 	assert.equal((await call("", "POST", { name: " ", job: "x" })).status, 400);
 	assert.equal((await call("", "POST", { name: "Bad", job: "x", mode: "shout" })).status, 400);
+	// The move to Draft waits for its gate: 10 matched messages and none failed this week (shared/agent-gates.ts).
+	const early = await call(`/${id}`, "PUT", { mode: "draft" });
+	assert.equal(early.status, 409);
+	assert.match((await early.json()).error, /10 messages matched in 7 days/);
+	assert.equal((await call("", "POST", { name: "Eager", job: "x", mode: "draft" })).status, 400);
+	const now = new Date().toISOString();
+	for (let i = 0; i < 10; i++) {
+		await d1.sql.run(`INSERT INTO auto_draft_runs (email_id, mailbox_id, thread_id, sender, state, agent_id, created_at, updated_at) VALUES (?, ?, ?, 'bob@example.net', 'watched', ?, ?, ?)`, `w${i}`, A, `w${i}`, id, now, now);
+	}
+	assert.equal((await call(`/${id}/evidence`)).status, 200);
 	assert.equal((await call(`/${id}`, "PUT", { mode: "draft" })).status, 200);
 	const list = await (await call("")).json();
 	assert.deepEqual(list.agents.map((a) => [a.name, a.mode]), [["Outreach", "draft"]]);
-	assert.deepEqual(list.stats, []);
+	assert.equal(list.stats[0].runs.watched, 10);
 	assert.equal((await call("/order", "PUT", { ids: [id] })).status, 200);
-	assert.deepEqual(await (await call(`/${id}/runs`)).json(), []);
+	assert.equal((await (await call(`/${id}/runs`)).json()).length, 10);
 	assert.deepEqual(await (await call("/review")).json(), []);
 	assert.equal((await call("/nope", "PUT", { name: "X" })).status, 404);
 	assert.equal((await call(`/${id}`, "DELETE")).status, 200);

@@ -158,7 +158,7 @@ export class D1Mailbox {
 		const notes = new Map<string, DraftNotes>();
 		if (emailIds.length === 0) return notes;
 		const rows = await this.sql.all(
-			`SELECT n.email_id, n.origin, n.agent, n.instructions, n.model FROM draft_notes n JOIN messages m ON m.email_id = n.email_id
+			`SELECT n.email_id, n.origin, n.agent, n.instructions, n.model, n.written FROM draft_notes n JOIN messages m ON m.email_id = n.email_id
 			WHERE m.mailbox_id = ? AND n.email_id IN (SELECT value FROM json_each(?))`,
 			this.#id, JSON.stringify(emailIds),
 		);
@@ -171,6 +171,7 @@ export class D1Mailbox {
 			notes.set(String(row.email_id), {
 				origin: String(row.origin) as DraftNotes["origin"], agent: row.agent == null ? null : String(row.agent), instructions,
 				model: row.model == null ? null : String(row.model),
+				...(row.written == null ? {} : { written: String(row.written) }),
 			});
 		}
 		return notes;
@@ -178,9 +179,9 @@ export class D1Mailbox {
 
 	async setDraftNotes(emailId: string, notes: DraftNotes): Promise<void> {
 		await this.sql.run(
-			`INSERT OR REPLACE INTO draft_notes (email_id, origin, agent, instructions, created_at, model)
-			SELECT email_id, ?, ?, ?, ?, ? FROM messages WHERE mailbox_id = ? AND email_id = ?`,
-			notes.origin, notes.agent ?? null, JSON.stringify(notes.instructions), new Date().toISOString(), notes.model ?? null, this.#id, emailId,
+			`INSERT OR REPLACE INTO draft_notes (email_id, origin, agent, instructions, created_at, model, written)
+			SELECT email_id, ?, ?, ?, ?, ?, ? FROM messages WHERE mailbox_id = ? AND email_id = ?`,
+			notes.origin, notes.agent ?? null, JSON.stringify(notes.instructions), new Date().toISOString(), notes.model ?? null, notes.written ?? null, this.#id, emailId,
 		);
 	}
 

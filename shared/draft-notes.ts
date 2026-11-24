@@ -14,6 +14,11 @@ export interface DraftNotes {
 	 * Null or missing when it isn't known: MCP clients, and drafts saved before 0.9.6.
 	 */
 	model?: string | null;
+	/**
+	 * A fingerprint of the reply text the agent wrote (workers/lib/agent-evidence.ts),
+	 * so sending it can tell whether it went as written. Set on agent drafts only.
+	 */
+	written?: string | null;
 }
 
 export type DraftOrigin = "auto-draft" | "chat" | "mcp";
