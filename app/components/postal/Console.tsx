@@ -15,6 +15,7 @@ import { confirmReady } from "./confirm-guard";
 import api, { type Agent, type AgentActionRow, type AgentDoes, type AgentDraft, type AgentMode, type AgentRule, type AgentStats, type AutoDraftRun } from "~/services/api";
 import { RunBadge, UndoAction, when } from "./ActivityTab";
 import { AgentIcon } from "./AgentIcon";
+import { AgentTestSection } from "./AgentTest";
 import type { AddressInfo } from "./compose";
 import { ConsoleMessageContext, type MessageRef, useOpenMessage } from "./console-message";
 import { CONSOLE_LABELS, CONSOLE_RAIL, type ConsoleTab, isSettingsTab } from "./console-tabs";
@@ -610,6 +611,7 @@ function AgentPage({ agentId, identities, addresses, onTab }: PageProps & { agen
 		>
 			{update.error && <Note tone="error">{update.error.message}</Note>}
 			<AgentTrust agent={agent} stats={stats} runs={acts ? actions.data ?? [] : runs.data ?? []} onMode={(mode) => update.mutate({ mode })} />
+			<AgentTestSection key={`t-${agent.id}`} agent={agent} identities={identities} />
 			{acts ? <AgentActions actions={actions} identities={identities} /> : <AgentRuns runs={runs} identities={identities} />}
 			<AgentSetup key={agent.id} agent={agent} addresses={addresses} identities={identities} />
 			<AgentDelete key={`d-${agent.id}`} agent={agent} onDeleted={() => { refresh(); onTab("agents"); }} />

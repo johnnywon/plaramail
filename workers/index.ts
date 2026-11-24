@@ -26,13 +26,14 @@ import { interpretSearch, MAX_REQUEST_LENGTH } from "./lib/search-interpret";
 import { HeaderValueSchema, MailboxSettingsSchema } from "./lib/schemas";
 import { readPrefs, writePrefs } from "./lib/prefs";
 import { agentModel, modelIdOf } from "./lib/agent-model";
-import { catalogFor, clearCatalogCache, languageModel, mergeAgentModelConfig, openRouterZdr, quickModel, readAgentModelConfig, viewOf, writeAgentModelConfig } from "./lib/agent-model";
+import { activeModel, catalogFor, clearCatalogCache, languageModel, mergeAgentModelConfig, openRouterZdr, quickModel, readAgentModelConfig, viewOf, writeAgentModelConfig } from "./lib/agent-model";
 import { KEYED_PROVIDERS, PROVIDERS, PROVIDER_INFO, RECOMMENDED_MODEL, SUGGESTED_MODELS, validModelId } from "../shared/models";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
 import { csrf } from "./lib/csrf";
 import { decodeCursor, InvalidFilterError } from "./lib/mail-index-sql";
 import { parseMailParams } from "./lib/mail-filter-params";
 import { MAX_SEARCH_LENGTH } from "../shared/search-query";
+import { TEST_MAX } from "../shared/agent-test";
 import { mailboxIds, mailStore, storageStatus, recordsSql } from "./store";
 import { MOVE_FOLDERS } from "./lib/mail-bulk-sql";
 import { BULK_MAX_THREADS } from "../shared/bulk";
@@ -48,11 +49,12 @@ import { getSystemPrompt } from "./agent/prompt";
 import { ACTIVITY_ACTORS, listActivity, logActivity, logged, mcpUsage, TOOL_ACTIONS } from "./lib/activity";
 import { unsubscribe, unsubscribeSummary } from "./lib/unsubscribe";
 import { verifyDraft } from "./lib/ai";
-import { AgentBody, agentStats, createAgent, deleteAgent, listAgentDrafts, listAgents, matchAgents, orderAgents, updateAgent } from "./lib/agents";
+import { AgentBody, agentStats, createAgent, deleteAgent, getAgent, listAgentDrafts, listAgents, matchAgents, orderAgents, updateAgent } from "./lib/agents";
 import { redraft } from "./lib/redraft";
 import { seedAgents } from "./lib/dev-seed-agents";
 import { listAgentActions, mailOps, undoAgentAction } from "./lib/agent-actions";
 import { REDRAFT_INSTRUCTION_MAX } from "../shared/draft-notes";
+import { claimNext, deleteTests, finishTest, getTest, liveGenerate, pickTestMail, saveResult, startTest, stopTest, testMessage } from "./agent/test-run";
 
 type AppContext = Context<MailboxContext>;
 
@@ -416,8 +418,64 @@ app.put("/api/v1/agents/:id", async (c) => {
 
 app.delete("/api/v1/agents/:id", async (c) => {
 	const deleted = await deleteAgent(recordsSql(c.env), c.req.param("id"));
+	if (deleted) await deleteTests(recordsSql(c.env), c.req.param("id"));
 	return deleted ? c.json({ deleted: true }) : c.json({ error: "Not found" }, 404);
 });
+
+// -- Test on past mail (workers/agent/test-run.ts) ---------------------
+
+/** The agent model's listed price per million tokens, or null when it has none. */
+async function modelPrice(env: Env, id: string | null) {
+	if (!id) return null;
+	const config = await readAgentModelConfig(env);
+	const catalog = await catalogFor(env, activeModel(config).provider, config.keys);
+	return catalog.models.find((m) => m.id === id)?.price ?? null;
+}
+
+/** The agent's latest test run, or null. */
+app.get("/api/v1/agents/:id/test", async (c) => c.json(await getTest(recordsSql(c.env), c.req.param("id"))));
+
+/** Start a test: the latest received mail for the agent's addresses, or what `search` finds. Replaces the last run. */
+app.post("/api/v1/agents/:id/test", async (c) => {
+	const parsed = z.object({ search: z.string().max(MAX_SEARCH_LENGTH).optional(), limit: z.number().int().min(1).max(TEST_MAX).optional() })
+		.safeParse(await c.req.json().catch(() => ({})));
+	if (!parsed.success) return c.json({ error: `Test on 1 to ${TEST_MAX} messages` }, 400);
+	const sql = recordsSql(c.env);
+	const agent = await getAgent(sql, c.req.param("id"));
+	if (!agent) return c.json({ error: "Not found" }, 404);
+	const picked = await pickTestMail(sql, agent, { search: parsed.data.search, limit: parsed.data.limit, mailboxes: await mailboxIds(c.env) });
+	if ("error" in picked) return c.json({ error: picked.error }, 400);
+	return c.json(await startTest(sql, agent.id, parsed.data.search ?? "", picked.mail), 201);
+});
+
+/** Test the next message of the running test. Returns the run; its state is done once no message is left. */
+app.post("/api/v1/agents/:id/test/next", async (c) => {
+	const sql = recordsSql(c.env);
+	const agent = await getAgent(sql, c.req.param("id"));
+	if (!agent) return c.json({ error: "Not found" }, 404);
+	const next = await claimNext(sql, agent.id);
+	if (next) {
+		let modelId: string | null = null;
+		const verdict = await testMessage({
+			ai: c.env.AI,
+			store: (mailboxId) => mailStore(c.env).mailbox(mailboxId),
+			systemPrompt: (mailboxId) => getSystemPrompt(c.env, mailboxId),
+			// The model is read only when a message gets as far as it.
+			generate: async (input) => {
+				const model = await agentModel(c.env, { reasoning: false });
+				modelId = modelIdOf(model);
+				return liveGenerate(model)(input);
+			},
+		}, agent, next).catch((e: Error) => ({ outcome: "failed" as const, reason: e.message || "the test failed", reply: null, inputTokens: 0, outputTokens: 0 }));
+		await saveResult(sql, next.testId, next.position, verdict, modelId);
+	}
+	await finishTest(sql, agent.id, (id) => modelPrice(c.env, id));
+	return c.json(await getTest(sql, agent.id));
+});
+
+/** Stop the running test. What was tested stays. */
+app.post("/api/v1/agents/:id/test/stop", async (c) =>
+	c.json(await stopTest(recordsSql(c.env), c.req.param("id"), (id) => modelPrice(c.env, id))));
 
 /** One action agent's latest actions. */
 app.get("/api/v1/agents/:id/actions", async (c) =>

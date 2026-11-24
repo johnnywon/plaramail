@@ -44,7 +44,7 @@ const ALLOWED: [method: string, path: RegExp][] = [
 const SENDS = /^\/api\/v1\/mailboxes\/[^/]+\/(emails|scheduled|emails\/[^/]+\/(reply|forward))$/;
 /** The sample mail's lists don't exist, so a demo never posts to them. */
 const UNSUBSCRIBE = /^\/api\/v1\/mailboxes\/[^/]+\/emails\/[^/]+\/unsubscribe$/;
-const AI = /^\/api\/v1\/(search\/interpret|agent-model\/test|mailboxes\/[^/]+\/drafts\/[^/]+\/redraft)$/;
+const AI = /^\/api\/v1\/(search\/interpret|agent-model\/test|agents\/[^/]+\/test(\/next)?|mailboxes\/[^/]+\/drafts\/[^/]+\/redraft)$/;
 /** The AI calls a demo visitor may make, within the daily cap. */
 const AI_ALLOWED = /^\/api\/v1\/(search\/interpret|mailboxes\/[^/]+\/drafts\/[^/]+\/redraft)$/;
 

@@ -8,6 +8,7 @@ import type { Prefs } from "shared/prefs";
 import type { DraftNotes } from "shared/draft-notes";
 import type { AgentLimits } from "shared/send-limits";
 import type { CatalogModel, KeyedProvider, ModelRef, ProviderId } from "shared/models";
+import type { AgentTest } from "shared/agent-test";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -95,6 +96,8 @@ function del<T>(url: string) {
 }
 
 // ---------- Typed response shapes ----------
+
+export type { AgentTest, TestResult } from "shared/agent-test";
 
 export type ActivityActor = "chat" | "auto-draft" | "mcp" | "person";
 
@@ -550,6 +553,10 @@ const api = {
 	deleteAgent: (id: string) => del<{ deleted: boolean }>(`/api/v1/agents/${encodeURIComponent(id)}`),
 	orderAgents: (ids: string[]) => put<{ ok: boolean }>("/api/v1/agents/order", { ids }),
 	getAgentRuns: (id: string, limit = 50) => get<AutoDraftRun[]>(`/api/v1/agents/${encodeURIComponent(id)}/runs?limit=${limit}`),
+	getAgentTest: (id: string) => get<AgentTest | null>(`/api/v1/agents/${encodeURIComponent(id)}/test`),
+	startAgentTest: (id: string, input: { search?: string; limit?: number }) => post<AgentTest>(`/api/v1/agents/${encodeURIComponent(id)}/test`, input),
+	nextAgentTest: (id: string) => post<AgentTest | null>(`/api/v1/agents/${encodeURIComponent(id)}/test/next`),
+	stopAgentTest: (id: string) => post<AgentTest | null>(`/api/v1/agents/${encodeURIComponent(id)}/test/stop`),
 	getAgentActions: (id: string, limit = 50) => get<AgentActionRow[]>(`/api/v1/agents/${encodeURIComponent(id)}/actions?limit=${limit}`),
 	undoAgentAction: (id: string) => post<AgentActionRow>(`/api/v1/agent-actions/${encodeURIComponent(id)}/undo`, {}),
 	getAgentDrafts: () => get<AgentDraft[]>("/api/v1/agents/review"),
